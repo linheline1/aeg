@@ -1,0 +1,38 @@
+/* ─────────────────────────────────────────────
+   AEG DDP Brasil · Landing page
+   Paleta da bandeira: verde (A), amarelo (E),
+   azul profundo (G). Fraunces + Karla.
+   (fontes carregadas via <link> no index.html)
+   ───────────────────────────────────────────── */
+
+.lp {
+  --ink:        #062a6e;
+  --ink-2:      #0a3a8f;
+  --ink-3:      #1550b4;
+  --paper:      #f6f9fc;
+  --paper-2:    #edf2f9;
+  --line:       #d9e2ef;
+  --gold:       #dfaf00;
+  --gold-hi:    #f7cf1e;
+  --gold-ink:   #7a5d00;
+  --green:      #007a30;
+  --green-hi:   #00692a;
+  --text:       #1c2a3a;
+  --muted:      #586a7e;
+  --font-display: 'Fraunces', 'Noto Serif SC', 'Songti SC', SimSun, Georgia, serif;
+  --font-body:    'Karla', 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+
+  --header-h:      74px;
+  --section-space: 88px;
+  --radius-md:     16px;
+  --radius-lg:     22px;
+  --ease-out:      cubic-bezier(.2, .7, .2, 1);
+  --shadow-card:   0 18px 44px rgba(6, 42, 110, .09);
+
+  background: var(--paper);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  min-height: 100vh;
+}

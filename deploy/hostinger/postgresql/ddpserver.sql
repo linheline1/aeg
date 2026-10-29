@@ -1,0 +1,14 @@
+-- =====================================================
+-- AEG DDP — PostgreSQL 基准配置
+-- 仅监听 127.0.0.1；密码在 deploy/hostinger/setup.sh 中创建后更改
+-- =====================================================
+-- 创建用户和数据库（首次执行）
+-- CREATE USER ddp WITH PASSWORD 'CHANGE_ME' CREATEDB;
+-- CREATE DATABASE ddpserver OWNER ddp;
+
+-- pg_hba.conf 建议（确保只有本地连接）
+-- # TYPE  DATABASE        USER            ADDRESS                 METHOD
+-- local   all             postgres                                peer
+-- local   all             all                                     md5
+-- host    all             all             127.0.0.1/32            md5
+-- host    all             all             ::1/128                 md5

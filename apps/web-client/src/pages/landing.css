@@ -1,0 +1,24 @@
+/* Landing page · folha de estilo composta.
+   Os arquivos menores ficam em ./styles/. */
+@import './landing/styles/tokens.css';
+@import './landing/styles/base.css';
+@import './landing/styles/header.css';
+@import './landing/styles/hero.css';
+@import './landing/styles/sections.css';
+@import './landing/styles/footer.css';
+
+/* 中文排版微调 */
+.lp[data-lang='zh'] .lp-eyebrow,
+.lp[data-lang='zh'] .lp-kicker,
+.lp[data-lang='zh'] .lp-included-code,
+.lp[data-lang='zh'] .lp-footer-col h4 {
+  letter-spacing: .5px;
+}
+.lp[data-lang='zh'] .lp-hero-copy h1,
+.lp[data-lang='zh'] .lp-section-head h2,
+.lp[data-lang='zh'] .lp-cta-inner h2 { letter-spacing: 0; }
+.lp[data-lang='zh'] .lp-hero-copy h1 {
+  font-size: clamp(30px, 3.7vw, 46px);
+  line-height: 1.2;
+}
+.lp[data-lang='zh'] .lp-hero-copy h1 em { font-style: normal; }

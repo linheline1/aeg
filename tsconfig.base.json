@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "isolatedModules": true,
+    "lib": ["ES2022"],
+    "baseUrl": ".",
+    "paths": {
+      "@aeg/shared-types": ["packages/shared-types/src/index.ts"],
+      "@aeg/shared-types/*": ["packages/shared-types/src/*"],
+      "@aeg/excel-utils": ["packages/excel-utils/src/index.ts"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "build"]
+}

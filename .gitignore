@@ -1,0 +1,45 @@
+# Node
+node_modules/
+dist/
+build/
+*.log
+.DS_Store
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Build
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# Uploads (runtime data)
+**/uploads/
+apps/api/uploads/
+apps/api/data/
+
+# Local postgres data
+deploy/pgdata/
+
+# Deploy bundles (built on each release)
+deploy/*.tar.gz
+
+# Trae workspace: keep plan docs + ssh deploy tool, ignore logs/backups/scratch
+.trae/*
+!.trae/documents/
+!.trae/ssh-deploy/
+.trae/backup-landing-20261029/
+
+# OS
+Thumbs.db

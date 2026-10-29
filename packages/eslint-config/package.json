@@ -1,0 +1,7 @@
+{
+  "name": "eslint-config-aeg",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.json",
+  "files": ["index.json"]
+}
