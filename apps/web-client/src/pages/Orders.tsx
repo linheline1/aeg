@@ -61,9 +61,24 @@ const fmtUSD = (n: number) =>
   'US$ ' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtTime = (s?: string | null) => (s ? s.slice(0, 16).replace('T', ' ') : '—');
 
+/** ≤640px 视为移动端：报价列表切换为卡片流，避免 10 列表格横向滚动 */
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(
+    () => window.matchMedia('(max-width: 640px)').matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return isMobile;
+}
+
 export default function Orders() {
   const [list, setList] = useState<QuoteOrder[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
@@ -133,15 +148,6 @@ export default function Orders() {
             onClear={() => applyFilters(DEFAULT_ORDER_FILTERS)}
           />
 
-          <div className="quote-note">
-            <b>费用说明：</b>
-            <span>
-              US$ 为<b>参考海运费</b>（中国起运港 + 海运段，美元计价）；
-              R$ 为 <b>参考DDP 巴西全程总价</b>，包含海运费、港杂费、进口税费、销售税务及综合运营费用；
-              内部运营成本不向客户拆分展示，所有金额均为参考预估。
-            </span>
-          </div>
-
           <PriceReferenceNote className="price-ref-note-mb" />
 
           {visible.length === 0 ? (
@@ -149,6 +155,37 @@ export default function Orders() {
               <p className="empty-title">没有符合当前筛选条件的报价</p>
               <p className="muted">调整关键词或清除筛选条件后重新查看</p>
               <button type="button" className="btn btn-ghost" onClick={clearFilters}>清除筛选</button>
+            </div>
+          ) : isMobile ? (
+            <div className="quote-grid">
+              {visible.map(o => (
+                <Link className="quote-card" to={`/orders/${o.id}`} key={o.id}>
+                  <div className="quote-head">
+                    <strong>{o.quote_no}</strong>
+                    <span className={`status-tag status-${o.status}`}>{STATUS_CN[o.status] || o.status}</span>
+                  </div>
+                  <div className="quote-file" title={o.input_file_name || ''}>{o.input_file_name || '装箱清单'}</div>
+                  {o.converted_by_ai && (
+                    <span className="quote-ai-tag" title={o.ai_notes || '该清单由 AI 自动识别并转换格式'}>AI 已识别转换</span>
+                  )}
+                  {o.status === 'done' && o.total_amount_brl != null && (
+                    <div className="quote-amt-block">
+                      <div className="quote-amt-label">参考DDP 巴西全程总价</div>
+                      <span className="quote-amt">{fmtBRL(o.total_amount_brl)}</span>
+                    </div>
+                  )}
+                  {o.status === 'done' && o.total_amount_usd != null && (
+                    <div className="quote-usd-row">
+                      <span className="quote-usd-label">参考海运费</span>
+                      <span className="quote-usd">{fmtUSD(o.total_amount_usd)}</span>
+                    </div>
+                  )}
+                  <div className="quote-foot">
+                    <span>{fmtTime(o.created_at)}</span>
+                    <span>{o.shipment_stage ? (SHIP_STAGE_CN[o.shipment_stage] || o.shipment_stage) : ''}</span>
+                  </div>
+                </Link>
+              ))}
             </div>
           ) : (
             <div className="card" style={{ padding: 0 }}>
