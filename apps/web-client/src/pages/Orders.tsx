@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
@@ -81,11 +81,14 @@ export default function Orders() {
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setErr(null);
     api.get('/api/client/orders')
       .then(r => setList([...(r.data as QuoteOrder[])].sort((a, b) => b.created_at.localeCompare(a.created_at))))
       .catch(e => setErr(getApiErrorMessage(e, '加载失败')));
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const filters = useMemo(() => parseOrderFilters(searchParams), [searchParams]);
   const deferredQuery = useDeferredValue(filters.q);
@@ -122,7 +125,12 @@ export default function Orders() {
         <p className="sub">运营核算完成后生成的 DDP 参考预估在此处查看，金额不构成最终报价</p>
       </div>
 
-      {err && <div className="alert alert-err">加载失败：{err}</div>}
+      {err && (
+        <div className="alert alert-err row" style={{ alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <span>加载失败：{err}</span>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={load}>重试</button>
+        </div>
+      )}
 
       {list === null && !err && (
         <div className="quote-grid">
