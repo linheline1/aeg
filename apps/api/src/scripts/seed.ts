@@ -1,5 +1,5 @@
 /**
- * 种子脚本（PostgreSQL）：初始 admin / operator / sales01 / client_a 账号、
+ * 种子脚本（PostgreSQL）：初始 admin / operator / sales01 / customs01 / client_a 账号、
  * 示例客户、模板 v2.0 记录、全局费率。与 mock 模式 seedIfEmpty 对齐。
  * 运行：pnpm run seed（需先执行 migration:run）
  */
@@ -40,6 +40,7 @@ async function seed() {
     { username: 'admin', role: 'admin' as const, client_id: null, defaultPwd: 'admin123' },
     { username: 'operator', role: 'operator' as const, client_id: null, defaultPwd: 'operator123' },
     { username: 'sales01', role: 'sales' as const, client_id: null, defaultPwd: 'sales123' },
+    { username: 'customs01', role: 'customs' as const, client_id: null, defaultPwd: 'customs123' },
     { username: 'client_a', role: 'client' as const, client_id: client.id, defaultPwd: 'client123' }
   ];
   const seededUsers: UserEntity[] = [];

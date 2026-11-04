@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
+import { getApiErrorMessage as errorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 
 interface CnpjAddress {
@@ -50,11 +51,6 @@ function formatAddress(address?: Partial<CnpjAddress> | null) {
   const street = [address.logradouro, address.numero].filter(Boolean).join(', ');
   return [street, address.complemento, address.bairro, address.municipio, address.uf, address.cep]
     .filter(Boolean).join(' · ');
-}
-
-function errorMessage(e: any, fallback: string) {
-  const message = e?.response?.data?.message;
-  return Array.isArray(message) ? message.join('；') : message || e?.message || fallback;
 }
 
 export default function CnpjManager() {

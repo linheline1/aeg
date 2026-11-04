@@ -3,6 +3,7 @@ import { AuditRepo, QuotesRepo } from '../common/mock-db';
 import { AiNcmService } from './ai-ncm.service';
 import { calculateDi, DiParameters } from './di-calculation';
 import { QuoteService } from '../upload/quote.service';
+import { pendingCustomsReview } from './customs-review';
 
 @Injectable()
 export class DiService {
@@ -24,7 +25,10 @@ export class DiService {
       if (!item.sources.length) throw new BadGatewayException(`A IA não forneceu fonte oficial para a linha ${item.row_no}`);
     }
     const analysis = calculateDi(order, suggestions, parameters);
-    const saved = await this.quotesRepo.update(id, { di_analysis: analysis } as any);
+    const saved = await this.quotesRepo.update(id, {
+      di_analysis: analysis,
+      customs_review: pendingCustomsReview(analysis.totals.di_brl)
+    } as any);
     await this.auditRepo.entry({
       actor_username: actor.username, actor_role: actor.role, action: 'order.di.analyze',
       target_type: 'quote', target_id: id,
@@ -33,14 +37,14 @@ export class DiService {
     return saved?.di_analysis || analysis;
   }
 
-  async review(id: string, body: { parameters: DiParameters; items: any[] }, actor: { username: string; role: string }) {
+  async review(id: string, body: { parameters: DiParameters; items: any[]; additional_fees?: any[] }, actor: { username: string; role: string }) {
     const order: any = await this.quotesRepo.findById(id);
     if (!order) throw new NotFoundException('Pedido não encontrado');
     if (!order.di_analysis) throw new BadRequestException('Execute a análise de NCM antes de confirmar a DI');
     if (!Array.isArray(body.items)) throw new BadRequestException('Itens da DI não informados');
     const current = new Map((order.di_analysis.items || []).map((item: any) => [Number(item.row_no), item]));
     const suggestions = body.items.map((item: any) => ({ ...(current.get(Number(item.row_no)) || {}), ...item }));
-    const analysis = calculateDi(order, suggestions, body.parameters);
+    const analysis = calculateDi(order, suggestions, body.parameters, body.additional_fees);
     const versions = Array.isArray(order.di_review_versions) ? order.di_review_versions : [];
     const version = versions.reduce((max: number, item: any) => Math.max(max, Number(item.version) || 0), 0) + 1;
     const reviewedAt = new Date().toISOString();
@@ -57,12 +61,19 @@ export class DiService {
     };
     const saved = await this.quotesRepo.update(id, {
       di_analysis: analysis,
-      di_review_versions: [...versions, snapshot]
+      di_review_versions: [...versions, snapshot],
+      customs_review: pendingCustomsReview(analysis.totals.di_brl)
     } as any);
     await this.auditRepo.entry({
       actor_username: actor.username, actor_role: actor.role, action: 'order.di.review',
       target_type: 'quote', target_id: id,
-      detail: { quote_no: order.quote_no, version, total_di_brl: analysis.totals.di_brl }
+      detail: {
+        quote_no: order.quote_no,
+        version,
+        import_taxes_brl: analysis.totals.import_taxes_brl,
+        additional_fees_brl: analysis.totals.additional_fees_brl,
+        total_di_brl: analysis.totals.di_brl
+      }
     });
     return saved?.di_analysis || analysis;
   }

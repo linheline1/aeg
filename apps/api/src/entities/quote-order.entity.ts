@@ -123,6 +123,16 @@ export class QuoteOrderEntity {
   @Column({ type: 'jsonb', nullable: true })
   di_review_versions?: Record<string, any>[] | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  customs_review?: {
+    status: 'pending' | 'approved' | 'changes_requested';
+    di_review_version?: number | null;
+    total_di_brl?: number | null;
+    note?: string | null;
+    reviewed_by?: string | null;
+    reviewed_at?: string | null;
+  } | null;
+
   /** M9：开票 CNPJ 快照 */
   @Column({ type: 'jsonb', nullable: true })
   invoice_cnpj?: { id: string; cnpj: string; company_name: string; ie?: string | null } | null;

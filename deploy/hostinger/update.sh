@@ -13,10 +13,8 @@ cd "$APP_ROOT"
 echo "=== 1. 安装依赖 ==="
 pnpm install --frozen-lockfile
 
-echo "=== 2. 构建（api + 三端前端 + packages）==="
+echo "=== 2. 构建（api + 四端前端 + packages，子域名根路径）==="
 pnpm build
-BASE_PATH=/admin/ pnpm --filter @aeg/web-admin build
-BASE_PATH=/ops/ pnpm --filter @aeg/web-ops build
 
 echo "=== 3. 数据库迁移（幂等）==="
 cd "$APP_ROOT/apps/api"
@@ -29,4 +27,4 @@ pm2 save
 
 echo "=== ✅ 部署完成 ==="
 echo "  · API：127.0.0.1:5000（PM2 守护，postgres 模式）"
-echo "  · 三端静态文件已由 Nginx 托管，无需重启 Nginx"
+echo "  · 四端静态文件已由 Nginx 托管，无需重启 Nginx"

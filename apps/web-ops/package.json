@@ -6,16 +6,25 @@
   "scripts": {
     "dev": "vite --port 5174",
     "build": "tsc -b && vite build",
+    "build:android": "tsc -b && vite build --mode android",
+    "android:sync": "pnpm run build:android && cap sync android",
+    "android:open": "cap open android",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3",
+    "axios": "^1.7.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0",
-    "axios": "^1.7.7",
     "zustand": "^5.0.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.6.0",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.2",

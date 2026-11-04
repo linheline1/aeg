@@ -1,7 +1,19 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 import PriceReferenceNote from '../components/PriceReferenceNote';
+import OrdersFilterBar from '../components/OrdersFilterBar';
+import {
+  DEFAULT_ORDER_FILTERS,
+  countOrderStatuses,
+  hasActiveOrderFilters,
+  matchesOrderFilters,
+  parseOrderFilters,
+  sortOrders,
+  toOrderSearchParams,
+  type OrderFilterState
+} from '../lib/order-filters';
 
 interface QuoteOrder {
   id: string;
@@ -22,6 +34,7 @@ interface QuoteOrder {
   /** M7：物流摘要 */
   shipment_stage?: string | null;
   shipment_eta?: string | null;
+  invoice_cnpj?: { id?: string; cnpj?: string; company_name?: string } | null;
   created_at: string;
   updated_at?: string;
 }
@@ -51,18 +64,41 @@ const fmtTime = (s?: string | null) => (s ? s.slice(0, 16).replace('T', ' ') : '
 export default function Orders() {
   const [list, setList] = useState<QuoteOrder[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     api.get('/api/client/orders')
       .then(r => setList([...(r.data as QuoteOrder[])].sort((a, b) => b.created_at.localeCompare(a.created_at))))
-      .catch(e => setErr(e?.response?.data?.message || '加载失败'));
+      .catch(e => setErr(getApiErrorMessage(e, '加载失败')));
   }, []);
+
+  const filters = useMemo(() => parseOrderFilters(searchParams), [searchParams]);
+  const deferredQuery = useDeferredValue(filters.q);
+  const effectiveFilters = useMemo<OrderFilterState>(
+    () => ({ ...filters, q: deferredQuery }),
+    [filters, deferredQuery]
+  );
+
+  const counts = useMemo(() => countOrderStatuses(list || []), [list]);
+  const visible = useMemo(
+    () => sortOrders((list || []).filter(o => matchesOrderFilters(o, effectiveFilters)), effectiveFilters.sort),
+    [list, effectiveFilters]
+  );
+
+  const applyFilters = (next: OrderFilterState, replace = false) => {
+    const params = toOrderSearchParams(next);
+    setSearchParams(params, { replace });
+  };
+
+  const clearFilters = () => setSearchParams(new URLSearchParams(), { replace: true });
 
   const latest = list && list.length > 0
     ? list.reduce((a, b) =>
         (a.updated_at || a.created_at) > (b.updated_at || b.created_at) ? a : b
       )
     : null;
+
+  const filtering = hasActiveOrderFilters(filters);
 
   return (
     <>
@@ -88,6 +124,15 @@ export default function Orders() {
             )}
           </div>
 
+          <OrdersFilterBar
+            filters={filters}
+            counts={counts}
+            total={list.length}
+            filteredCount={visible.length}
+            onChange={applyFilters}
+            onClear={() => applyFilters(DEFAULT_ORDER_FILTERS)}
+          />
+
           <div className="quote-note">
             <b>费用说明：</b>
             <span>
@@ -99,54 +144,66 @@ export default function Orders() {
 
           <PriceReferenceNote className="price-ref-note-mb" />
 
-          <div className="card" style={{ padding: 0 }}>
-            <div className="table-wrap">
-              <table className="table" style={{ minWidth: 1180, margin: 0 }}>
-                <thead>
-                  <tr>
-                    <th>报价号 / 清单</th><th>上传时间</th><th>总件数</th><th>CBM</th><th>申报货值</th>
-                    <th>参考海运费</th><th>参考DDP 巴西全程总价</th><th>状态</th><th>物流节点</th><th className="actions-col">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map(o => (
-                    <tr key={o.id}>
-                      <td>
-                        <Link to={`/orders/${o.id}`}><strong>{o.quote_no}</strong></Link>
-                        <div className="muted text-sm" title={o.input_file_name || ''}>{o.input_file_name || '装箱清单'}</div>
-                        {o.converted_by_ai && (
-                          <span className="quote-ai-tag" title={o.ai_notes || '该清单由 AI 自动识别并转换格式'}>AI 已识别转换</span>
-                        )}
-                      </td>
-                      <td>{fmtTime(o.created_at)}</td>
-                      <td>{o.total_pcs == null ? '—' : o.total_pcs.toLocaleString()}</td>
-                      <td>{o.total_cbm == null ? '—' : o.total_cbm.toFixed(4)}</td>
-                      <td>
-                        {o.total_amount_rmb == null ? '—' : `${o.total_amount_rmb.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} RMB`}
-                        {o.declared_currency === 'USD' && <div className="muted text-sm">USD 已折算</div>}
-                      </td>
-                      <td>{o.status === 'done' && o.total_amount_usd != null ? fmtUSD(o.total_amount_usd) : '—'}</td>
-                      <td>
-                        {o.status === 'done' && o.total_amount_brl != null
-                          ? <><strong>{fmtBRL(o.total_amount_brl)}</strong><span className="ref-tag">参考</span></>
-                          : '—'}
-                      </td>
-                      <td><span className={`status-tag status-${o.status}`}>{STATUS_CN[o.status] || o.status}</span></td>
-                      <td>
-                        {o.shipment_stage ? (
-                          <>
-                            <span className="ship-stage-chip">{SHIP_STAGE_CN[o.shipment_stage] || o.shipment_stage}</span>
-                            {o.shipment_eta && <div className="muted text-sm">ETA {o.shipment_eta.slice(0, 10)}</div>}
-                          </>
-                        ) : '—'}
-                      </td>
-                      <td className="actions-col"><Link className="btn btn-sm btn-ghost" to={`/orders/${o.id}`}>查看详情</Link></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {visible.length === 0 ? (
+            <div className="card empty-state">
+              <p className="empty-title">没有符合当前筛选条件的报价</p>
+              <p className="muted">调整关键词或清除筛选条件后重新查看</p>
+              <button type="button" className="btn btn-ghost" onClick={clearFilters}>清除筛选</button>
             </div>
-          </div>
+          ) : (
+            <div className="card" style={{ padding: 0 }}>
+              <div className="table-wrap">
+                <table className="table" style={{ minWidth: 1180, margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>报价号 / 清单</th><th>上传时间</th><th>总件数</th><th>CBM</th><th>申报货值</th>
+                      <th>参考海运费</th><th>参考DDP 巴西全程总价</th><th>状态</th><th>物流节点</th><th className="actions-col">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map(o => (
+                      <tr key={o.id}>
+                        <td>
+                          <Link to={`/orders/${o.id}`}><strong>{o.quote_no}</strong></Link>
+                          <div className="muted text-sm" title={o.input_file_name || ''}>{o.input_file_name || '装箱清单'}</div>
+                          {o.converted_by_ai && (
+                            <span className="quote-ai-tag" title={o.ai_notes || '该清单由 AI 自动识别并转换格式'}>AI 已识别转换</span>
+                          )}
+                        </td>
+                        <td>{fmtTime(o.created_at)}</td>
+                        <td>{o.total_pcs == null ? '—' : o.total_pcs.toLocaleString()}</td>
+                        <td>{o.total_cbm == null ? '—' : o.total_cbm.toFixed(4)}</td>
+                        <td>
+                          {o.total_amount_rmb == null ? '—' : `${o.total_amount_rmb.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} RMB`}
+                          {o.declared_currency === 'USD' && <div className="muted text-sm">USD 已折算</div>}
+                        </td>
+                        <td>{o.status === 'done' && o.total_amount_usd != null ? fmtUSD(o.total_amount_usd) : '—'}</td>
+                        <td>
+                          {o.status === 'done' && o.total_amount_brl != null
+                            ? <><strong>{fmtBRL(o.total_amount_brl)}</strong><span className="ref-tag">参考</span></>
+                            : '—'}
+                        </td>
+                        <td><span className={`status-tag status-${o.status}`}>{STATUS_CN[o.status] || o.status}</span></td>
+                        <td>
+                          {o.shipment_stage ? (
+                            <>
+                              <span className="ship-stage-chip">{SHIP_STAGE_CN[o.shipment_stage] || o.shipment_stage}</span>
+                              {o.shipment_eta && <div className="muted text-sm">ETA {o.shipment_eta.slice(0, 10)}</div>}
+                            </>
+                          ) : '—'}
+                        </td>
+                        <td className="actions-col"><Link className="btn btn-sm btn-ghost" to={`/orders/${o.id}`}>查看详情</Link></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {filtering && visible.length > 0 && (
+            <p className="orders-filter-hint muted text-sm">筛选条件已保存在链接中，刷新或返回本页后仍然保留。</p>
+          )}
         </>
       )}
 

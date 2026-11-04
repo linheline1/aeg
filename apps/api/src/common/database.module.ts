@@ -2,11 +2,11 @@ import { Global, Module, Provider } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import {
   UserRepo, ClientRepo, TemplateRepo, AuditRepo, QuotesRepo,
-  FeeRatesRepo, ImageRepo, ClientCnpjsRepo, OrderFilesRepo, PaymentsRepo, HelpArticlesRepo, AiConfigRepo
+  FeeRatesRepo, ImageRepo, ClientCnpjsRepo, CustomsCnpjsRepo, ProductCatalogRepo, OrderFilesRepo, PaymentsRepo, HelpArticlesRepo, AiConfigRepo
 } from './mock-db';
 import {
   PgUserRepo, PgClientRepo, PgTemplateRepo, PgAuditRepo, PgQuotesRepo,
-  PgFeeRatesRepo, PgImageRepo, PgClientCnpjsRepo, PgOrderFilesRepo, PgPaymentsRepo, PgHelpArticlesRepo, PgAiConfigRepo
+  PgFeeRatesRepo, PgImageRepo, PgClientCnpjsRepo, PgCustomsCnpjsRepo, PgProductCatalogRepo, PgOrderFilesRepo, PgPaymentsRepo, PgHelpArticlesRepo, PgAiConfigRepo
 } from './pg-repos';
 import { UploadDraftsRepo } from '../upload/upload-draft.repository';
 
@@ -27,7 +27,7 @@ function repoProvider(token: string, MockClass: new () => unknown, PgClass: new 
 
 export const REPO_TOKENS = [
   'UserRepo', 'ClientRepo', 'TemplateRepo', 'AuditRepo', 'QuotesRepo',
-  'FeeRatesRepo', 'ImageRepo', 'ClientCnpjsRepo', 'OrderFilesRepo', 'PaymentsRepo', 'HelpArticlesRepo', 'AiConfigRepo', 'UploadDraftsRepo'
+  'FeeRatesRepo', 'ImageRepo', 'ClientCnpjsRepo', 'CustomsCnpjsRepo', 'ProductCatalogRepo', 'OrderFilesRepo', 'PaymentsRepo', 'HelpArticlesRepo', 'AiConfigRepo', 'UploadDraftsRepo'
 ] as const;
 
 @Global()
@@ -41,6 +41,8 @@ export const REPO_TOKENS = [
     repoProvider('FeeRatesRepo', FeeRatesRepo, PgFeeRatesRepo),
     repoProvider('ImageRepo', ImageRepo, PgImageRepo),
     repoProvider('ClientCnpjsRepo', ClientCnpjsRepo, PgClientCnpjsRepo),
+    repoProvider('CustomsCnpjsRepo', CustomsCnpjsRepo, PgCustomsCnpjsRepo),
+    repoProvider('ProductCatalogRepo', ProductCatalogRepo, PgProductCatalogRepo),
     repoProvider('OrderFilesRepo', OrderFilesRepo, PgOrderFilesRepo),
     repoProvider('PaymentsRepo', PaymentsRepo, PgPaymentsRepo),
     repoProvider('HelpArticlesRepo', HelpArticlesRepo, PgHelpArticlesRepo),

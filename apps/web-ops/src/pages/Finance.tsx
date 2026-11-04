@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 
 interface Payment {
@@ -48,7 +49,7 @@ export default function Finance() {
       setRows(r1.data);
       setSummary(r2.data);
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '加载失败');
+      setErr(getApiErrorMessage(e, '加载失败'));
     }
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -65,7 +66,7 @@ export default function Finance() {
       setAmount(''); setPaidAt(''); setNote('');
       await load();
     } catch (e: any) {
-      setRowErr(e?.response?.data?.message || e?.message || '登记失败');
+      setRowErr(getApiErrorMessage(e, '登记失败'));
     } finally {
       setBusy(false);
     }
@@ -77,7 +78,7 @@ export default function Finance() {
       await api.delete(`/api/ops/finance/payments/${pid}`);
       await load();
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || '删除失败');
+      alert(getApiErrorMessage(e, '删除失败'));
     }
   };
 
@@ -175,7 +176,7 @@ export default function Finance() {
                         </table>
                       )}
                       {canEdit && q.outstanding_brl > 0 && (
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div className="payment-form" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                           <input
                             className="form-input" style={{ width: 140 }} type="number" min="0" step="0.01"
                             placeholder={`金额（≤ ${q.outstanding_brl.toFixed(2)}）`}
@@ -205,38 +206,42 @@ export default function Finance() {
       </div>
 
       {summary && summary.by_month.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="finance-reconciliation" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div className="card">
             <div className="card-title"><h3>按月对账</h3></div>
-            <table className="table">
-              <thead><tr><th>月份</th><th className="amt">应收</th><th className="amt">已收</th><th className="amt">未收</th></tr></thead>
-              <tbody>
-                {summary.by_month.map(m => (
-                  <tr key={m.month}>
-                    <td>{m.month}</td>
-                    <td className="amt">{brl(m.receivable_brl)}</td>
-                    <td className="amt">{brl(m.received_brl)}</td>
-                    <td className="amt">{brl(m.outstanding_brl)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="finance-reconciliation-table">
+              <table className="table">
+                <thead><tr><th>月份</th><th className="amt">应收</th><th className="amt">已收</th><th className="amt">未收</th></tr></thead>
+                <tbody>
+                  {summary.by_month.map(m => (
+                    <tr key={m.month}>
+                      <td>{m.month}</td>
+                      <td className="amt">{brl(m.receivable_brl)}</td>
+                      <td className="amt">{brl(m.received_brl)}</td>
+                      <td className="amt">{brl(m.outstanding_brl)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
           <div className="card">
             <div className="card-title"><h3>按客户对账</h3></div>
-            <table className="table">
-              <thead><tr><th>客户</th><th className="amt">应收</th><th className="amt">已收</th><th className="amt">未收</th></tr></thead>
-              <tbody>
-                {summary.by_client.map(c => (
-                  <tr key={c.client_id}>
-                    <td>{c.client_name}</td>
-                    <td className="amt">{brl(c.receivable_brl)}</td>
-                    <td className="amt">{brl(c.received_brl)}</td>
-                    <td className="amt">{brl(c.outstanding_brl)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="finance-reconciliation-table">
+              <table className="table">
+                <thead><tr><th>客户</th><th className="amt">应收</th><th className="amt">已收</th><th className="amt">未收</th></tr></thead>
+                <tbody>
+                  {summary.by_client.map(c => (
+                    <tr key={c.client_id}>
+                      <td>{c.client_name}</td>
+                      <td className="amt">{brl(c.receivable_brl)}</td>
+                      <td className="amt">{brl(c.received_brl)}</td>
+                      <td className="amt">{brl(c.outstanding_brl)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

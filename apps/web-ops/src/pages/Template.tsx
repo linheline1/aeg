@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { downloadOrShareFile } from '@aeg/web-shared/file-actions';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 
 interface TemplateInfo {
@@ -22,7 +24,7 @@ export default function Template() {
   useEffect(() => {
     api.get('/api/client/template/current')
       .then(r => setInfo(r.data))
-      .catch(e => setErr(e?.response?.data?.message || e?.message || '加载失败'));
+      .catch(e => setErr(getApiErrorMessage(e, '加载失败')));
   }, []);
 
   const download = async () => {
@@ -31,18 +33,11 @@ export default function Template() {
     setDlMsg(null);
     try {
       const r = await api.get(info.download_url, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([r.data as any]));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `巴西整柜装箱清单_模板_v${info.version_no}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      await downloadOrShareFile(new Blob([r.data as any]), `巴西整柜装箱清单_模板_v${info.version_no}.xlsx`);
       setDlMsg('✅ 下载完成');
       setTimeout(() => setDlMsg(null), 3000);
     } catch (e: any) {
-      setDlMsg('❌ ' + (e?.response?.data?.message || e?.message || '下载失败'));
+      setDlMsg('❌ ' + getApiErrorMessage(e, '下载失败'));
     } finally {
       setDlLoading(false);
     }

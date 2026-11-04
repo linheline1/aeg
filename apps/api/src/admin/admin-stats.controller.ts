@@ -27,7 +27,7 @@ export class AdminStatsController {
     for (const q of quotes) byStatus[q.status] = (byStatus[q.status] || 0) + 1;
 
     const won = quotes.filter(q => q.deal_status === 'won');
-    const staff = users.filter(u => u.role === 'operator' || u.role === 'sales');
+    const staff = users.filter(u => u.role === 'operator' || u.role === 'sales' || u.role === 'customs');
 
     return {
       clients: {

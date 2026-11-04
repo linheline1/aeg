@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { useAuth } from '../store/auth';
 import logo from '../assets/logo.png';
 
@@ -17,7 +18,7 @@ export default function Login() {
       await login(username, password);
       nav('/home');
     } catch (res: any) {
-      setErr(res.response?.data?.message || '登录失败');
+      setErr(getApiErrorMessage(res, '登录失败'));
     }
   };
 

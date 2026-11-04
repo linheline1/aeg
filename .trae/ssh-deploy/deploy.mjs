@@ -81,9 +81,10 @@ try {
       echo "APP"; ls -ld ${APP_ROOT}; test -f ${APP_ROOT}/.env && echo ".env exists"
       echo "DB"; sudo -u postgres psql -Atc "select datname from pg_database where datname='ddpserver'"
       echo "PM2"; pm2 list
-      echo "HTTP"; curl -s -o /dev/null -w "client=%{http_code}\\n" https://linsgeekai.com.br/ || true
-      curl -s -o /dev/null -w "ops=%{http_code}\\n" https://linsgeekai.com.br/ops/ || true
-      curl -s -o /dev/null -w "admin=%{http_code}\\n" https://linsgeekai.com.br/admin/ || true
+      echo "HTTP"; curl -s -o /dev/null -w "client=%{http_code}\\n" https://app.linsgeekai.com.br/ || true
+      curl -s -o /dev/null -w "ops=%{http_code}\\n" https://ops.linsgeekai.com.br/ || true
+      curl -s -o /dev/null -w "admin=%{http_code}\\n" https://admin.linsgeekai.com.br/ || true
+      curl -s -o /dev/null -w "customs=%{http_code}\\n" https://customs.linsgeekai.com.br/ || true
     `, 120000);
   } else if (action === 'deploy') {
     if (!fs.existsSync(localArchive)) throw new Error('deploy archive missing');
@@ -110,6 +111,7 @@ try {
       # tar 解包不会删除仓库中已移除的文件：清理 landing 重构前的旧组件
       rm -f apps/web-client/src/pages/landing/sections.tsx
       bash deploy/hostinger/update.sh
+      bash deploy/hostinger/enable-subdomains.sh
     `, 1800000);
     if (deploy.code !== 0) throw new Error('deployment failed');
   } else if (action === 'status') {
@@ -119,12 +121,13 @@ try {
       echo "MIGRATIONS"; sudo -u postgres psql -d ddpserver -Atc "select name from migrations order by id desc limit 5"
       echo "API"; curl -s -o /dev/null -w "api_unauth=%{http_code}\\n" http://127.0.0.1:5000/api/auth/me || true
       echo "SITES"
-      for url in https://linsgeekai.com.br/ https://linsgeekai.com.br/login https://linsgeekai.com.br/ops/ https://linsgeekai.com.br/admin/; do
+      for url in https://app.linsgeekai.com.br/ https://ops.linsgeekai.com.br/ https://admin.linsgeekai.com.br/ https://customs.linsgeekai.com.br/; do
         curl -s -o /dev/null -w "$url => %{http_code}\\n" "$url" || true
       done
-      echo "CLIENT_ASSET"; curl -s https://linsgeekai.com.br/login | grep -o 'assets/index-[^"]*\\.js' | head -n 1 || true
-      echo "OPS_ASSET"; curl -s https://linsgeekai.com.br/ops/ | grep -o 'assets/index-[^"]*\\.js' | head -n 1 || true
-      echo "ADMIN_ASSET"; curl -s https://linsgeekai.com.br/admin/ | grep -o 'assets/index-[^"]*\\.js' | head -n 1 || true
+      echo "CLIENT_ASSET"; curl -s https://app.linsgeekai.com.br/login | grep -o 'assets/index-[^"]*\\.js' | head -n 1 || true
+      echo "OPS_ASSET"; curl -s https://ops.linsgeekai.com.br/login | grep -o 'assets/index-[^"]*\\.js' | head -n 1 || true
+      echo "ADMIN_ASSET"; curl -s https://admin.linsgeekai.com.br/login | grep -o 'assets/index-[^"]*\\.js' | head -n 1 || true
+      echo "CUSTOMS_ASSET"; curl -s https://customs.linsgeekai.com.br/login | grep -o 'assets/index-[^"]*\\.js' | head -n 1 || true
       echo "API_ERRORS"; tail -n 20 /var/log/pm2/ddp-api-err.log || true
     `, 120000);
   } else {

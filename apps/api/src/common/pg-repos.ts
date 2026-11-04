@@ -12,13 +12,15 @@ import { QuoteOrderEntity } from '../entities/quote-order.entity';
 import { FeeRateEntity } from '../entities/fee-rate.entity';
 import { ClientImageEntity } from '../entities/client-image.entity';
 import { ClientCnpjEntity } from '../entities/client-cnpj.entity';
+import { CustomsCnpjEntity } from '../entities/customs-cnpj.entity';
+import { ProductCatalogEntity } from '../entities/product-catalog.entity';
 import { OrderFileEntity } from '../entities/order-file.entity';
 import { PaymentRecordEntity } from '../entities/payment-record.entity';
 import { HelpArticleEntity } from '../entities/help-article.entity';
 import { AiConfigEntity } from '../entities/ai-config.entity';
 import type {
   UserRow, ClientRow, TemplateRow, QuoteOrderRow, FeeRateRow,
-  ClientImageRow, ClientCnpjRow, OrderFileRow, AuditLogRow, PaymentRow, HelpArticleRow,
+  ClientImageRow, ClientCnpjRow, CustomsCnpjRow, ProductCatalogRow, OrderFileRow, AuditLogRow, PaymentRow, HelpArticleRow,
   AiConfigRow, ResolvedAiConfig
 } from './mock-db';
 import { resolveAiConfig } from './mock-db';
@@ -409,6 +411,83 @@ export class PgClientCnpjsRepo {
       }
       return true;
     });
+  }
+}
+
+export class PgCustomsCnpjsRepo {
+  private repo: Repository<CustomsCnpjEntity>;
+  constructor(ds: DataSource) { this.repo = ds.getRepository(CustomsCnpjEntity); }
+
+  async findAll(): Promise<CustomsCnpjRow[]> {
+    const rows = await this.repo.find({ order: { created_at: 'DESC' } });
+    return rows.map(e => toRow(e) as CustomsCnpjRow);
+  }
+  async findById(id: string): Promise<CustomsCnpjRow | null> {
+    const e = await this.repo.findOne({ where: { id } });
+    return e ? (toRow(e) as CustomsCnpjRow) : null;
+  }
+  async findByCnpj(cnpj: string): Promise<CustomsCnpjRow | null> {
+    const e = await this.repo.findOne({ where: { cnpj } });
+    return e ? (toRow(e) as CustomsCnpjRow) : null;
+  }
+  async insert(row: Omit<CustomsCnpjRow, 'id' | 'created_at' | 'updated_at'>): Promise<CustomsCnpjRow> {
+    const e = await this.repo.save(this.repo.create(stripUndefined(row) as any));
+    return toRow(e) as CustomsCnpjRow;
+  }
+  async update(id: string, patch: Partial<CustomsCnpjRow>): Promise<CustomsCnpjRow | null> {
+    const e = await this.repo.findOne({ where: { id } });
+    if (!e) return null;
+    Object.assign(e, stripUndefined(patch));
+    return toRow(await this.repo.save(e)) as CustomsCnpjRow;
+  }
+}
+
+export class PgProductCatalogRepo {
+  private repo: Repository<ProductCatalogEntity>;
+  constructor(ds: DataSource) { this.repo = ds.getRepository(ProductCatalogEntity); }
+
+  async findBySku(skuKey: string): Promise<ProductCatalogRow | null> {
+    const e = await this.repo.findOne({ where: { sku_key: skuKey } });
+    return e ? (toRow(e) as ProductCatalogRow) : null;
+  }
+  async findById(id: string): Promise<ProductCatalogRow | null> {
+    const e = await this.repo.findOne({ where: { id } });
+    return e ? (toRow(e) as ProductCatalogRow) : null;
+  }
+  async upsertBySku(skuKey: string, patch: Partial<ProductCatalogRow>): Promise<ProductCatalogRow> {
+    let e = await this.repo.findOne({ where: { sku_key: skuKey } });
+    if (e) {
+      const { id, created_at } = e;
+      Object.assign(e, stripUndefined(patch), { id, sku_key: skuKey, created_at });
+    } else {
+      e = this.repo.create({
+        ...stripUndefined(patch),
+        sku_key: skuKey,
+        sku: patch.sku ?? skuKey,
+        ncm_sources: patch.ncm_sources ?? [],
+        image_ids: patch.image_ids ?? []
+      } as DeepPartial<ProductCatalogEntity>);
+    }
+    return toRow(await this.repo.save(e)) as ProductCatalogRow;
+  }
+  async list(opts: { q?: string; page?: number; pageSize?: number } = {}): Promise<{
+    items: ProductCatalogRow[]; total: number; page: number; pageSize: number;
+  }> {
+    const page = Math.max(1, opts.page || 1);
+    const pageSize = Math.min(100, Math.max(1, opts.pageSize || 20));
+    const qb = this.repo.createQueryBuilder('p').orderBy('p.updated_at', 'DESC');
+    const kw = opts.q?.trim();
+    if (kw) {
+      qb.andWhere('(p.sku ILIKE :kw OR p.product_cn ILIKE :kw OR p.product_en ILIKE :kw OR p.ncm ILIKE :kw)', { kw: `%${kw}%` });
+    }
+    const [rows, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
+    return { items: rows.map(e => toRow(e) as ProductCatalogRow), total, page, pageSize };
+  }
+  async update(id: string, patch: Partial<ProductCatalogRow>): Promise<ProductCatalogRow | null> {
+    const e = await this.repo.findOne({ where: { id } });
+    if (!e) return null;
+    Object.assign(e, stripUndefined(patch));
+    return toRow(await this.repo.save(e)) as ProductCatalogRow;
   }
 }
 

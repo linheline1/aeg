@@ -17,28 +17,30 @@ export default function TemplateList() {
   return (
     <div>
       <h1>模板版本</h1>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>版本</th>
-            <th>编码</th>
-            <th>状态</th>
-            <th>激活时间</th>
-            <th>创建时间</th>
-          </tr>
-        </thead>
-        <tbody>
-          {list.map((t) => (
-            <tr key={t.id}>
-              <td>v{t.version_no}</td>
-              <td>{t.template_code}</td>
-              <td>{t.status === 'active' ? '✅ 启用' : '停用'}</td>
-              <td>{t.activated_at || '—'}</td>
-              <td>{t.created_at}</td>
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>版本</th>
+              <th>编码</th>
+              <th>状态</th>
+              <th>激活时间</th>
+              <th>创建时间</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {list.map((t) => (
+              <tr key={t.id}>
+                <td>v{t.version_no}</td>
+                <td>{t.template_code}</td>
+                <td>{t.status === 'active' ? '✅ 启用' : '停用'}</td>
+                <td>{t.activated_at || '—'}</td>
+                <td>{t.created_at}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

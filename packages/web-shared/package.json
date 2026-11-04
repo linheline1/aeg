@@ -1,0 +1,14 @@
+{
+  "name": "@aeg/web-shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3",
+    "axios": "^1.7.7",
+    "zustand": "^5.0.1"
+  }
+}

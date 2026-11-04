@@ -27,9 +27,12 @@ async function bootstrap() {
     })
   );
 
-  // CORS（三端分离子域名，开发期允许；生产限定）
+  // CORS（四端分离子域名，多个生产域名用逗号分隔）
+  const corsOrigin = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(value => value.trim()).filter(Boolean)
+    : '*';
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: corsOrigin,
     credentials: true
   });
 

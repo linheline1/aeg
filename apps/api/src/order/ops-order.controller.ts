@@ -5,6 +5,7 @@ import { Request, Response } from 'express';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { AuditRepo, QuotesRepo, ClientRepo, UserRepo, repoRoot } from '../common/mock-db';
 import { QuoteService } from '../upload/quote.service';
+import { assertCurrentCustomsApproval } from './customs-review';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -107,6 +108,7 @@ export class OpsOrderController {
         deal_status: q.deal_status || null,
         deal_note: q.deal_note || null,
         deal_closed_at: q.deal_closed_at || null,
+        customs_review: q.customs_review || null,
         created_at: q.created_at,
         has_line_items: Array.isArray(q.line_items) && q.line_items.length > 0,
         has_breakdown: !!q.pricing_breakdown,
@@ -169,7 +171,8 @@ export class OpsOrderController {
       pricing_breakdown: q.pricing_breakdown || null,
       line_items: q.line_items || [],
       shipment: q.shipment || null,
-      di_analysis: q.di_analysis || null
+      di_analysis: q.di_analysis || null,
+      customs_review: q.customs_review || null
     };
   }
 
@@ -189,6 +192,20 @@ export class OpsOrderController {
     @Req() req: Request & { user?: any }
   ) {
     return this.quoteService.recomputeBreakdown(id, this.actor(req), body);
+  }
+
+  @Patch(':id/line-items/:rowNo/price')
+  @Roles('operator', 'admin')
+  async adjustLineItemPrice(
+    @Param('id') id: string,
+    @Param('rowNo') rowNo: string,
+    @Body() body: { percent?: number },
+    @Req() req: Request & { user?: any }
+  ) {
+    if (body.percent === undefined || body.percent === null) {
+      throw new BadRequestException('请提供调整百分比');
+    }
+    return this.quoteService.adjustLineItemPrice(id, Number(rowNo), Number(body.percent), this.actor(req));
   }
 
   /** M3 状态机：按费率表核算报价 uploaded/pending_fee → computing → done */
@@ -247,6 +264,7 @@ export class OpsOrderController {
     if (order.status !== 'done') {
       throw new BadRequestException('仅已核算发布（done）的报价可标记成交状态');
     }
+    if (next === 'won') assertCurrentCustomsApproval(order);
     if (req.user?.role === 'sales') {
       const client: any = await this.clientRepo.findOne({ where: { id: order.client_id } });
       const owner = order.salesperson_id || client?.salesperson_id || null;

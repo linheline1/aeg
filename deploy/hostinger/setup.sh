@@ -6,7 +6,7 @@
 # 安全：
 #   - PostgreSQL 仅监听 127.0.0.1
 #   - Node.js API 仅监听 127.0.0.1:5000
-#   - 三端静态文件由 Nginx 反向代理
+#   - 四端静态文件由 Nginx 反向代理
 #   - 上传文件目录不暴露在 Nginx 根路径
 # =====================================================================
 
@@ -48,7 +48,7 @@ echo "→ 再执行：nginx -t && systemctl reload nginx"
 
 echo "=== 7. 反向代理后端仅 localhost ==="
 # api 不监听公网端口（Node 代码中已绑定 127.0.0.1:5000）
-# 三端前端静态文件由 Nginx 直接托管
+# 四端前端静态文件由 Nginx 直接托管
 
 echo "=== 8. PM2 开机自启 ==="
 pm2 save
@@ -57,7 +57,7 @@ pm2 startup systemd -u root --hp /root
 echo "=== ✅ 安装完成 ==="
 echo "  · PostgreSQL：127.0.0.1:5432，user=ddp, db=ddpserver, pass=CHANGE_ME"
 echo "  · Node API：127.0.0.1:5000（PM2 守护）"
-echo "  · 三端静态：由 Nginx + Let's Encrypt 托管"
+echo "  · 四端静态：由 Nginx + Let's Encrypt 托管"
 echo "  · 上传文件：$UPLOAD_ROOT（不暴露）"
 echo "后续步骤："
 echo "  1. 上传项目代码到 $APP_ROOT，执行 pnpm install && pnpm run build"
@@ -67,5 +67,5 @@ echo "     （可选）先导入旧 mock 数据：pnpm run import:dev-json"
 echo "     再执行 pnpm run seed（已有数据会自动跳过；顺序请勿颠倒，避免账号/客户重复）"
 echo "     注：pm2.config.js 已配置 APP_MODULE_MODE=postgres，API 启动时也会自动执行 migrations"
 echo "  4. 复制 deploy/hostinger/pm2.config.js 到 $APP_ROOT 并 pm2 start pm2.config.js"
-echo "  5. 在 Nginx 启用三子域名 server block，certbot 申请证书"
+echo "  5. 在 Nginx 启用四子域名 server block，certbot 申请证书"
 echo "  6. PM2 save && systemctl enable nginx postgresql pm2-root"

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 import PriceReferenceNote from '../components/PriceReferenceNote';
 import './Help.css';
@@ -59,7 +60,7 @@ export default function Help() {
     setLoading(true);
     api.get('/api/client/help/articles')
       .then(r => setArticles((r.data || []).map((article: ApiArticle) => ({ ...article, sections: parseContent(article.content) }))))
-      .catch(e => setErr(e?.response?.data?.message || '帮助文档加载失败'))
+      .catch(e => setErr(getApiErrorMessage(e, '帮助文档加载失败')))
       .finally(() => setLoading(false));
   }, []);
 

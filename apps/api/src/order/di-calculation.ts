@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import * as crypto from 'crypto';
 
 export interface DiParameters {
   rmb_brl: number;
@@ -6,6 +7,13 @@ export interface DiParameters {
   icms_rate: number;
   uf: string;
   freight_brl?: number;
+}
+
+export interface DiAdditionalFee {
+  id: string;
+  name: string;
+  amount_brl: number;
+  note?: string | null;
 }
 
 const round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -18,7 +26,35 @@ const numeric = (value: unknown, label: string, min = 0, max = Number.MAX_SAFE_I
 };
 const rate = (value: unknown, label: string) => numeric(value, label, 0, 0.999999);
 
-export function calculateDi(order: any, suggestions: any[], parameters: DiParameters) {
+function normalizeAdditionalFees(value: unknown): DiAdditionalFee[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new BadRequestException('Taxas adicionais inválidas');
+  if (value.length > 30) throw new BadRequestException('A DI permite no máximo 30 taxas adicionais');
+  return value.map((input, index) => {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new BadRequestException(`Taxa adicional ${index + 1} inválida`);
+    }
+    const fee = input as Record<string, unknown>;
+    const name = String(fee.name || '').trim();
+    if (!name || name.length > 100) {
+      throw new BadRequestException(`Nome da taxa adicional ${index + 1} é obrigatório e deve ter no máximo 100 caracteres`);
+    }
+    const amount = round(numeric(fee.amount_brl, `Valor da taxa ${name}`, 0, 1_000_000_000_000));
+    const note = fee.note == null ? null : String(fee.note).trim();
+    if (note && note.length > 200) {
+      throw new BadRequestException(`Observação da taxa ${name} deve ter no máximo 200 caracteres`);
+    }
+    const id = /^[0-9a-f-]{36}$/i.test(String(fee.id || '')) ? String(fee.id) : crypto.randomUUID();
+    return { id, name, amount_brl: amount, note: note || null };
+  });
+}
+
+export function calculateDi(
+  order: any,
+  suggestions: any[],
+  parameters: DiParameters,
+  additionalFees: unknown = order.di_analysis?.additional_fees || []
+) {
   const rmbBrl = numeric(parameters.rmb_brl, 'Taxa RMB/BRL', 0.000001);
   const insuranceTotal = numeric(parameters.insurance_brl ?? 0, 'Seguro');
   const icmsRate = rate(parameters.icms_rate, 'Alíquota ICMS');
@@ -42,7 +78,7 @@ export function calculateDi(order: any, suggestions: any[], parameters: DiParame
     if (!/^\d{8}$/.test(ncm)) throw new BadRequestException(`NCM inválido na linha ${row.row_no}`);
     const merchandiseRmb = Number(row.total_price) || Number(row.unit_price) * Number(row.total_pcs) || 0;
     if (merchandiseRmb <= 0) {
-      throw new BadRequestException(`Linha ${row.row_no} 缺少货值：请补充单价或总价后重新计算清关金额`);
+      throw new BadRequestException(`Linha ${row.row_no} sem valor da mercadoria: informe o preço unitário ou total e recalcule a DI`);
     }
     const share = cbmTotal > 0 ? (Number(row.total_cbm) || 0) / cbmTotal
       : gwTotal > 0 ? (Number(row.total_gw) || 0) / gwTotal
@@ -77,15 +113,22 @@ export function calculateDi(order: any, suggestions: any[], parameters: DiParame
   });
 
   const sum = (key: string) => round(items.reduce((total: number, item: any) => total + item[key], 0));
+  const fees = normalizeAdditionalFees(additionalFees);
+  const additionalTotal = round(fees.reduce((total, fee) => total + fee.amount_brl, 0));
+  const importTaxes = sum('di_brl');
   return {
     status: 'draft',
     parameters: { rmb_brl: rmbBrl, insurance_brl: insuranceTotal, icms_rate: icmsRate, uf, freight_brl: freightTotal },
     items,
+    additional_fees: fees,
     totals: {
       merchandise_rmb: sum('merchandise_rmb'), merchandise_brl: sum('merchandise_brl'),
       freight_brl: sum('freight_brl'), insurance_brl: sum('insurance_brl'), cif_brl: sum('cif_brl'),
       ii_brl: sum('ii_brl'), ipi_brl: sum('ipi_brl'), pis_brl: sum('pis_brl'),
-      cofins_brl: sum('cofins_brl'), icms_brl: sum('icms_brl'), di_brl: sum('di_brl')
+      cofins_brl: sum('cofins_brl'), icms_brl: sum('icms_brl'),
+      import_taxes_brl: importTaxes,
+      additional_fees_brl: additionalTotal,
+      di_brl: round(importTaxes + additionalTotal)
     },
     created_at: new Date().toISOString()
   };

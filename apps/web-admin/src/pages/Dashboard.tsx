@@ -76,7 +76,7 @@ export default function Dashboard() {
         <div className="stat-card">
           <span className="label">内部员工</span>
           <span className="value">{stats.staff.total}</span>
-          <span className="delta">启用 {stats.staff.active}（operator + sales）</span>
+          <span className="delta">启用 {stats.staff.active}（operator + sales + customs）</span>
         </div>
         <div className="stat-card">
           <span className="label">已成交（won）</span>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api, useAuth } from '../store/auth';
 import PriceReferenceNote from '../components/PriceReferenceNote';
 
@@ -30,7 +31,7 @@ export default function Home() {
       setOrders(orderRes.data || []);
       setProfile(profileRes.data);
       setCnpjs(cnpjRes.data || []);
-    }).catch(e => setErr(e?.response?.data?.message || '首页数据加载失败')).finally(() => setLoading(false));
+    }).catch(e => setErr(getApiErrorMessage(e, '首页数据加载失败'))).finally(() => setLoading(false));
   }, []);
 
   const sorted = useMemo(() => [...orders].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))), [orders]);

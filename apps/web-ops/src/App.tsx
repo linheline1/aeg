@@ -10,6 +10,8 @@ import Images from './pages/Images';
 import Template from './pages/Template';
 import Finance from './pages/Finance';
 import Help from './pages/Help';
+import Products from './pages/Products';
+import Profile from './pages/Profile';
 import { useAuth } from './store/auth';
 
 /** 无权访问提示页（顶层路由，避免守卫重定向死循环） */
@@ -76,6 +78,14 @@ export default function App() {
           }
         />
         <Route
+          path="products"
+          element={
+            <RequireAuth allowedRole={['operator', 'admin']}>
+              <Products />
+            </RequireAuth>
+          }
+        />
+        <Route
           path="template"
           element={
             <RequireAuth allowedRole={['operator', 'admin']}>
@@ -93,6 +103,7 @@ export default function App() {
         />
         <Route path="help" element={<Help />} />
         <Route path="help/:slug" element={<Help />} />
+        <Route path="profile" element={<Profile />} />
         <Route path="*" element={<Navigate to={home} replace />} />
       </Route>
     </Routes>

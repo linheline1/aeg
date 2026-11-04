@@ -17,7 +17,8 @@
     "paths": {
       "@aeg/shared-types": ["packages/shared-types/src/index.ts"],
       "@aeg/shared-types/*": ["packages/shared-types/src/*"],
-      "@aeg/excel-utils": ["packages/excel-utils/src/index.ts"]
+      "@aeg/excel-utils": ["packages/excel-utils/src/index.ts"],
+      "@aeg/web-shared/*": ["packages/web-shared/src/*"]
     }
   },
   "exclude": ["node_modules", "dist", "build"]

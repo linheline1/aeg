@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AEG 管理</string>
+    <string name="title_activity_main">AEG 管理</string>
+    <string name="package_name">br.com.linsgeekai.aeg.admin</string>
+    <string name="custom_url_scheme">br.com.linsgeekai.aeg.admin</string>
+</resources>

@@ -8,7 +8,7 @@ import { assertValidPassword } from '../common/password-policy';
 import { QuotesRepo, ClientRepo, AuditRepo } from '../common/mock-db';
 
 /** 内部员工角色（不含 client） */
-const STAFF_ROLES = ['admin', 'operator', 'sales'];
+const STAFF_ROLES = ['admin', 'operator', 'sales', 'customs'];
 
 @Controller('admin/staff')
 @UseGuards(AuthGuard, RolesGuard)
@@ -34,7 +34,7 @@ export class StaffController {
     const clientSales: Record<string, string | null> = {};
     clients.forEach((c: any) => { clientSales[c.id] = c.salesperson_id || null; });
 
-    const order: Record<string, number> = { admin: 0, operator: 1, sales: 2 };
+    const order: Record<string, number> = { admin: 0, operator: 1, sales: 2, customs: 3 };
     return users
       .filter((u: any) => STAFF_ROLES.includes(u.role))
       .map((u: any) => ({
@@ -54,7 +54,7 @@ export class StaffController {
         order[a.role] - order[b.role] || a.username.localeCompare(b.username));
   }
 
-  /** 新建员工：报价员 / 业务员，创建后即可用自己的账号登录运营端 */
+  /** 新建内部员工，报关行账号登录独立葡语端口 */
   @Post()
   @HttpCode(200)
   async create(
@@ -65,8 +65,8 @@ export class StaffController {
     const password = body.password || '';
     const role = body.role;
 
-    if (!['operator', 'sales'].includes(role as string)) {
-      throw new BadRequestException('员工角色只能是报价员（operator）或业务员（sales）');
+    if (!['operator', 'sales', 'customs'].includes(role as string)) {
+      throw new BadRequestException('员工角色只能是报价员（operator）、业务员（sales）或报关行（customs）');
     }
     if (!username) throw new BadRequestException('登录账号不能为空');
     if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username)) {
@@ -80,7 +80,7 @@ export class StaffController {
     const user = await this.userRepo.insert({
       username,
       password_hash: await bcrypt.hash(password, 12),
-      role: role as 'operator' | 'sales',
+      role: role as 'operator' | 'sales' | 'customs',
       status: 'active'
     });
 

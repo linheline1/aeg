@@ -65,7 +65,14 @@ export class OpsUploadController {
         };
       }
       const computed = await this.quoteService.computeOrder(result.quote_id, actor);
-      return { ...result, ...computed, quote_id: result.quote_id, status: 'done', price_is_reference: true };
+      return {
+        ...result,
+        ...computed,
+        quote_id: result.quote_id,
+        status: 'done',
+        price_is_reference: true,
+        message: '参考 DDP 已生成；报关行批准当前 DI 版本后才能标记成交'
+      };
     } catch (e) {
       try { fs.unlinkSync(file.path); } catch { /* 临时文件可能已清理 */ }
       throw e;

@@ -101,7 +101,7 @@ export function calculateDdpPricing(input: DdpPricingInput): {
       items: [
         { code: 'OCEAN_FREIGHT', name: '国际海运费', amount: oceanFreightBrl, note: `USD${oceanFreightUsd}/柜 × 汇率 ${fxRate}` },
         { code: 'PORT_FEE_ORIGIN', name: '其他成本费用（起运港）', amount: portFeeBrl, note: '单证 + 码头 + 拖车 + 操作' },
-        { code: 'BR_IMPORT_DI', name: '巴西进口税费预估（DI）', amount: di, note: 'AI NCM 税率经系统计算，运营复核后确认' },
+        { code: 'BR_IMPORT_DI', name: '巴西进口税费预估（DI）', amount: di, note: 'AI NCM 税率经系统计算，报关行复核后确认' },
         {
           code: 'BR_SALES_TAX',
           name: `销售税务（${taxRateLabel}%）`,

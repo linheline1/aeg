@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
+import { downloadOrShareFile } from '@aeg/web-shared/file-actions';
 import { api, useAuth } from '../store/auth';
+
+interface CustomsReview {
+  status: 'pending' | 'approved' | 'changes_requested';
+  di_review_version: number | null;
+  total_di_brl: number | null;
+  note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+}
 
 interface OrderRow {
   id: string;
@@ -20,6 +31,7 @@ interface OrderRow {
   deal_note: string | null;
   created_at: string;
   has_file: boolean;
+  customs_review: CustomsReview | null;
 }
 
 interface Salesperson {
@@ -34,6 +46,7 @@ interface UploadResult {
   quote_id?: string;
   quote_no?: string;
   status?: string;
+  message?: string;
   total_amount_brl?: number;
   total_amount_usd?: number;
   total_amount_rmb?: number;
@@ -88,7 +101,7 @@ export default function Orders() {
     if (q) params.set('q', q);
     api.get(`/api/ops/orders?${params}`)
       .then(r => { setList(r.data.items); setTotal(r.data.total); })
-      .catch(e => setErr(e?.response?.data?.message || '加载失败'));
+      .catch(e => setErr(getApiErrorMessage(e, '加载失败')));
   };
 
   useEffect(() => {
@@ -109,7 +122,7 @@ export default function Orders() {
     if (!isSales) return;
     api.get('/api/ops/orders/clients/options')
       .then(r => setClients(r.data || []))
-      .catch(e => setErr(e?.response?.data?.message || '客户列表加载失败'));
+      .catch(e => setErr(getApiErrorMessage(e, '客户列表加载失败')));
     api.get('/api/client/template/current')
       .then(r => setTemplateUrl(r.data.download_url || ''))
       .catch(() => setTemplateUrl(''));
@@ -119,12 +132,7 @@ export default function Orders() {
     if (!templateUrl) return;
     try {
       const r = await api.get(templateUrl, { responseType: 'blob' });
-      const url = URL.createObjectURL(r.data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = '巴西整柜装箱清单_模板.xlsx';
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadOrShareFile(r.data, '巴西整柜装箱清单_模板.xlsx');
     } catch { setErr('模板下载失败'); }
   };
 
@@ -147,12 +155,16 @@ export default function Orders() {
         reload();
       }
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '上传报价失败');
+      setErr(getApiErrorMessage(e, '上传报价失败'));
     } finally { setUploading(false); }
   };
 
   /** M4 成交标记：won/lost/open（未成交可选填原因） */
   const markDeal = async (o: OrderRow, next: 'won' | 'lost' | 'open') => {
+    if (next === 'won' && o.customs_review?.status !== 'approved') {
+      alert('需由报关行批准当前 DI 版本后才能标记成交');
+      return;
+    }
     let note: string | undefined;
     if (next === 'lost') {
       note = window.prompt('未成交原因（可选，将记入审计日志）：') ?? undefined;
@@ -165,7 +177,7 @@ export default function Orders() {
       });
       reload();
     } catch (e: any) {
-      alert(e?.response?.data?.message || '操作失败');
+      alert(getApiErrorMessage(e, '操作失败'));
     } finally {
       setBusyId(null);
     }
@@ -180,7 +192,7 @@ export default function Orders() {
       });
       reload();
     } catch (e: any) {
-      alert(e?.response?.data?.message || '分配失败');
+      alert(getApiErrorMessage(e, '分配失败'));
       reload();
     } finally {
       setBusyId(null);
@@ -193,7 +205,7 @@ export default function Orders() {
       await api.post(`/api/ops/orders/${o.id}/compute`);
       reload();
     } catch (e: any) {
-      alert(e?.response?.data?.message || '核算失败');
+      alert(getApiErrorMessage(e, '核算失败'));
     } finally {
       setBusyId(null);
     }
@@ -222,7 +234,7 @@ export default function Orders() {
             <p className="muted">暂无可上传的客户，请联系管理员先分配客户归属。</p>
           ) : (
             <form onSubmit={uploadQuote}>
-              <div className="row gap-md" style={{ flexWrap: 'wrap' }}>
+              <div className="row gap-md order-upload-controls" style={{ flexWrap: 'wrap' }}>
                 <select className="form-input" style={{ width: 260 }} value={clientId} disabled={uploading}
                   onChange={e => setClientId(e.target.value)}>
                   <option value="">请选择客户</option>
@@ -252,6 +264,7 @@ export default function Orders() {
               {uploadResult.pricing_breakdown && <div className="text-sm" style={{ marginTop: 6 }}>
                 {uploadResult.pricing_breakdown.items.map(item => <div key={item.code}>{item.name}：R$ {brl(item.amount)}</div>)}
               </div>}
+              {uploadResult.message && <div style={{ marginTop: 6 }}>{uploadResult.message}</div>}
               <div className="text-sm" style={{ marginTop: 6 }}>客户侧展示为参考预估，最终价格以运营确认后为准。</div>
             </div>
           )}
@@ -260,7 +273,7 @@ export default function Orders() {
 
       <div className="card" style={{ marginBottom: 12, padding: 12 }}>
         <form
-          className="row gap-md"
+          className="row gap-md order-filters"
           onSubmit={e => { e.preventDefault(); setPage(1); setQ(keyword.trim()); }}
         >
           <select
@@ -291,13 +304,14 @@ export default function Orders() {
       </div>
 
       {list && (
-        <div className="card table-wrap">
-          <table className="table">
+        <div className="card table-wrap orders-table-wrap">
+          <table className="table orders-table">
             <thead>
               <tr>
                 <th>报价号</th>
                 <th>客户</th>
                 <th>状态</th>
+                <th>报关审核</th>
                 <th>BRL 合计</th>
                 <th>成交状态</th>
                 {!isSales && <th>业务员</th>}
@@ -311,9 +325,10 @@ export default function Orders() {
                 const dealCls = o.deal_status === 'won' ? 'deal-won'
                   : o.deal_status === 'lost' ? 'deal-lost'
                   : o.deal_status === 'open' ? 'deal-open' : 'deal-none';
+                const customsApproved = o.customs_review?.status === 'approved';
                 return (
                   <tr key={o.id} className={busyId === o.id ? 'row-editing' : ''}>
-                    <td>
+                    <td data-label="报价号">
                       <div>
                         {isSales ? (
                           <strong>{o.quote_no}</strong>
@@ -330,12 +345,7 @@ export default function Orders() {
                             e.preventDefault();
                             try {
                               const r = await api.get(`/api/ops/orders/${o.id}/file`, { responseType: 'blob' });
-                              const url = URL.createObjectURL(r.data);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = o.input_file_name || `${o.quote_no}.xlsx`;
-                              a.click();
-                              URL.revokeObjectURL(url);
+                              await downloadOrShareFile(r.data, o.input_file_name || `${o.quote_no}.xlsx`);
                             } catch {
                               alert('原文件下载失败');
                             }
@@ -345,10 +355,28 @@ export default function Orders() {
                         </a>
                       )}
                     </td>
-                    <td>{o.client_name}</td>
-                    <td><span className={`status-${o.status}`}>{STATUS_CN[o.status] || o.status}</span></td>
-                    <td className="amt">R$ {brl(o.total_amount_brl)}</td>
-                    <td>
+                    <td data-label="客户">{o.client_name}</td>
+                    <td data-label="状态"><span className={`status-${o.status}`}>{STATUS_CN[o.status] || o.status}</span></td>
+                    <td data-label="报关审核">
+                      {o.customs_review ? (
+                        <div>
+                          <span className={`deal-tag ${o.customs_review.status === 'approved' ? 'deal-won' : o.customs_review.status === 'changes_requested' ? 'deal-lost' : 'deal-open'}`}>
+                            {o.customs_review.status === 'pending'
+                              ? '等待报关行'
+                              : o.customs_review.status === 'approved'
+                                ? `已批准${o.customs_review.di_review_version != null ? ` v${o.customs_review.di_review_version}` : ''}`
+                                : '需修改'}
+                          </span>
+                          {o.customs_review.status === 'changes_requested' && o.customs_review.note && (
+                            <div className="muted" style={{ fontSize: 11, maxWidth: 160, marginTop: 4 }} title={o.customs_review.note}>
+                              {o.customs_review.note}
+                            </div>
+                          )}
+                        </div>
+                      ) : <span className="muted" style={{ fontSize: 12 }}>未提交</span>}
+                    </td>
+                    <td data-label="BRL 合计" className="amt">R$ {brl(o.total_amount_brl)}</td>
+                    <td data-label="成交状态">
                       {o.status === 'done' ? (
                         <div>
                           <span className={`deal-tag ${dealCls}`}>{dealCn}</span>
@@ -365,7 +393,11 @@ export default function Orders() {
                           >
                             <option value="">未标记</option>
                             <option value="open">跟进中</option>
-                            <option value="won">已成交</option>
+                            <option
+                              value="won"
+                              disabled={!customsApproved}
+                              title={customsApproved ? '标记已成交' : '需由报关行批准当前 DI 版本后才能标记成交'}
+                            >已成交</option>
                             <option value="lost">未成交</option>
                           </select>
                           {o.deal_note && (
@@ -379,7 +411,7 @@ export default function Orders() {
                       )}
                     </td>
                     {!isSales && (
-                      <td>
+                      <td data-label="业务员">
                         <select
                           className="form-input form-input-sm"
                           style={{ width: 110 }}
@@ -395,9 +427,9 @@ export default function Orders() {
                         </select>
                       </td>
                     )}
-                    <td className="muted" style={{ fontSize: 12 }}>{o.created_at.slice(0, 16).replace('T', ' ')}</td>
+                    <td data-label="创建时间" className="muted" style={{ fontSize: 12 }}>{o.created_at.slice(0, 16).replace('T', ' ')}</td>
                     {!isSales && (
-                      <td className="actions-col">
+                      <td data-label="操作" className="actions-col">
                         <div className="row-actions">
                           <Link to={`/orders/${o.id}`}>查看</Link>
                           {COMPUTABLE.has(o.status) && (
@@ -417,7 +449,7 @@ export default function Orders() {
       {list && list.length === 0 && <div className="card"><p className="muted">没有符合条件的订单</p></div>}
 
       {total > 0 && (
-        <div className="row gap-md" style={{ justifyContent: 'flex-end', alignItems: 'center', marginTop: 12 }}>
+        <div className="row gap-md pagination" style={{ justifyContent: 'flex-end', alignItems: 'center', marginTop: 12 }}>
           <span className="muted text-sm">第 {page} / {Math.max(1, Math.ceil(total / pageSize))} 页</span>
           <button className="btn btn-sm btn-ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button>
           <button

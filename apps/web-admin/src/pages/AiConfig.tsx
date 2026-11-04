@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 
 interface AiConfig {
@@ -58,7 +59,7 @@ export default function AiConfigPage() {
       setTimeoutMs(c.timeout_ms);
       setMeta({ has_api_key: c.has_api_key, api_key_masked: c.api_key_masked, updated_by: c.updated_by, updated_at: c.updated_at });
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '加载失败');
+      setErr(getApiErrorMessage(e, '加载失败'));
     } finally { setLoading(false); }
   };
 
@@ -80,7 +81,7 @@ export default function AiConfigPage() {
       setMsg('✅ 已保存，AI 功能将立即使用新配置');
       setTimeout(() => setMsg(null), 3000);
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '保存失败');
+      setErr(getApiErrorMessage(e, '保存失败'));
     } finally { setSaving(false); }
   };
 

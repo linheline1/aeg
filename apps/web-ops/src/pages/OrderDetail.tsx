@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../store/auth';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
+import { downloadOrShareFile } from '@aeg/web-shared/file-actions';
 
 interface FeeItem { code: string; name: string; amount: number; note?: string; }
 
@@ -28,6 +30,15 @@ interface PricingBreakdown extends BreakdownMeta {
   meta?: BreakdownMeta | null;
 }
 
+interface CustomsReview {
+  status: 'pending' | 'approved' | 'changes_requested';
+  di_review_version: number | null;
+  total_di_brl: number | null;
+  note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+}
+
 interface OrderDetail {
   id: string; quote_no: string; client_id: string; template_version: string; status: string;
   input_file_name: string | null; total_rows?: number; valid_rows?: number;
@@ -44,6 +55,7 @@ interface OrderDetail {
   line_items?: any[] | null;
   declared_currency?: 'RMB' | 'USD';
   di_analysis?: any;
+  customs_review: CustomsReview | null;
   /** M7：国际物流（成交走柜后运营维护） */
   shipment?: {
     vessel?: string | null; voyage?: string | null; bill_no?: string | null; container_no?: string | null;
@@ -71,7 +83,8 @@ const FIELD_LABELS: Record<string, string> = {
   product_en: '品名 EN', hs_code: 'HS Code', cartons: '箱数', pcs_per_carton: '件数/箱',
   total_pcs: '总件数', nw_per_carton: '净重/箱', gw_per_carton: '毛重/箱', total_gw: '总毛重',
   length_cm: '长 cm', width_cm: '宽 cm', height_cm: '高 cm', unit_cbm: '体积 CBM',
-  unit_price: '单价 RMB', material: '材质', destination: '目的地', remark: '备注'
+  unit_price: '计价单价 RMB', base_unit_price: '原单价 RMB',
+  material: '材质', destination: '目的地', remark: '备注'
 };
 
 const STATUS_CN: Record<string, string> = {
@@ -116,6 +129,8 @@ export default function OrderDetail() {
   const [shots, setShots] = useState<any[]>([]);
   const [shotThumbs, setShotThumbs] = useState<Record<string, string>>({});
   const [shotPreview, setShotPreview] = useState<{ url: string; name: string } | null>(null);
+  const [adjPct, setAdjPct] = useState<Record<number, string>>({});
+  const [priceBusyRow, setPriceBusyRow] = useState<number | null>(null);
   // M7：国际物流（基本信息表单 + 节点添加表单）
   const [shipForm, setShipForm] = useState({
     vessel: '', voyage: '', bill_no: '', container_no: '',
@@ -227,7 +242,7 @@ export default function OrderDetail() {
           });
         }).catch(() => {});
       }
-    }).catch(e => setErr(e?.response?.data?.message || e?.message));
+    }).catch(e => setErr(getApiErrorMessage(e)));
   };
 
   useEffect(() => {
@@ -249,17 +264,52 @@ export default function OrderDetail() {
     return typeof v === 'number' && Number.isFinite(v) ? v : null;
   };
 
+  const currentCustomsApproved = d?.customs_review?.status === 'approved'
+    && d.customs_review.di_review_version != null
+    && d.customs_review.di_review_version === d.di_analysis?.review_version;
+  const customsApprovalHint = '需由报关行批准当前 DI 版本后才能进行此操作';
+  const checkCurrentCustomsApproval = (action: string) => {
+    if (currentCustomsApproved) return true;
+    setErr(`报关行尚未批准当前 DI 版本，不能${action}`);
+    return false;
+  };
+
   /** M3：按费率表核算并发布（uploaded/pending_fee/failed → computing → done） */
   const handleCompute = async () => {
-    if (diAmountOf(d) == null) { setErr('请先生成并复核 DI（NCM / DI 进口税费预估）后再核算发布'); return; }
+    if (diAmountOf(d) == null) { setErr('请先生成 DI（NCM / DI 进口税费预估）后再核算参考 DDP'); return; }
     setBusy(true); setErr(null);
     try {
       const r = await api.post(`/api/ops/orders/${id}/compute`, {});
       flashMsg(`✅ 核算完成 ${r.data.quote_no} → R$ ${r.data.total_amount_brl?.toFixed(2)}`);
       load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message);
+      setErr(getApiErrorMessage(e));
     } finally { setBusy(false); }
+  };
+
+  const handleAdjustPrice = async (rowNo: number) => {
+    const raw = (adjPct[rowNo] || '').trim();
+    const pct = Number(raw);
+    if (!raw || !Number.isFinite(pct) || pct <= 0 || pct > 10000) {
+      flashMsg('请输入大于 0 的计价百分比，例如 30 表示按原单价的 30% 计价');
+      return;
+    }
+    setPriceBusyRow(rowNo); setErr(null);
+    try {
+      const r = await api.patch(`/api/ops/orders/${id}/line-items/${rowNo}/price`, { percent: pct });
+      const parts = [`行 ${rowNo}：原价 ¥${r.data.base_unit_price} × ${pct}% = ¥${r.data.unit_price}`];
+      parts.push(`行总价 ¥${r.data.total_price}；整柜货值 ¥${r.data.total_amount_rmb}`);
+      if (r.data.total_amount_brl != null) {
+        parts.push(`参考 DDP R$ ${Number(r.data.total_amount_brl).toFixed(2)}；请等待报关行重新确认`);
+      } else {
+        parts.push('订单已回到「已上传」，请重新核算发布');
+      }
+      flashMsg(parts.join(' · '));
+      setAdjPct(prev => ({ ...prev, [rowNo]: '' }));
+      await load();
+    } catch (e: any) {
+      setErr(getApiErrorMessage(e));
+    } finally { setPriceBusyRow(null); }
   };
 
   /** M3：手动流转（标记失败 / 失败重开） */
@@ -271,12 +321,12 @@ export default function OrderDetail() {
       flashMsg(next === 'failed' ? '已标记失败' : '已重新开启核算');
       load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message);
+      setErr(getApiErrorMessage(e));
     } finally { setBusy(false); }
   };
 
   const handleRecompute = async () => {
-    if (diAmountOf(d) == null) { setErr('请先生成并复核 DI（NCM / DI 进口税费预估）后再重新计算'); return; }
+    if (diAmountOf(d) == null) { setErr('请先生成 DI（NCM / DI 进口税费预估）后再重新计算参考 DDP'); return; }
     setSaving(true); setErr(null);
     try {
       const r = await api.patch(`/api/ops/orders/${id}/fees`, {
@@ -299,7 +349,7 @@ export default function OrderDetail() {
         updated_at: new Date().toISOString()
       } : prev);
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message);
+      setErr(getApiErrorMessage(e));
     } finally { setSaving(false); }
   };
 
@@ -307,9 +357,7 @@ export default function OrderDetail() {
     if (!d) return;
     try {
       const r = await api.get(`/api/ops/orders/${id}/file`, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([r.data as any]));
-      const a = document.createElement('a'); a.href = url; a.download = d.input_file_name || `${d.quote_no}.xlsx`;
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      await downloadOrShareFile(r.data, d.input_file_name || `${d.quote_no}.xlsx`);
     } catch (e: any) { alert('下载失败: ' + (e?.response?.data?.message || e?.message)); }
   };
 
@@ -327,7 +375,7 @@ export default function OrderDetail() {
       const r = await api.post(`/api/ops/orders/${id}/di/analyze`, diPayload());
       setDi(r.data);
       setD(prev => prev ? { ...prev, di_analysis: r.data } : prev);
-      flashMsg('✅ AI NCM 分析与 DI 计算完成，请核对后确认');
+      flashMsg('✅ AI NCM 分析与 DI 计算完成，请核对后保存 DI 版本');
     } catch (e: any) { setErr(e?.response?.data?.message || e?.message || 'NCM 分析失败'); }
     finally { setDiBusy(false); }
   };
@@ -347,10 +395,21 @@ export default function OrderDetail() {
         items: di?.items || []
       });
       setDi(r.data);
-      setD(prev => prev ? { ...prev, di_analysis: r.data } : prev);
+      setD(prev => prev ? {
+        ...prev,
+        di_analysis: r.data,
+        customs_review: {
+          status: 'pending',
+          di_review_version: r.data.review_version,
+          total_di_brl: r.data.totals?.di_brl ?? null,
+          note: null,
+          reviewed_by: null,
+          reviewed_at: null
+        }
+      } : prev);
       loadDiVersions();
-      flashMsg(`✅ NCM 与 DI 已复核确认，已保存版本 v${r.data.review_version}`);
-    } catch (e: any) { setErr(e?.response?.data?.message || e?.message || 'DI 确认失败'); }
+      flashMsg(`✅ 已保存 DI 版本 v${r.data.review_version}，可生成参考 DDP；报关行批准后才能标记成交`);
+    } catch (e: any) { setErr(e?.response?.data?.message || e?.message || 'DI 版本保存失败'); }
     finally { setDiBusy(false); }
   };
 
@@ -368,7 +427,7 @@ export default function OrderDetail() {
     setDiBusy(true); setErr(null);
     try {
       const r = await api.post(`/api/ops/orders/${id}/di/ddp`);
-      flashMsg(`✅ 已按 ${di?.review_version ? `DI 复核版本 v${di.review_version}` : '历史 DI 复核'} + 默认运费生成 DDP：R$ ${r.data.total_amount_brl?.toFixed(2)}`);
+      flashMsg(`✅ 已按 DI 版本 v${di?.review_version} + 默认运费生成参考 DDP：R$ ${r.data.total_amount_brl?.toFixed(2)}`);
       load();
     } catch (e: any) { setErr(e?.response?.data?.message || e?.message || 'DDP 生成失败'); }
     finally { setDiBusy(false); }
@@ -376,6 +435,7 @@ export default function OrderDetail() {
 
   /** M4：成交标记（won/lost/open） */
   const handleDeal = async (next: 'won' | 'lost' | 'open') => {
+    if (next === 'won' && !checkCurrentCustomsApproval('标记成交')) return;
     let note: string | undefined;
     if (next === 'lost') {
       note = window.prompt('未成交原因（可选，将记入审计日志）：') ?? undefined;
@@ -389,7 +449,7 @@ export default function OrderDetail() {
       flashMsg(next === 'won' ? '✅ 已标记成交' : next === 'lost' ? '已标记未成交' : '已恢复跟进中');
       load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message);
+      setErr(getApiErrorMessage(e));
     } finally { setBusy(false); }
   };
 
@@ -401,7 +461,7 @@ export default function OrderDetail() {
       flashMsg('✅ 业务员已更新');
       load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message);
+      setErr(getApiErrorMessage(e));
       load();
     } finally { setBusy(false); }
   };
@@ -414,7 +474,7 @@ export default function OrderDetail() {
       flashMsg('✅ 物流信息已保存');
       load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message);
+      setErr(getApiErrorMessage(e));
     } finally { setShipSaving(false); }
   };
 
@@ -433,7 +493,7 @@ export default function OrderDetail() {
       setEvForm({ stage: evForm.stage, at: '', note: '' });
       load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message);
+      setErr(getApiErrorMessage(e));
     } finally { setShipBusy(false); }
   };
 
@@ -450,7 +510,7 @@ export default function OrderDetail() {
       setEvForm({ stage: evNextStage, at: '', note: '' });
       load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message);
+      setErr(getApiErrorMessage(e));
     } finally { setShipBusy(false); }
   };
 
@@ -463,7 +523,7 @@ export default function OrderDetail() {
       flashMsg('物流节点已删除');
       load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message);
+      setErr(getApiErrorMessage(e));
     } finally { setShipBusy(false); }
   };
 
@@ -492,7 +552,7 @@ export default function OrderDetail() {
       setPickFiles([]); setFileNote('');
       loadFiles();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message);
+      setErr(getApiErrorMessage(e));
     } finally { setFileBusy(false); }
   };
 
@@ -504,16 +564,14 @@ export default function OrderDetail() {
       flashMsg('文件已删除');
       loadFiles();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message);
+      setErr(getApiErrorMessage(e));
     } finally { setFileBusy(false); }
   };
 
   const doFileDownload = async (f: any) => {
     try {
       const r = await api.get(`/api/ops/files/${f.id}/file`, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([r.data as any], { type: f.mime_type }));
-      const a = document.createElement('a'); a.href = url; a.download = f.file_name;
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      await downloadOrShareFile(new Blob([r.data], { type: f.mime_type }), f.file_name);
     } catch (e: any) { alert('下载失败: ' + (e?.response?.data?.message || e?.message)); }
   };
 
@@ -537,7 +595,7 @@ export default function OrderDetail() {
   const previewTotal = Math.round((previewSalesTaxBrl + (diBrl ?? 0) + previewOceanBrl + previewPortBrl + fees.profit_brl) * 100) / 100;
   const prevTotal = d.pricing_breakdown?.total ?? d.total_amount_brl ?? 0;
   const diff = Math.round((previewTotal - prevTotal) * 100) / 100;
-  const noDiHint = '请先生成 DI（NCM / DI 进口税费预估），再按销售税基和利润计算参考 DDP';
+  const noDiHint = '请先生成 DI（NCM / DI 进口税费预估）后再计算参考 DDP';
 
   // line_items 的字段（取第一个 row 的 keys 做表头）
   const liKeys: string[] = (d.line_items?.[0] && typeof d.line_items[0] === 'object')
@@ -585,7 +643,7 @@ export default function OrderDetail() {
   );
 
   return (
-    <>
+    <div className="order-detail">
       <div className="page-title">
         <h1>
           <Link to="/orders" className="btn-link">← 返回</Link> &nbsp;
@@ -600,21 +658,50 @@ export default function OrderDetail() {
       {flash && <div className="alert alert-ok">{flash}</div>}
       {err && <div className="alert alert-err">❌ {err}</div>}
 
+      <div className={`alert ${currentCustomsApproved ? 'alert-ok' : 'alert-warn'}`}>
+        <strong>
+          报关审核：{!d.customs_review
+            ? '尚未提交'
+            : d.customs_review.status === 'pending'
+              ? '等待报关行'
+              : d.customs_review.status === 'changes_requested'
+                ? '需修改'
+                : `已批准${d.customs_review.di_review_version != null ? ` v${d.customs_review.di_review_version}` : ''}`}
+        </strong>
+        {d.customs_review?.status === 'approved' && !currentCustomsApproved && (
+          <span style={{ marginLeft: 8 }}>批准版本与当前 DI 版本不匹配，需重新提交报关行审核。</span>
+        )}
+        {(d.customs_review?.reviewed_by || d.customs_review?.reviewed_at) && (
+          <div className="text-sm" style={{ marginTop: 4 }}>
+            复核人：{d.customs_review.reviewed_by || '—'}
+            {d.customs_review.reviewed_at && ` · ${d.customs_review.reviewed_at.slice(0, 16).replace('T', ' ')}`}
+          </div>
+        )}
+        {d.customs_review?.status === 'changes_requested' && d.customs_review.note && (
+          <div style={{ marginTop: 4 }}>需修改备注：{d.customs_review.note}</div>
+        )}
+      </div>
+
       {/* M3 状态机工作条 */}
       {COMPUTABLE.has(d.status) && (
-        <div className="alert alert-warn row-between" style={{ alignItems: 'center' }}>
+        <div className="alert alert-warn row-between order-workbar" style={{ alignItems: 'center' }}>
           <div>
             <strong>{d.status === 'failed' ? '⚠️ 该订单已标记失败' : '⏳ 该订单待核算'}</strong>
             <span className="text-sm" style={{ marginLeft: 8 }}>
               {d.status === 'failed'
                 ? (d.error_message || '可修改费率后重新核算')
                 : !hasDi
-                  ? '尚未生成 DI，需先生成并复核 DI 再按税率与利润核算发布'
-                  : '客户上传后等待运营按费率表与 DI 核算，核算完成前客户端不可见'}
+                  ? '尚未生成 DI，请先生成 NCM / DI 进口税费预估'
+                  : '可按费率表生成参考 DDP；报关行批准仅影响最终成交'}
             </span>
           </div>
           <div className="row gap-sm">
-            <button className="btn" disabled={busy || !hasDi} onClick={handleCompute} title={hasDi ? undefined : noDiHint}>
+            <button
+              className="btn"
+              disabled={busy || !hasDi}
+              onClick={handleCompute}
+              title={!hasDi ? noDiHint : undefined}
+            >
               {busy ? '处理中…' : '⚡ 按费率表核算并发布'}
             </button>
             {d.status !== 'failed'
@@ -626,7 +713,7 @@ export default function OrderDetail() {
 
       {/* M4 成交状态工作条：仅 done 报价可标记 */}
       {d.status === 'done' && (
-        <div className="alert alert-warn row-between" style={{ alignItems: 'center' }}>
+        <div className="alert alert-warn row-between order-workbar" style={{ alignItems: 'center' }}>
           <div>
             <strong>🤝 成交跟进</strong>
             <span className="text-sm" style={{ marginLeft: 8 }}>
@@ -649,7 +736,12 @@ export default function OrderDetail() {
           </div>
           <div className="row gap-sm">
             {d.deal_status !== 'won' && (
-              <button className="btn" disabled={busy} onClick={() => handleDeal('won')}>✅ 标记成交</button>
+              <button
+                className="btn"
+                disabled={busy || !currentCustomsApproved}
+                title={!currentCustomsApproved ? customsApprovalHint : undefined}
+                onClick={() => handleDeal('won')}
+              >✅ 标记成交</button>
             )}
             {d.deal_status !== 'lost' && (
               <button className="btn btn-ghost" disabled={busy} onClick={() => handleDeal('lost')}>✗ 标记未成交</button>
@@ -725,7 +817,7 @@ export default function OrderDetail() {
                   <td>巴西进口税费（DI）</td>
                   <td>
                     <span className="muted text-sm">
-                      只读 · 来源于订单 DI 分析{meta?.di_review_version ? `（已复核 v${meta.di_review_version}）` : ''}
+                      只读 · 来源于订单 DI 分析{meta?.di_review_version ? `（DI 版本 v${meta.di_review_version}）` : ''}
                     </span>
                   </td>
                   <td>{hasDi ? `R$ ${diBrl!.toFixed(2)}` : '未生成 DI'}</td>
@@ -863,7 +955,7 @@ export default function OrderDetail() {
             <button
               onClick={handleRecompute}
               disabled={saving || !hasDi}
-              title={hasDi ? '按当前参数重新计算并写回订单' : noDiHint}
+              title={!hasDi ? noDiHint : '按当前参数重新计算并写回订单'}
               className="btn btn-lg"
               style={{ background: hasDi ? '#2563eb' : undefined }}
             >
@@ -938,10 +1030,10 @@ export default function OrderDetail() {
                 ))}
               </select>
             )}
-            {di && <span className={`status-tag ${di.status === 'reviewed' ? 'status-done' : 'status-pending_fee'}`}>{di.status === 'reviewed' ? `已复核${di.review_version ? ` v${di.review_version}` : ''}` : '待复核'}</span>}
+            {di && <span className={`status-tag ${di.status === 'reviewed' ? 'status-done' : 'status-pending_fee'}`}>{di.status === 'reviewed' ? `已保存 DI 版本${di.review_version ? ` v${di.review_version}` : ''}` : '待保存 DI 版本'}</span>}
           </div>
         </div>
-        <div className="alert alert-warn">AI 仅用于检索和建议 NCM。请核对官方来源、NCM 与税率后再确认；进口税费由系统按固定公式预估，复核确认后才可生成参考 DDP 预估。客户端展示的 DDP 为参考预估，不构成最终报价。</div>
+        <div className="alert alert-warn">AI 仅用于检索和建议 NCM。请核对官方来源、NCM 与税率；进口税费由系统按固定公式预估，DI 即可生成参考 DDP。报关行批准当前 DI 版本后才可标记成交，客户端展示的 DDP 为参考预估，不构成最终报价。</div>
 
         {diHistory?.analysis && (
           <div style={{ marginTop: 16, padding: 16, border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb' }}>
@@ -988,7 +1080,7 @@ export default function OrderDetail() {
             </div>
           </div>
         )}
-        <div className="row gap-md" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div className="row gap-md di-params" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div className="form-row" style={{ margin: 0 }}><label>RMB → BRL 汇率</label><input className="form-input form-input-sm" style={{ width: 150 }} type="number" min="0" step="0.0001" value={diParams.rmb_brl} onChange={e => setDiParams({ ...diParams, rmb_brl: e.target.value })} placeholder="例如 0.78" /></div>
           <div className="form-row" style={{ margin: 0 }}><label>保险费（BRL）</label><input className="form-input form-input-sm" style={{ width: 140 }} type="number" min="0" step="0.01" value={diParams.insurance_brl} onChange={e => setDiParams({ ...diParams, insurance_brl: Number(e.target.value) })} /></div>
           <div className="form-row" style={{ margin: 0 }}><label>进口州 UF</label><input className="form-input form-input-sm" style={{ width: 80 }} maxLength={2} value={diParams.uf} onChange={e => setDiParams({ ...diParams, uf: e.target.value.toUpperCase() })} /></div>
@@ -1032,10 +1124,15 @@ export default function OrderDetail() {
                 <span className="muted text-sm">II {di.totals.ii_brl} · IPI {di.totals.ipi_brl} · PIS {di.totals.pis_brl} · COFINS {di.totals.cofins_brl} · ICMS {di.totals.icms_brl}</span>
                 <div style={{ fontSize: 20, marginTop: 6 }}><strong>进口税费预估合计：R$ {Number(di.totals.di_brl).toFixed(2)}</strong></div>
               </div>
-              <button className="btn" disabled={diBusy} onClick={handleDiReview}>{di.status === 'reviewed' ? '重新确认并保存新版本' : '核对无误，确认 NCM 与 DI'}</button>
-              <button className="btn btn-ghost" disabled={diBusy || di.status !== 'reviewed'} title={di.status !== 'reviewed' ? '请先复核确认当前 DI 草稿' : '按当前复核版本生成 DDP'} onClick={handleDiDdp}>用默认运费 + DI 进口税费预估生成 DDP</button>
+              <button className="btn" disabled={diBusy} onClick={handleDiReview}>保存 DI 版本</button>
+              <button
+                className="btn btn-ghost"
+                disabled={diBusy || di.status !== 'reviewed'}
+                title={di.status !== 'reviewed' ? '请先保存当前 DI 版本' : '按当前 DI 版本生成参考 DDP'}
+                onClick={handleDiDdp}
+              >用默认运费 + DI 进口税费预估生成 DDP</button>
             </div>
-            {di.reviewed_by && <p className="muted text-sm">复核人：{di.reviewed_by} · {di.reviewed_at?.slice(0, 16).replace('T', ' ')}</p>}
+            {di.reviewed_by && <p className="muted text-sm">DI 版本保存人：{di.reviewed_by} · {di.reviewed_at?.slice(0, 16).replace('T', ' ')}</p>}
           </>
         )}
       </div>
@@ -1206,7 +1303,7 @@ export default function OrderDetail() {
               客户尚未指定本订单的开票 CNPJ（可在订单详情页选择）。
             </p>
           )}
-          <div className="row gap-md" style={{ flexWrap: 'wrap' }}>
+          <div className="row gap-md order-file-upload" style={{ flexWrap: 'wrap' }}>
             <select className="form-input form-input-sm" style={{ width: 150 }} value={fileKind}
               disabled={fileBusy} onChange={e => setFileKind(e.target.value as any)}>
               <option value="clearance_shot">🖼 放行截图</option>
@@ -1253,7 +1350,7 @@ export default function OrderDetail() {
           <div className="card-title">
             <h3>📋 客户填写明细</h3>
             <span className="muted text-sm">
-              {d.line_items?.length || 0} 行 · {liKeys.length} 列{shots.length > 0 ? ` · 🖼 截图 ${shots.length} 张（按行对应）` : ''}
+              {d.line_items?.length || 0} 行 · {liKeys.length} 列{shots.length > 0 ? ` · 🖼 截图 ${shots.length} 张（按行对应）` : ''} · 可按行百分比计价（联动重算 DI/DDP）
             </span>
           </div>
           <div className="table-wrap">
@@ -1264,6 +1361,7 @@ export default function OrderDetail() {
                     <th style={{ width: 70 }}>Row</th>
                     {liKeys.map(k => <th key={k}>{FIELD_LABELS[k] || k}</th>)}
                     {shots.length > 0 && <th style={{ width: 150 }}>🖼 图片</th>}
+                    <th style={{ width: 160 }} title="新单价 = 原单价 × 自定义百分比；行总价和参考 DDP 自动重算">原单价计价 %</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1279,7 +1377,6 @@ export default function OrderDetail() {
                           )}
                         </td>
                       ))}
-                      {/* 图片列：该行对应的明细截图（按行号匹配） */}
                       {shots.length > 0 && (
                         <td style={{ verticalAlign: 'top', padding: 10 }}>
                           {(shotsByRow.get(Number(it.row_no)) || []).length > 0
@@ -1287,6 +1384,30 @@ export default function OrderDetail() {
                             : <span className="muted text-sm">—</span>}
                         </td>
                       )}
+                      <td style={{ verticalAlign: 'middle' }}>
+                        {Number(it.unit_price) > 0 ? (
+                          <span className="adj-cell">
+                            <input
+                              type="number" step="0.01" min={0.0001} max={10000}
+                              placeholder="%"
+                              aria-label={`第 ${it.row_no} 行原单价计价百分比`}
+                              title="新单价 = 原单价 × 百分比，例如原价 35 输入 30 → 10.5；100 = 恢复原价"
+                              value={adjPct[it.row_no] || ''}
+                              disabled={priceBusyRow !== null}
+                              onChange={e => setAdjPct(prev => ({ ...prev, [it.row_no]: e.target.value }))}
+                              onKeyDown={e => { if (e.key === 'Enter') handleAdjustPrice(Number(it.row_no)); }}
+                            />
+                            <button
+                              className="btn btn-sm"
+                              disabled={priceBusyRow !== null || !(adjPct[it.row_no] || '').trim()}
+                              title="应用计价并重新计算 DI / DDP"
+                              onClick={() => handleAdjustPrice(Number(it.row_no))}
+                            >{priceBusyRow === Number(it.row_no) ? '…' : '应用'}</button>
+                          </span>
+                        ) : (
+                          <span className="muted text-sm" title="该行无有效单价，无法按百分比调整">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                   {/* 行数据为空但存在截图：单行仅渲染图片单元格 */}
@@ -1294,6 +1415,7 @@ export default function OrderDetail() {
                     <tr>
                       <td colSpan={liKeys.length + 1} className="muted text-sm">无行数据</td>
                       <td style={{ verticalAlign: 'top', padding: 10 }}>{renderShots(shots)}</td>
+                      <td><span className="muted text-sm">—</span></td>
                     </tr>
                   )}
                 </tbody>
@@ -1323,6 +1445,6 @@ export default function OrderDetail() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

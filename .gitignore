@@ -41,5 +41,9 @@ deploy/*.tar.gz
 !.trae/ssh-deploy/
 .trae/backup-landing-20261029/
 
+# Local tooling / Android SDK / APK artifacts（不属于 Web monorepo 源码）
+.tooling/
+artifacts/
+
 # OS
 Thumbs.db

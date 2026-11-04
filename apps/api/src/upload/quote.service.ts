@@ -3,7 +3,7 @@ import ExcelJS from 'exceljs';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
-import { AuditRepo, FeeRatesRepo, QuotesRepo, ClientRepo, repoRoot } from '../common/mock-db';
+import { AuditRepo, FeeRatesRepo, QuotesRepo, ClientRepo, ImageRepo, repoRoot } from '../common/mock-db';
 import { AiConvertService } from '../convert/ai-convert.service';
 import { UploadDraftsRepo } from './upload-draft.repository';
 import { AiNcmService } from '../order/ai-ncm.service';
@@ -83,6 +83,7 @@ export interface UploadResult {
   converted_by_ai?: boolean;
   declared_currency?: 'RMB' | 'USD';
   ai_notes?: string;
+  embedded_image_count?: number;
 }
 
 /**
@@ -101,6 +102,7 @@ export class QuoteService {
     @Inject('FeeRatesRepo') private readonly feeRatesRepo: FeeRatesRepo,
     @Inject('AuditRepo') private readonly auditRepo: AuditRepo,
     @Inject('ClientRepo') private readonly clientRepo: ClientRepo,
+    @Inject('ImageRepo') private readonly imageRepo: ImageRepo,
     @Inject('UploadDraftsRepo') private readonly uploadDraftsRepo: UploadDraftsRepo,
     private readonly aiConvert: AiConvertService,
     private readonly aiNcm: AiNcmService
@@ -114,7 +116,7 @@ export class QuoteService {
   }
 
   /**
-   * 运营端参考 DDP 计算。必须已有 AI DI；未复核时可生成参考价，复核后记录版本。
+   * 运营端参考 DDP 计算。已有 DI 即可生成参考价，报关行批准仅限制最终成交。
    * 费率来源：客户覆盖 > 全局默认，overrides 仅作单次微调。
    */
   async computeOrder(
@@ -207,7 +209,11 @@ export class QuoteService {
       const order: any = await this.quotesRepo.findById(quoteId);
       if (!order) throw new NotFoundException('订单不存在');
       await this.quotesRepo.update(quoteId, {
-        di_analysis: { status: 'analyzing', stage: 'ncm', progress: 15, auto: true, started_at: startedAt }
+        di_analysis: { status: 'analyzing', stage: 'ncm', progress: 15, auto: true, started_at: startedAt },
+        customs_review: {
+          status: 'pending', di_review_version: null, total_di_brl: null,
+          note: null, reviewed_by: null, reviewed_at: null
+        }
       } as any);
       const suggestions = await this.aiNcm.suggest(order);
       await this.quotesRepo.update(quoteId, {
@@ -296,6 +302,77 @@ export class QuoteService {
       pricing_breakdown: pricing.breakdown,
       price_is_reference: true
     };
+  }
+
+  async adjustLineItemPrice(
+    quoteId: string,
+    rowNo: number,
+    percent: number,
+    actor: { username: string; role: string }
+  ) {
+    const order: any = await this.quotesRepo.findById(quoteId);
+    if (!order) throw new NotFoundException('订单不存在');
+    if (!Number.isInteger(rowNo) || rowNo < 1) throw new BadRequestException('明细行号无效');
+    if (!Number.isFinite(percent) || percent <= 0 || percent > 10000) {
+      throw new BadRequestException('计价百分比必须大于 0 且不超过 10000');
+    }
+    const lineItems = (order.line_items || []).map((item: any) => ({ ...item }));
+    const index = lineItems.findIndex((item: any) => Number(item.row_no) === rowNo);
+    if (index < 0) throw new NotFoundException('明细行不存在');
+    const item = lineItems[index];
+    const beforePrice = Number(item.unit_price);
+    const totalPcs = Number(item.total_pcs);
+    if (!Number.isFinite(beforePrice) || beforePrice <= 0) {
+      throw new BadRequestException('该行尚无有效单价，不能按百分比调整');
+    }
+    if (!Number.isFinite(totalPcs) || totalPcs <= 0) {
+      throw new BadRequestException('该行数量无效，不能计算总价');
+    }
+    if (lineItems.some((row: any) => !Number.isFinite(Number(row.unit_price)) || Number(row.unit_price) <= 0)) {
+      throw new BadRequestException('请先补齐所有产品的有效单价，再计算 DI 和参考 DDP');
+    }
+
+    // 按百分比计价：新单价 = 原始单价 × percent%（始终基于首次记录的原价，便于反复调整比例）
+    // 例：原价 ¥35 按 30% 计价 → ¥10.5，行总价 = ¥10.5 × 总件数
+    const basePrice = Number(item.base_unit_price) > 0 ? Number(item.base_unit_price) : beforePrice;
+    const nextPrice = Math.round(basePrice * percent / 100 * 1_000_000) / 1_000_000;
+    if (!Number.isFinite(nextPrice) || nextPrice <= 0) {
+      throw new BadRequestException('计价后单价必须大于 0');
+    }
+    item.base_unit_price = basePrice;
+    item.unit_price = nextPrice;
+    item.total_price = Math.round(nextPrice * totalPcs * 100) / 100;
+    const totalAmountRmb = Math.round(lineItems.reduce((sum: number, row: any) => sum + (Number(row.total_price) || 0), 0) * 100) / 100;
+    const updatedOrder = { ...order, line_items: lineItems, total_amount_rmb: totalAmountRmb };
+    const hasDi = order.di_analysis?.parameters && Array.isArray(order.di_analysis?.items) && order.di_analysis.items.length > 0;
+    const diAnalysis = hasDi
+      ? calculateDi(updatedOrder, order.di_analysis.items, order.di_analysis.parameters, order.di_analysis.additional_fees || [])
+      : null;
+
+    await this.quotesRepo.update(quoteId, {
+      line_items: lineItems,
+      total_amount_rmb: totalAmountRmb,
+      di_analysis: diAnalysis,
+      customs_review: {
+        status: 'pending', di_review_version: null,
+        total_di_brl: diAnalysis?.totals?.di_brl ?? null,
+        note: null, reviewed_by: null, reviewed_at: null
+      },
+      ...(hasDi ? {} : { status: 'uploaded', pricing_breakdown: null, total_amount_brl: null, total_amount_usd: null })
+    } as any);
+    const result = hasDi ? await this.recomputeBreakdown(quoteId, actor, {}) : { ok: true };
+    await this.auditRepo.entry({
+      actor_username: actor.username, actor_role: actor.role,
+      action: 'order.line_item.price', target_type: 'quote', target_id: quoteId,
+      detail: {
+        quote_no: order.quote_no, row_no: rowNo, percent,
+        base_unit_price: basePrice, before_unit_price: beforePrice, after_unit_price: nextPrice,
+        total_amount_rmb: totalAmountRmb,
+        di_brl: diAnalysis?.totals?.di_brl ?? null,
+        total_ddp_brl: (result as any).total_amount_brl ?? null
+      }
+    });
+    return { ...result, row_no: rowNo, percent, unit_price: nextPrice, total_price: item.total_price };
   }
 
   /**
@@ -736,12 +813,23 @@ export class QuoteService {
       error_message: null
     });
 
+    let embeddedImageCount = 0;
+    try {
+      embeddedImageCount = await this.storeEmbeddedImages(destPath, saved.id, ctx.clientId);
+    } catch (error: any) {
+      await this.auditRepo.entry({
+        actor_username: ctx.actor.username, actor_role: ctx.actor.role,
+        action: 'order.excel_images_failed', target_type: 'quote', target_id: saved.id,
+        detail: { quote_no: quoteNo, error: error?.message || 'Excel 图片提取失败' }
+      });
+    }
+
     await this.auditRepo.entry({
       actor_username: ctx.actor.username, actor_role: ctx.actor.role,
       action: 'order.upload', target_type: 'quote', target_id: saved.id,
       detail: {
         quote_no: quoteNo, client_id: ctx.clientId, file_name: ctx.fileName,
-        rows: rows.length, total_cbm: summary.totalCbm,
+        rows: rows.length, total_cbm: summary.totalCbm, embedded_image_count: embeddedImageCount,
         converted_by_ai: ctx.convertedByAi, ai_notes: ctx.aiNotes
       }
     });
@@ -764,11 +852,48 @@ export class QuoteService {
         ? 'AI 已自动识别并转换文件格式，上传成功，已进入核算队列'
         : '上传成功，已进入核算队列；运营按费率表核算后报价将发布到「我的报价」',
       converted_by_ai: ctx.convertedByAi || undefined,
-      ai_notes: ctx.aiNotes
+      ai_notes: ctx.aiNotes,
+      embedded_image_count: embeddedImageCount
     };
   }
 
   // ============= helpers =============
+
+  private async storeEmbeddedImages(excelPath: string, quoteId: string, clientId: string): Promise<number> {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(excelPath);
+    const imageDir = path.join(repoRoot(), 'apps/api/uploads/images');
+    fs.mkdirSync(imageDir, { recursive: true });
+    const rows: any[] = [];
+
+    for (const worksheet of workbook.worksheets) {
+      const placements = worksheet.getImages();
+      for (let index = 0; index < placements.length; index++) {
+        const placement = placements[index];
+        const media = workbook.getImage(Number(placement.imageId));
+        const extension = String(media.extension || 'png').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'png';
+        const buffer = Buffer.from(media.buffer as any);
+        if (!buffer || buffer.length === 0) continue;
+        const nativeRow = Number((placement.range as any)?.tl?.nativeRow);
+        const rowNo = Number.isInteger(nativeRow) && nativeRow >= 0 ? nativeRow + 1 : null;
+        const fileName = `excel-embedded-${crypto.randomUUID()}.${extension}`;
+        const absolutePath = path.join(imageDir, fileName);
+        fs.writeFileSync(absolutePath, buffer);
+        rows.push({
+          client_id: clientId,
+          quote_id: quoteId,
+          row_no: rowNo,
+          file_name: `excel-row-${rowNo || 'order'}-image-${index + 1}.${extension}`,
+          file_path: path.relative(repoRoot(), absolutePath).replace(/\\/g, '/'),
+          mime_type: extension === 'jpg' ? 'image/jpeg' : `image/${extension}`,
+          size_bytes: buffer.length
+        });
+      }
+    }
+
+    if (rows.length > 0) await this.imageRepo.insertMany(rows);
+    return rows.length;
+  }
 
   private normalizeCell(v: any): any {
     if (v === null || v === undefined) return null;
@@ -792,7 +917,7 @@ export class QuoteService {
       let v = d[f.field_key];
       if (f.formula) continue; // 公式列不校验输入
       if (f.field_key === 'description' && (v === null || v === '' || v === undefined)) {
-        d.description = String(d.product_cn || d.product_en || '').trim();
+        d.description = String(d.product_cn || d.product_en || d.sku || '').trim();
         v = d.description;
       }
       if (f.required && (v === null || v === '' || v === undefined)) {
@@ -846,7 +971,9 @@ export class QuoteService {
     // 业务交叉校验：毛重 ≥ 净重
     const nw = Number(d.nw_per_carton);
     const gw = Number(d.gw_per_carton);
-    if (!Number.isNaN(nw) && !Number.isNaN(gw) && gw < nw) {
+    if (d.nw_per_carton !== null && d.nw_per_carton !== '' && d.nw_per_carton !== undefined
+      && d.gw_per_carton !== null && d.gw_per_carton !== '' && d.gw_per_carton !== undefined
+      && !Number.isNaN(nw) && !Number.isNaN(gw) && gw < nw) {
       errs.push({ row: row.row_no, col_letter: 'L', field_key: 'gw_per_carton', reason: '毛重不能小于净重' });
     }
 

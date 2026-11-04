@@ -85,20 +85,46 @@ export class AiConvertService {
   }
 
   async convert(wb: ExcelJS.Workbook): Promise<AiConvertSuccess | AiConvertFailure> {
+    const cfg = await this.aiConfig.resolve('deepseek-flash', 30000);
+    if (cfg.apiKey) {
+      try {
+        const sheets = this.extractSamples(wb);
+        if (sheets.length === 0) return { ok: false, reason: '工作簿为空' };
+        const mapping = await this.requestMapping(sheets, cfg);
+        const converted = this.applyMapping(wb, mapping);
+        if (converted.ok && this.rowsHaveRequiredValues(converted.rows)) {
+          return { ...converted, notes: 'AI 已完成清单结构识别与字段映射' };
+        }
+        const fallback = this.heuristicConvert(wb);
+        return fallback || converted;
+      } catch (e: any) {
+        this.logger.warn(`AI 转换失败：${e?.message || e}`);
+        const fallback = this.heuristicConvert(wb);
+        if (fallback) return fallback;
+        return { ok: false, reason: e?.message || 'AI 转换失败' };
+      }
+    }
     const heuristic = this.heuristicConvert(wb);
     if (heuristic) return heuristic;
-    const cfg = await this.aiConfig.resolve('deepseek-flash', 30000);
-    if (!cfg.apiKey) {
-      return { ok: false, reason: '未配置 AI 转换（API Key 为空）' };
-    }
-    try {
-      const sheets = this.extractSamples(wb);
-      if (sheets.length === 0) return { ok: false, reason: '工作簿为空' };
-      const mapping = await this.requestMapping(sheets, cfg);
-      return this.applyMapping(wb, mapping);
-    } catch (e: any) {
-      this.logger.warn(`AI 转换失败：${e?.message || e}`);
-      return { ok: false, reason: e?.message || 'AI 转换失败' };
+    return { ok: false, reason: '未配置 AI 转换（API Key 为空）' };
+  }
+
+  private rowsHaveRequiredValues(rows: ConvertedRow[]): boolean {
+    const required = FIELD_DICTIONARY.filter(field => field.required && !field.formula);
+    return rows.length > 0 && rows.every(row => required.every(field => {
+      const value = row.data[field.field_key];
+      return value !== null && value !== undefined && value !== '';
+    }));
+  }
+
+  private deriveUnitPrice(data: Record<string, any>, sourceTotals: ConvertedRow['source_totals']): void {
+    if (data.unit_price !== null && data.unit_price !== undefined && data.unit_price !== '') return;
+    const totalPcs = Number(sourceTotals?.total_pcs)
+      || Number(data.total_pcs)
+      || Number(data.cartons) * Number(data.pcs_per_carton);
+    const totalPrice = Number(sourceTotals?.total_price) || Number(data.total_price);
+    if (Number.isFinite(totalPcs) && totalPcs > 0 && Number.isFinite(totalPrice) && totalPrice > 0) {
+      data.unit_price = Math.round((totalPrice / totalPcs) * 1_000_000) / 1_000_000;
     }
   }
 
@@ -134,8 +160,7 @@ export class AiConvertService {
       ['goodsmaterials', 'material'], ['货物材质', 'material'], ['材质', 'material'], ['material', 'material'],
       ['机器条码', 'machine_barcode'], ['箱号', 'carton_no'], ['cartonno', 'carton_no'], ['boxno', 'carton_no'], ['备注', 'remark']
     ];
-    let best: { row: number; mapping: Record<string, string> } | null = null;
-    for (let r = 1; r <= Math.min(20, ws.rowCount); r++) {
+    const mappingForRow = (r: number): Record<string, string> => {
       const row = ws.getRow(r);
       const mapping: Record<string, string> = {};
       let sizeSeq = 0;
@@ -153,11 +178,27 @@ export class AiConvertService {
           break;
         }
       }
+      return mapping;
+    };
+    let best: { row: number; mapping: Record<string, string> } | null = null;
+    for (let r = 1; r <= Math.min(20, ws.rowCount); r++) {
+      const mapping = mappingForRow(r);
       const found = Object.keys(mapping).length;
       if (found >= 3 && (!best || found > Object.keys(best.mapping).length)) best = { row: r, mapping };
     }
     if (!best) return null;
+    for (let r = Math.max(1, best.row - 2); r <= Math.min(ws.rowCount, best.row + 2); r++) {
+      if (r === best.row) continue;
+      const adjacent = mappingForRow(r);
+      for (const [field, col] of Object.entries(adjacent)) {
+        if (!best.mapping[field]) best.mapping[field] = col;
+      }
+    }
     if (!best.mapping.product_en && !best.mapping.product_cn && !best.mapping.sku) return null;
+    if (!best.mapping.product_cn && best.mapping.product_en) best.mapping.product_cn = best.mapping.product_en;
+    if (!best.mapping.description) best.mapping.description = best.mapping.product_cn || best.mapping.product_en;
+    const missingRequired = FIELD_DICTIONARY.some(field => field.required && !field.formula && !best.mapping[field.field_key]);
+    if (missingRequired) return null;
     const start = best.row + 1;
     const rows: ConvertedRow[] = [];
     let firstWarehouse = '';
@@ -194,6 +235,7 @@ export class AiConvertService {
       data.material = ['不带电', '带电', '含电池', '其他'].includes(String(data.material || '').trim()) ? data.material : '其他';
       data.description = String(data.description || '').trim() || data.product_en;
       if (!firstWarehouse && data.warehouse_code_line) firstWarehouse = String(data.warehouse_code_line).trim();
+      this.deriveUnitPrice(data, sourceTotals);
       rows.push({ row_no: r, data, source_totals: sourceTotals });
     }
     if (rows.length === 0) return null;
@@ -254,7 +296,7 @@ export class AiConvertService {
     const { baseUrl, apiKey, model, timeoutMs } = cfg;
 
     const fieldDict = FIELD_DICTIONARY
-      .filter(f => !f.formula)
+      .filter(f => !f.formula || ['total_pcs', 'total_price', 'total_cbm'].includes(f.field_key))
       .map(f => ({
         field_key: f.field_key,
         header_cn: f.header_cn,
@@ -269,10 +311,10 @@ export class AiConvertService {
       '请识别哪个 sheet 是装箱清单数据页、表头在哪一行、数据从哪一行开始，并给出源列字母到目标字段 field_key 的映射。',
       '只输出 JSON，不要输出任何解释。结构：',
       '{"sheet":"数据页名称","header_row":表头行号,"data_start_row":数据起始行号,"warehouse_code":"入仓号(若样例中能找到，否则空字符串)","mapping":{"<field_key>":"源列字母(如 A,B,C)" 或 null},"notes":"简短说明"}',
-      'mapping 必须包含每个你能识别的目标字段；确实找不到来源列的填 null。',
+      'mapping 必须包含每个你能识别的目标字段；确实找不到来源列的填 null。total_pcs、total_price、total_cbm 虽然由后端重算，也必须识别原始来源列，供缺少单价、体积时推导使用。',
       '如果样例中只有一个品名列，可以同时映射到 product_cn 与 product_en。',
       'carton_no 是箱号（如 1 或 1-167）；cartons 是箱数（每行箱数）；pcs_per_carton 是每箱件数；total_pcs 是总件数，必须等于 cartons × pcs_per_carton。不要把箱数、每箱件数、总件数混淆。',
-      'unit_price 是单价，total_price 是总价（金额必须等于 total_pcs × unit_price）。如果源文件含 10-12 位 HS Code，保留原样，不要改写。材质只选 不带电/带电/含电池/其他。',
+      'unit_price 是单价，total_price 是总价（金额必须等于 total_pcs × unit_price）。如果只有总金额和总件数而没有单价，必须同时识别 total_price 与 total_pcs 的来源列，后端再按 总金额÷总件数 计算单价，不能臆造单价。如果源文件含 10-12 位 HS Code，保留原样，不要改写。材质只选 不带电/带电/含电池/其他。',
       '尺寸按列出现顺序映射为 length_cm、width_cm、height_cm，不要重复映射到同一列；unit_cbm/total_cbm 由后端用 长×宽×高×箱数 重算，不要凭感觉猜。',
       '如果源表头出现多行标题、重复标题、合计行，只返回真正的表头行和第一条商品数据行；合计行不是商品行。不要猜测不存在的列，不确定就返回 null 并说明 notes。',
       'warehouse_code 通常出现在标题区（如"入仓号：XXX"）而非数据区。'
@@ -345,7 +387,7 @@ export class AiConvertService {
     const ws = wb.worksheets.find(w => w.name === m.sheet) || wb.worksheets[0];
     if (!ws) return { ok: false, reason: 'AI 指定的数据页不存在' };
 
-    const start = Math.max(1, m.data_start_row || ((m.header_row || 1) + 1));
+    const start = Math.max(1, (m.data_start_row || ((m.header_row || 1) + 1)) - 2);
     const rows: ConvertedRow[] = [];
     let firstWarehouseLine = '';
     for (let r = start; r <= ws.rowCount; r++) {
@@ -370,9 +412,16 @@ export class AiConvertService {
       const identity = String(data.sku || data.product_en || data.product_cn || '').trim();
       if (/^(total|合计|总计|subtotal)$/i.test(identity)) continue;
       if (/商品名称|产品名称|nome\s*do\s*produto/i.test(String(data.product_cn || data.product_en || ''))) continue;
+      if (!identity && !data.carton_no) continue;
       if (!firstWarehouseLine && data.warehouse_code_line) {
         firstWarehouseLine = String(data.warehouse_code_line).trim();
       }
+      data.product_en = String(data.product_en || data.product_cn || data.sku || '').trim();
+      data.product_cn = String(data.product_cn || data.product_en || data.sku || '').trim();
+      data.sku = String(data.sku || data.product_en || data.product_cn || `ITEM-${r}`).trim();
+      data.description = String(data.description || data.product_en || data.product_cn || data.sku).trim();
+      data.material = ['不带电', '带电', '含电池', '其他'].includes(String(data.material || '').trim()) ? data.material : '其他';
+      this.deriveUnitPrice(data, sourceTotals);
       rows.push({ row_no: r, data, source_totals: sourceTotals });
     }
     if (rows.length === 0) {

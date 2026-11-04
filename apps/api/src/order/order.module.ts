@@ -13,6 +13,7 @@ import { AiNcmService } from './ai-ncm.service';
 @Module({
   imports: [AuthModule, UploadModule],
   controllers: [ClientOrderController, OpsOrderController, DealsController, OpsOrderFilesController, ClientOrderFilesController, ClientCnpjController, DiController],
-  providers: [DiService, AiNcmService]
+  providers: [DiService, AiNcmService],
+  exports: [DiService, AiNcmService]
 })
 export class OrderModule {}

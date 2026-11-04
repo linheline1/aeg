@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
+import { downloadOrShareFile } from '../lib/file-actions';
 import ExcelUploadCard from '../components/ExcelUploadCard';
 import PriceReferenceNote from '../components/PriceReferenceNote';
 
@@ -80,7 +82,7 @@ export default function Workbench() {
       await loadImages();
       setTimeout(() => setImgMsg(null), 4000);
     } catch (e: any) {
-      setImgErr(e?.response?.data?.message || e?.message || '上传失败');
+      setImgErr(getApiErrorMessage(e, '上传失败'));
     } finally { setImgLoading(false); }
   };
 
@@ -88,13 +90,10 @@ export default function Workbench() {
     setDlLoading(true); setDlMsg(null);
     try {
       const r = await api.get('/api/client/template/2.0/download', { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([r.data as any]));
-      const a = document.createElement('a'); a.href = url;
-      a.download = '巴西整柜装箱清单_模板_v2.0.xlsx';
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      await downloadOrShareFile(new Blob([r.data as any]), '巴西整柜装箱清单_模板_v2.0.xlsx');
       setDlMsg('✅ 下载完成'); setTimeout(() => setDlMsg(null), 3000);
     } catch (e: any) {
-      setDlMsg('❌ ' + (e?.response?.data?.message || e?.message || '下载失败'));
+      setDlMsg('❌ ' + getApiErrorMessage(e, '下载失败'));
     } finally { setDlLoading(false); }
   };
 

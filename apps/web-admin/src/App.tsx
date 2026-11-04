@@ -8,9 +8,11 @@ import TemplateList from './pages/TemplateList';
 import ClientList from './pages/ClientList';
 import ClientDetail from './pages/ClientDetail';
 import StaffList from './pages/StaffList';
+import CustomsCnpjs from './pages/CustomsCnpjs';
 import AuditLog from './pages/AuditLog';
 import HelpArticles from './pages/HelpArticles';
 import AiConfig from './pages/AiConfig';
+import Profile from './pages/Profile';
 
 /** 无权访问提示页（顶层路由，避免守卫重定向死循环） */
 function Forbidden() {
@@ -48,9 +50,11 @@ export default function App() {
                 <Route path="clients" element={<ClientList />} />
                 <Route path="clients/:id" element={<ClientDetail />} />
                 <Route path="staff" element={<RequireAuth allowedRoles={['admin']}><StaffList /></RequireAuth>} />
+                <Route path="customs-cnpjs" element={<RequireAuth allowedRoles={['admin']}><CustomsCnpjs /></RequireAuth>} />
                 <Route path="help" element={<RequireAuth allowedRoles={['admin']}><HelpArticles /></RequireAuth>} />
                 <Route path="audit" element={<RequireAuth allowedRoles={['admin']}><AuditLog /></RequireAuth>} />
                 <Route path="ai-config" element={<RequireAuth allowedRoles={['admin']}><AiConfig /></RequireAuth>} />
+                <Route path="profile" element={<Profile />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Layout>

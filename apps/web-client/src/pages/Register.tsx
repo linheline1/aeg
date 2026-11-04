@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api, useAuth } from '../store/auth';
 import logo from '../assets/logo.png';
 
@@ -31,7 +32,7 @@ export default function Register() {
       await login(form.username, form.password);
       nav('/home');
     } catch (res: any) {
-      setErr(res.response?.data?.message || '注册失败，请稍后重试');
+      setErr(getApiErrorMessage(res, '注册失败，请稍后重试'));
     } finally { setBusy(false); }
   };
 

@@ -1,9 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 
 type Row = { row_no: number; data: Record<string, any>; source_totals?: Record<string, number | null> };
 type RowError = { row: number; field_key: string; reason: string };
+
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const isSheetFile = (f: File) => /\.xlsx$/i.test(f.name);
+const isImageFile = (f: File) => /^image\//i.test(f.type) || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name);
+const formatSize = (bytes: number) =>
+  bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 const numericFields = new Set(['cartons', 'pcs_per_carton', 'nw_per_carton', 'gw_per_carton', 'length_cm', 'width_cm', 'height_cm', 'unit_price']);
 const requiredFields: [string, string][] = [
@@ -67,6 +74,9 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [message, setMessage] = useState('');
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dragDepth = useRef(0);
 
   const computedRows = useMemo(() => rows.map(calculate), [rows]);
   const localErrors = useMemo(() => computedRows.flatMap(validate), [computedRows]);
@@ -83,8 +93,114 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     setDraftId(''); setRows([]); setServerErrors([]); setErr(''); setMessage(''); setConvertedByAi(false); setAiNotes('');
   };
 
+  /**
+   * 按文件头识别工作簿类型，返回需要提示用户的问题；null = 可以直接上传。
+   * xlsx 是 zip（PK 头），旧版 .xls / 加密工作簿是 OLE2（D0CF11E0），服务端只读 xlsx。
+   */
+  const sheetProblem = async (f: File): Promise<string | null> => {
+    let head: Uint8Array;
+    try {
+      head = new Uint8Array(await f.slice(0, 64).arrayBuffer());
+    } catch {
+      return `浏览器无法读取「${f.name}」：文件可能已被移动、删除，或来自邮件/微信的临时缓存。请先另存到本地（桌面）后重新拖入。`;
+    }
+    if (head.length === 0) return `「${f.name}」是空文件（0 KB），请在 Excel 中重新导出后再上传。`;
+
+    const isZip = head.length >= 4 && head[0] === 0x50 && head[1] === 0x4b
+      && (head[2] === 0x03 || head[2] === 0x05 || head[2] === 0x07);
+    if (isZip) return null;
+
+    const ole2 = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+    if (head.length >= 8 && ole2.every((byte, index) => head[index] === byte)) {
+      return `「${f.name}」是旧版 .xls 或带密码保护的 Excel 工作簿。请在 Excel / WPS 中打开（如有密码请先取消保护），然后「另存为 → Excel 工作簿 (*.xlsx)」再上传。`;
+    }
+
+    const text = new TextDecoder('utf-8').decode(head).trimStart().toLowerCase();
+    if (text.startsWith('<?xml') || text.startsWith('<workbook')) {
+      return `「${f.name}」是 Excel 2003 XML 表格，请用 Excel 打开后「另存为 .xlsx」再上传。`;
+    }
+    if (text.startsWith('%pdf') || text.startsWith('<!doctype') || text.startsWith('<html')) {
+      return `「${f.name}」不是 Excel 工作簿（看起来是 PDF 或网页文件）。请上传装箱清单的 .xlsx 原文件。`;
+    }
+    return `「${f.name}」无法识别为 Excel 工作簿。当前支持 .xlsx；若是 .xls / .csv / 加密文件，请先在 Excel 中「另存为 .xlsx」再上传。`;
+  };
+
+  /** 拖拽/选择统一入口：一个 Excel 清单 + 最多 9 张明细截图 */
+  const acceptFiles = async (incoming: FileList | File[] | null) => {
+    const picked = Array.from(incoming || []);
+    if (picked.length === 0) return;
+    setErr(''); setMessage('');
+
+    const sheets = picked.filter(isSheetFile);
+    const images = picked.filter(isImageFile).slice(0, 9);
+    const unknown = picked.filter(f => !isSheetFile(f) && !isImageFile(f));
+
+    if (unknown.length > 0) {
+      setErr(`「${unknown[0].name}」不是 .xlsx 清单文件，请先在 Excel 中另存为 .xlsx 后重试`);
+    }
+    const sheet = sheets[0];
+    if (sheet && sheet.size > MAX_FILE_BYTES) {
+      setErr(`「${sheet.name}」超过 20 MB，请拆分或压缩后重试`);
+      return;
+    }
+    if (sheet) {
+      const problem = await sheetProblem(sheet);
+      setFile(sheet);
+      reset();
+      if (problem) {
+        setErr(problem);
+        return;
+      }
+      if (sheets.length > 1) setMessage(`一次只识别一个清单，已使用「${sheet.name}」`);
+    }
+    if (images.length > 0) {
+      setShots(current => [...current, ...images].slice(0, 9));
+      setShotRows(current => [...current, ...images.map(() => '')].slice(0, 9));
+      if (!sheet) setMessage(`已加入 ${images.length} 张明细截图，再拖入 Excel 清单即可识别`);
+    }
+  };
+
+  const clearFile = () => {
+    setFile(null);
+    reset();
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  /** 出错后一键换文件：清空当前选择并立即打开文件框 */
+  const reselect = () => {
+    clearFile();
+    fileInputRef.current?.click();
+  };
+
+  const onDragEnter = (event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    dragDepth.current += 1;
+    setDragActive(true);
+  };
+  const onDragOver = (event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  };
+  const onDragLeave = (event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragActive(false);
+  };
+  const onDrop = (event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragActive(false);
+    acceptFiles(event.dataTransfer?.files || null);
+  };
+
   const preview = async () => {
     if (!file) return;
+    const problem = await sheetProblem(file);
+    if (problem) {
+      setErr(problem);
+      setBusy(false);
+      return;
+    }
     setBusy(true); setErr(''); setMessage(''); reset();
     try {
       const data = new FormData();
@@ -108,7 +224,13 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       setAiNotes(response.data.ai_notes || '');
       setServerErrors(response.data.errors || []);
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '文件识别失败');
+      const serverMessage = e?.response?.data?.message || e?.response?.data?.error_summary;
+      if (serverMessage) setErr(serverMessage);
+      else if (!e?.response) {
+        setErr('上传中断：文件没有送达服务器。请确认文件仍在本机（未被移动或删除）、网络正常后重试；若来自邮件或微信，请先另存到桌面。');
+      } else {
+        setErr(e?.message || '文件识别失败');
+      }
     } finally { setBusy(false); }
   };
 
@@ -146,7 +268,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       onConfirmed?.();
       setTimeout(() => nav(`/orders/${response.data.quote_id}`), 800);
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '确认提交失败');
+      setErr(getApiErrorMessage(e, '确认提交失败'));
     } finally { setBusy(false); }
   };
 
@@ -169,11 +291,49 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       </div>
       {!draftId && (
         <>
-          <div className="row gap-md mt-8" style={{ flexWrap: 'wrap' }}>
-            <label className="file-pick-label">
-              <input type="file" accept=".xlsx" onChange={event => { setFile(event.target.files?.[0] || null); reset(); }} />
-              {file ? file.name : '选择 .xlsx 文件'}
-            </label>
+          <label
+            className={`dropzone${dragActive ? ' dropzone-active' : ''}${file ? ' dropzone-has-file' : ''}`}
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            onClick={event => {
+              if ((event.target as HTMLElement).closest('button')) event.preventDefault();
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx"
+              aria-label="选择 Excel 清单文件"
+              onChange={event => { acceptFiles(event.target.files); event.target.value = ''; }}
+            />
+            {file ? (
+              <div className="dropzone-file">
+                <span className="dropzone-file-icon" aria-hidden="true">📄</span>
+                <div className="dropzone-file-main">
+                  <strong title={file.name}>{file.name}</strong>
+                  <span className="muted text-sm">{formatSize(file.size)} · 已就绪，可直接拖入新文件替换</span>
+                </div>
+                <div className="dropzone-actions">
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileInputRef.current?.click()}>更换</button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={clearFile}>移除</button>
+                </div>
+              </div>
+            ) : (
+              <div className="dropzone-empty">
+                <span className="dropzone-icon" aria-hidden="true">📥</span>
+                <strong className="dropzone-title">{dragActive ? '松开鼠标，开始识别清单' : '把 Excel 清单拖到这里'}</strong>
+                <span className="muted text-sm">
+                  也可以<span className="dropzone-link">点击选择文件</span>
+                  · 支持 .xlsx（客户任意模板，AI 自动识别列）· 单文件 ≤ 20 MB
+                </span>
+              </div>
+            )}
+            {dragActive && <span className="dropzone-badge">松开即可导入 · 也可同时拖入明细截图</span>}
+          </label>
+
+          <div className="row gap-md mt-12" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
             <label className="file-pick-label">
               <input type="file" accept="image/*" multiple onChange={event => {
                 const picked = Array.from(event.target.files || []).slice(0, 9);
@@ -182,6 +342,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
               {shots.length ? `已选 ${shots.length} 张截图` : '明细截图（可选）'}
             </label>
             <button className="btn btn-lg" disabled={!file || busy} onClick={preview}>{busy ? 'AI 识别与校验中…' : '识别清单'}</button>
+            {!file && <span className="muted text-sm">拖入或选择 .xlsx 后即可识别</span>}
           </div>
           {shots.map((shot, index) => (
             <div className="row gap-md mt-8" key={`${shot.name}-${index}`}>
@@ -193,10 +354,27 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
         </>
       )}
 
-      {err && <div className="alert alert-err mt-12">{err}</div>}
+      {err && (
+        <div className="alert alert-err mt-12">
+          {err}
+          {file && !draftId && (
+            <div className="mt-8">
+              <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={reselect}>
+                重新选择文件
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {message && <div className="alert alert-ok mt-12">{message}</div>}
       {draftId && (
         <div className="mt-12">
+          {file && (
+            <p className="muted text-sm" style={{ margin: '0 0 8px' }}>
+              已识别清单：<strong>{file.name}</strong>
+              <button type="button" className="btn-link" style={{ marginLeft: 8 }} onClick={cancel} disabled={busy}>重新上传</button>
+            </p>
+          )}
           <div className="alert alert-warn">
             请核对识别结果。总件数、金额和 CBM 由系统重算；原表合计不一致的行必须修正后才能创建报价。
             {convertedByAi && <div className="mt-8">AI 已转换非标准模板{aiNotes ? `：${aiNotes}` : ''}</div>}

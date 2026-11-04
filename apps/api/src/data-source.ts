@@ -15,6 +15,8 @@ import { PaymentRecordEntity } from './entities/payment-record.entity';
 import { HelpArticleEntity } from './entities/help-article.entity';
 import { AiConfigEntity } from './entities/ai-config.entity';
 import { UploadDraftEntity } from './entities/upload-draft.entity';
+import { CustomsCnpjEntity } from './entities/customs-cnpj.entity';
+import { ProductCatalogEntity } from './entities/product-catalog.entity';
 
 export const ALL_ENTITIES = [
   UserEntity,
@@ -26,6 +28,8 @@ export const ALL_ENTITIES = [
   FeeRateEntity,
   ClientImageEntity,
   ClientCnpjEntity,
+  CustomsCnpjEntity,
+  ProductCatalogEntity,
   OrderFileEntity,
   PaymentRecordEntity,
   HelpArticleEntity,

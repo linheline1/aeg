@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../store/auth';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 
 interface AuditRow {
   id: string;
@@ -44,6 +45,7 @@ const ACTION_CN: Record<string, string> = {
   'order.shipment.event_del': '物流节点删除',
   'order.file.upload': '交付文件上传',
   'order.file.delete': '交付文件删除',
+  'order.line_item.price': '产品按百分比计价',
   'finance.payment.create': '回款登记',
   'finance.payment.delete': '回款删除'
 };
@@ -81,6 +83,13 @@ function fmtDetail(a: string, detail: any): string {
       }
       case 'order.status':
         return `${detail.quote_no}: ${detail.from} → ${detail.to}${detail.reason ? `（${detail.reason}）` : ''}`;
+      case 'order.line_item.price': {
+        const seg = `${detail.quote_no} 行${detail.row_no} 按原单价 ¥${detail.base_unit_price ?? detail.before_unit_price} 的 ${detail.percent}% 计价 · 新单价 ¥${detail.after_unit_price} · 货值 ¥${detail.total_amount_rmb}`;
+        const extras: string[] = [];
+        if (detail.di_brl != null) extras.push(`DI R$${detail.di_brl}`);
+        if (detail.total_ddp_brl != null) extras.push(`DDP R$${detail.total_ddp_brl}`);
+        return extras.length ? `${seg} · ${extras.join(' · ')}` : seg;
+      }
       case 'order.deal': {
         const cn: Record<string, string> = { won: '已成交', lost: '未成交', open: '跟进中' };
         const to = cn[detail.to] || detail.to || '未标记';
@@ -128,7 +137,7 @@ export default function AuditLog() {
     if (q) params.set('q', q);
     api.get(`/api/admin/audit?${params}`)
       .then(r => { setRows(r.data.items); setTotal(r.data.total); })
-      .catch(e => setErr(e?.response?.data?.message || e?.message));
+      .catch(e => setErr(getApiErrorMessage(e)));
   }, [page, action, q]);
 
   const actions = Object.keys(ACTION_CN).sort();
@@ -142,7 +151,7 @@ export default function AuditLog() {
 
       <div className="card">
         <form
-          className="row gap-md mb-12"
+          className="row gap-md mb-12 audit-filters"
           onSubmit={e => { e.preventDefault(); setPage(1); setQ(keyword.trim()); }}
         >
           <select
@@ -201,7 +210,7 @@ export default function AuditLog() {
         )}
 
         {total > 0 && (
-          <div className="row gap-md" style={{ justifyContent: 'flex-end', alignItems: 'center', marginTop: 12 }}>
+          <div className="row gap-md pagination" style={{ justifyContent: 'flex-end', alignItems: 'center', marginTop: 12 }}>
             <span className="muted text-sm">第 {page} / {Math.max(1, Math.ceil(total / pageSize))} 页</span>
             <button className="btn btn-sm btn-ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button>
             <button

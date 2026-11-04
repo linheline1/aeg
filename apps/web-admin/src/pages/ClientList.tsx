@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api, useAuth } from '../store/auth';
 
 interface ClientRow {
@@ -55,7 +56,7 @@ export default function ClientList() {
       const r = await api.get('/api/admin/clients');
       setRows(r.data);
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '加载失败');
+      setErr(getApiErrorMessage(e, '加载失败'));
     } finally { setLoading(false); }
   };
 
@@ -80,7 +81,7 @@ export default function ClientList() {
       flash('✅ 客户已创建，可让客户用该账号登录客户端');
       await load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '创建失败');
+      setErr(getApiErrorMessage(e, '创建失败'));
     } finally { setCreating(false); }
   };
 
@@ -92,7 +93,7 @@ export default function ClientList() {
       flash('✅ 归属业务员已更新（该客户新上传的报价将自动分配）');
       await load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '设置失败');
+      setErr(getApiErrorMessage(e, '设置失败'));
       await load();
     } finally { setBusyId(null); }
   };
@@ -106,7 +107,7 @@ export default function ClientList() {
       flash(next === 'active' ? '✅ 客户已启用' : '✅ 客户已禁用');
       await load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '操作失败');
+      setErr(getApiErrorMessage(e, '操作失败'));
     } finally { setBusyId(null); }
   };
 
@@ -118,7 +119,7 @@ export default function ClientList() {
       setPwdFor(null); setPwdValue('');
       flash(`✅ 已重置「${row.username}」的登录密码`);
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '重置失败');
+      setErr(getApiErrorMessage(e, '重置失败'));
     } finally { setBusyId(null); }
   };
 
@@ -201,7 +202,7 @@ export default function ClientList() {
         ) : rows.length === 0 ? (
           <p className="muted">暂无客户，请先在上方创建。</p>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap responsive-table">
             <table className="table">
               <thead>
                 <tr>
@@ -218,23 +219,23 @@ export default function ClientList() {
               <tbody>
                 {rows.map(r => (
                   <tr key={r.id}>
-                    <td>
+                    <td data-label="客户 / 企业认证">
                       <strong>{r.china_company_name || r.name}</strong>
                       <span className="sub">{r.china_uscc ? `统一社会信用代码：${r.china_uscc}` : '未登记国内企业认证信息'}</span>
                     </td>
-                    <td>{r.username ? <code>{r.username}</code> : <span className="muted">未开通</span>}</td>
-                    <td>
+                    <td data-label="登录账号">{r.username ? <code>{r.username}</code> : <span className="muted">未开通</span>}</td>
+                    <td data-label="认证状态">
                       <span className={`status-tag ${r.verification_status === 'approved' ? 'status-active' : r.verification_status === 'pending' ? 'status-pending_fee' : 'status-disabled'}`}
                         title={r.verification_note || undefined}>
                         {r.verification_status === 'approved' ? '已认证' : r.verification_status === 'pending' ? '待认证' : '已驳回'}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="账号状态">
                       <span className={`status-tag ${r.status === 'active' ? 'status-active' : 'status-disabled'}`}>
                         {r.status === 'active' ? '启用' : '禁用'}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="归属业务员">
                       <select
                         className="form-input form-input-sm"
                         style={{ width: 120 }}
@@ -249,13 +250,13 @@ export default function ClientList() {
                         ))}
                       </select>
                     </td>
-                    <td className="num">{r.quote_count}</td>
-                    <td className="muted text-sm">{fmtTime(r.created_at)}</td>
-                    <td>
+                    <td className="num" data-label="报价数">{r.quote_count}</td>
+                    <td className="muted text-sm" data-label="创建时间">{fmtTime(r.created_at)}</td>
+                    <td className="table-action-cell" data-label="操作">
                       {!isAdmin ? (
                         <Link className="btn btn-ghost btn-sm" to={`/clients/${r.id}`}>审核认证 / 查看详情</Link>
                       ) : pwdFor === r.id ? (
-                        <div className="row gap-sm">
+                        <div className="row gap-sm table-actions">
                           <input
                             className="form-input-sm"
                             style={{ width: 120 }}
@@ -268,7 +269,7 @@ export default function ClientList() {
                           <button className="btn btn-ghost btn-sm" onClick={() => { setPwdFor(null); setPwdValue(''); }}>取消</button>
                         </div>
                       ) : (
-                        <div className="row gap-sm">
+                        <div className="row gap-sm table-actions">
                           <Link className="btn btn-ghost btn-sm" to={`/clients/${r.id}`}>查看详情</Link>
                           <button
                             className="btn btn-ghost btn-sm"

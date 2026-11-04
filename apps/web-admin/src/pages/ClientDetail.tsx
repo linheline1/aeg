@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
+import { openOrShareFile } from '@aeg/web-shared/file-actions';
 import { api } from '../store/auth';
 
 interface ClientDetailRow {
@@ -55,7 +57,7 @@ export default function ClientDetail() {
       const r = await api.get(`/api/admin/clients/${id}`);
       setDetail(r.data);
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '客户详情加载失败');
+      setErr(getApiErrorMessage(e, '客户详情加载失败'));
     } finally { setLoading(false); }
   };
 
@@ -71,7 +73,7 @@ export default function ClientDetail() {
       setMsg(status === 'approved' ? '✅ 企业认证已通过' : '✅ 已驳回企业认证');
       await load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '审核失败');
+      setErr(getApiErrorMessage(e, '审核失败'));
     } finally { setReviewBusy(false); }
   };
 
@@ -80,13 +82,9 @@ export default function ClientDetail() {
     setErr(null);
     try {
       const r = await api.get(`/api/admin/clients/${id}/license`, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([r.data], { type: detail?.license_mime_type || 'application/octet-stream' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      const mimeType = detail?.license_mime_type || 'application/octet-stream';
+      const fileName = detail?.license_file_name || `营业执照.${mimeType === 'application/pdf' ? 'pdf' : 'png'}`;
+      await openOrShareFile(new Blob([r.data], { type: mimeType }), fileName);
     } catch (e: any) {
       setErr('营业执照加载失败，请稍后重试');
     } finally { setLicenseBusy(false); }

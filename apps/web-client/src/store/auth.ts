@@ -1,16 +1,22 @@
 import { create } from 'zustand';
 import axios from 'axios';
+import { Capacitor } from '@capacitor/core';
+import { createAuthenticatedApi } from '@aeg/web-shared/auth';
 import type { Role } from '@aeg/shared-types';
 
 interface User { id: string; username: string; role: Role; client_id?: string; }
 interface AuthState { token: string | null; user: User | null; login: (u: string, p: string) => Promise<void>; logout: () => void; }
 const TOKEN_KEY = 'aeg_client_token';
 const USER_KEY = 'aeg_client_user';
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL
+  || (Capacitor.isNativePlatform() ? 'https://app.linsgeekai.com.br' : '')
+).replace(/\/+$/, '');
 export const useAuth = create<AuthState>((set) => ({
   token: localStorage.getItem(TOKEN_KEY),
   user: (() => { const s = localStorage.getItem(USER_KEY); return s ? JSON.parse(s) : null; })(),
   login: async (username, password) => {
-    const res = await axios.post('/api/auth/login', { username, password });
+    const res = await axios.post(`${API_BASE_URL}/api/auth/login`, { username, password });
     const { access_token, user } = res.data;
     localStorage.setItem(TOKEN_KEY, access_token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
@@ -18,6 +24,11 @@ export const useAuth = create<AuthState>((set) => ({
   },
   logout: () => { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); set({ token: null, user: null }); }
 }));
-export const api = axios.create();
-api.interceptors.request.use((c) => { const t = localStorage.getItem(TOKEN_KEY); if (t) c.headers.Authorization = `Bearer ${t}`; return c; });
-api.interceptors.response.use((r) => r, (e) => { if (e.response?.status === 401) { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); window.location.href = '/login'; } return Promise.reject(e); });
+export const api = createAuthenticatedApi({
+  tokenKey: TOKEN_KEY,
+  userKey: USER_KEY,
+  onUnauthorized: () => {
+    window.location.href = Capacitor.isNativePlatform() ? '#/login' : '/login';
+  }
+});
+api.defaults.baseURL = API_BASE_URL;

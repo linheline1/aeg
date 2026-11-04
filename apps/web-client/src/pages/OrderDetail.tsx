@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
+import { downloadOrShareFile } from '../lib/file-actions';
 import PriceReferenceNote from '../components/PriceReferenceNote';
 
 interface FeeItem { code: string; name: string; amount: number; note?: string; }
@@ -140,7 +142,7 @@ export default function OrderDetail() {
         const processing = ['analyzing', 'calculating'].includes(response.data.di_analysis?.status);
         timer = setTimeout(load, processing ? 2000 : 5000);
       } catch (e: any) {
-        if (!cancelled) setErr(e?.response?.data?.message || '加载失败');
+        if (!cancelled) setErr(getApiErrorMessage(e, '加载失败'));
       }
     };
     load();
@@ -211,7 +213,7 @@ export default function OrderDetail() {
       const r = await api.patch(`/api/client/orders/${id}/invoice-cnpj`, { cnpj_id: cnpjId || null });
       setD(prev => prev ? { ...prev, invoice_cnpj: r.data.invoice_cnpj } : prev);
     } catch (e: any) {
-      alert(e?.response?.data?.message || '保存失败');
+      alert(getApiErrorMessage(e, '保存失败'));
     } finally { setCnpjBusy(false); }
   };
 
@@ -219,9 +221,7 @@ export default function OrderDetail() {
   const doFileDownload = async (f: any) => {
     try {
       const r = await api.get(`/api/client/files/${f.id}/file`, { responseType: 'blob' });
-      const url = URL.createObjectURL(r.data);
-      const a = document.createElement('a'); a.href = url; a.download = f.file_name;
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      await downloadOrShareFile(r.data, f.file_name);
     } catch { alert('下载失败，请稍后重试'); }
   };
 

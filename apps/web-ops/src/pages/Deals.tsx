@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api, useAuth } from '../store/auth';
 
 interface DealStats {
@@ -42,7 +43,7 @@ export default function Deals() {
     setBusy(true);
     api.get('/api/ops/deals/stats')
       .then(r => setS(r.data))
-      .catch(e => setErr(e?.response?.data?.message || '加载失败'))
+      .catch(e => setErr(getApiErrorMessage(e, '加载失败')))
       .finally(() => setBusy(false));
   };
 

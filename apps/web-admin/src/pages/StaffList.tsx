@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api, useAuth } from '../store/auth';
 
 interface StaffRow {
   id: string;
   username: string;
-  role: 'admin' | 'operator' | 'sales';
+  role: 'admin' | 'operator' | 'sales' | 'customs';
   status: 'active' | 'disabled';
   created_at: string;
   quote_count: number | null;
@@ -13,13 +14,15 @@ interface StaffRow {
 const ROLE_CN: Record<string, string> = {
   admin: '管理员',
   operator: '报价员',
-  sales: '业务员'
+  sales: '业务员',
+  customs: '报关行'
 };
 
 const ROLE_TAG: Record<string, string> = {
   admin: 'status-pending_fee',
   operator: 'status-computing',
-  sales: 'status-uploaded'
+  sales: 'status-uploaded',
+  customs: 'status-validating'
 };
 
 function fmtTime(s?: string | null) {
@@ -36,7 +39,7 @@ export default function StaffList() {
   // 新建表单
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'sales' | 'operator'>('sales');
+  const [role, setRole] = useState<'sales' | 'operator' | 'customs'>('sales');
   const [creating, setCreating] = useState(false);
 
   // 重置密码（行内）
@@ -50,7 +53,7 @@ export default function StaffList() {
       const r = await api.get('/api/admin/staff');
       setRows(r.data);
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '加载失败');
+      setErr(getApiErrorMessage(e, '加载失败'));
     } finally { setLoading(false); }
   };
 
@@ -63,23 +66,24 @@ export default function StaffList() {
     try {
       await api.post('/api/admin/staff', { username, password, role });
       setUsername(''); setPassword('');
-      flash(`✅ 员工已创建，可用账号 ${username} 登录运营端`);
+      flash(`✅ 员工已创建，可用账号 ${username} 登录${role === 'customs' ? '报关行端' : '运营端'}`);
       await load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '创建失败');
+      setErr(getApiErrorMessage(e, '创建失败'));
     } finally { setCreating(false); }
   };
 
   const toggleStatus = async (row: StaffRow) => {
     const next = row.status === 'active' ? 'disabled' : 'active';
-    if (next === 'disabled' && !window.confirm(`确认禁用「${row.username}」？该员工将无法登录运营端。`)) return;
+    const loginTarget = row.role === 'customs' ? '报关行端' : '运营端';
+    if (next === 'disabled' && !window.confirm(`确认禁用「${row.username}」？该员工将无法登录${loginTarget}。`)) return;
     setBusyId(row.id); setErr(null);
     try {
       await api.patch(`/api/admin/staff/${row.id}`, { status: next });
       flash(next === 'active' ? '✅ 员工已启用' : '✅ 员工已禁用');
       await load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '操作失败');
+      setErr(getApiErrorMessage(e, '操作失败'));
       await load();
     } finally { setBusyId(null); }
   };
@@ -92,13 +96,14 @@ export default function StaffList() {
       setPwdFor(null); setPwdValue('');
       flash(`✅ 已重置「${row.username}」的登录密码`);
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '重置失败');
+      setErr(getApiErrorMessage(e, '重置失败'));
     } finally { setBusyId(null); }
   };
 
   const activeCount = rows.filter(r => r.status === 'active').length;
   const salesCount = rows.filter(r => r.role === 'sales').length;
   const operatorCount = rows.filter(r => r.role === 'operator').length;
+  const customsCount = rows.filter(r => r.role === 'customs').length;
 
   return (
     <>
@@ -124,6 +129,10 @@ export default function StaffList() {
           <span className="label">报价员</span>
           <span className="value">{operatorCount}</span>
         </div>
+        <div className="stat-card">
+          <span className="label">报关行</span>
+          <span className="value">{customsCount}</span>
+        </div>
       </div>
 
       {err && <div className="alert alert-err">❌ {err}</div>}
@@ -132,7 +141,7 @@ export default function StaffList() {
       <div className="card">
         <div className="card-title">
           <h3>➕ 新建员工</h3>
-          <span className="muted text-sm">创建后员工用自己的账号登录运营端（报价员可核算，业务员只看归属报价与成交）</span>
+          <span className="muted text-sm">报价员与业务员登录运营端，报关行员工登录报关行端</span>
         </div>
         <div className="grid-3">
           <div className="form-row" style={{ margin: 0 }}>
@@ -145,9 +154,10 @@ export default function StaffList() {
           </div>
           <div className="form-row" style={{ margin: 0 }}>
             <label>角色</label>
-            <select className="form-input" value={role} onChange={e => setRole(e.target.value as 'sales' | 'operator')}>
+            <select className="form-input" value={role} onChange={e => setRole(e.target.value as 'sales' | 'operator' | 'customs')}>
               <option value="sales">业务员（报价跟进 / 成交统计）</option>
               <option value="operator">报价员（订单核算 / 费率表）</option>
+              <option value="customs">报关行（进口报关）</option>
             </select>
           </div>
         </div>
@@ -170,7 +180,7 @@ export default function StaffList() {
         ) : rows.length === 0 ? (
           <p className="muted">暂无员工，请先在上方创建。</p>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap responsive-table">
             <table className="table">
               <thead>
                 <tr>
@@ -187,23 +197,23 @@ export default function StaffList() {
                   const isSelf = me?.id === r.id;
                   return (
                     <tr key={r.id}>
-                      <td>
+                      <td data-label="登录账号">
                         <strong>{r.username}</strong>
                         {isSelf && <span className="sub">（当前登录）</span>}
                       </td>
-                      <td>
+                      <td data-label="角色">
                         <span className={`status-tag ${ROLE_TAG[r.role] || ''}`}>{ROLE_CN[r.role] || r.role}</span>
                       </td>
-                      <td>
+                      <td data-label="状态">
                         <span className={`status-tag ${r.status === 'active' ? 'status-active' : 'status-disabled'}`}>
                           {r.status === 'active' ? '启用' : '禁用'}
                         </span>
                       </td>
-                      <td className="num">{r.quote_count ?? '—'}</td>
-                      <td className="muted text-sm">{fmtTime(r.created_at)}</td>
-                      <td>
+                      <td className="num" data-label="归属报价数">{r.quote_count ?? '—'}</td>
+                      <td className="muted text-sm" data-label="创建时间">{fmtTime(r.created_at)}</td>
+                      <td className="table-action-cell" data-label="操作">
                         {pwdFor === r.id ? (
-                          <div className="row gap-sm">
+                          <div className="row gap-sm table-actions">
                             <input
                               className="form-input-sm"
                               style={{ width: 120 }}
@@ -216,7 +226,7 @@ export default function StaffList() {
                             <button className="btn btn-ghost btn-sm" onClick={() => { setPwdFor(null); setPwdValue(''); }}>取消</button>
                           </div>
                         ) : (
-                          <div className="row gap-sm">
+                          <div className="row gap-sm table-actions">
                             <button
                               className="btn btn-ghost btn-sm"
                               onClick={() => { setPwdFor(r.id); setPwdValue(''); }}

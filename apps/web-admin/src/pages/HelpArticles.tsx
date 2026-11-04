@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 
 type HelpApp = 'client' | 'ops';
@@ -41,7 +42,7 @@ export default function HelpArticles() {
       const r = await api.get('/api/admin/help/articles', { params: { app } });
       setRows(r.data || []);
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '帮助文档加载失败');
+      setErr(getApiErrorMessage(e, '帮助文档加载失败'));
     } finally { setLoading(false); }
   };
 
@@ -72,7 +73,7 @@ export default function HelpArticles() {
       cancel();
       await load();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '保存失败');
+      setErr(getApiErrorMessage(e, '保存失败'));
     } finally { setSaving(false); }
   };
 
@@ -82,7 +83,7 @@ export default function HelpArticles() {
       await api.patch(`/api/admin/help/articles/${row.id}`, { published: !row.published });
       setMsg(row.published ? '✅ 文章已下架' : '✅ 文章已发布');
       await load();
-    } catch (e: any) { setErr(e?.response?.data?.message || '状态更新失败'); }
+    } catch (e: any) { setErr(getApiErrorMessage(e, '状态更新失败')); }
   };
 
   const remove = async (row: Article) => {
@@ -93,7 +94,7 @@ export default function HelpArticles() {
       if (editingId === row.id) cancel();
       setMsg('✅ 文章已删除');
       await load();
-    } catch (e: any) { setErr(e?.response?.data?.message || '删除失败'); }
+    } catch (e: any) { setErr(getApiErrorMessage(e, '删除失败')); }
   };
 
   return (
@@ -108,7 +109,7 @@ export default function HelpArticles() {
       {err && <div className="alert alert-err">❌ {err}</div>}
       {msg && <div className="alert alert-ok">{msg}</div>}
 
-      <div className="card">
+      <div className="card help-editor">
         <div className="card-title">
           <h3>{editingId ? '编辑文章' : '新建文章'} · {app === 'client' ? '客户端' : '运营端'}</h3>
           {editingId && <button className="btn btn-ghost btn-sm" onClick={cancel}>取消编辑</button>}
@@ -138,17 +139,17 @@ export default function HelpArticles() {
       <div className="card">
         <div className="card-title"><h3>文章列表（{rows.length}）</h3><button className="btn btn-ghost btn-sm" onClick={load}>刷新</button></div>
         {loading ? <p className="muted">加载中…</p> : rows.length === 0 ? <p className="muted">暂无文章，请在上方创建。</p> : (
-          <div className="table-wrap"><table className="table">
+          <div className="table-wrap responsive-table"><table className="table">
             <thead><tr><th>文章</th><th>分类</th><th>推荐</th><th>排序</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
             <tbody>{rows.map(row => (
               <tr key={row.id}>
-                <td><strong>{row.title}</strong><span className="sub">/help/{row.slug}</span></td>
-                <td>{CATEGORY_LABELS[row.category] || row.category}</td>
-                <td>{row.featured ? '首页推荐' : '—'}</td>
-                <td>{row.sort_order}</td>
-                <td><span className={`status-tag ${row.published ? 'status-active' : 'status-disabled'}`}>{row.published ? '已发布' : '已下架'}</span></td>
-                <td className="muted text-sm">{fmtTime(row.updated_at)}</td>
-                <td><div className="row gap-sm">
+                <td data-label="文章"><strong>{row.title}</strong><span className="sub">/help/{row.slug}</span></td>
+                <td data-label="分类">{CATEGORY_LABELS[row.category] || row.category}</td>
+                <td data-label="推荐">{row.featured ? '首页推荐' : '—'}</td>
+                <td data-label="排序">{row.sort_order}</td>
+                <td data-label="状态"><span className={`status-tag ${row.published ? 'status-active' : 'status-disabled'}`}>{row.published ? '已发布' : '已下架'}</span></td>
+                <td className="muted text-sm" data-label="更新时间">{fmtTime(row.updated_at)}</td>
+                <td className="table-action-cell" data-label="操作"><div className="row gap-sm table-actions">
                   <button className="btn btn-ghost btn-sm" onClick={() => edit(row)}>编辑</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => togglePublished(row)}>{row.published ? '下架' : '发布'}</button>
                   <button className="btn btn-danger btn-sm" onClick={() => remove(row)}>删除</button>

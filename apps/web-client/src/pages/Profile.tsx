@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
+import { openOrShareFile } from '../lib/file-actions';
 
 interface ProfileData {
   id: string;
@@ -45,7 +47,7 @@ export default function Profile() {
       const r = await api.get('/api/client/profile');
       setProfile(r.data);
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '用户资料加载失败');
+      setErr(getApiErrorMessage(e, '用户资料加载失败'));
     } finally { setLoading(false); }
   };
 
@@ -65,7 +67,7 @@ export default function Profile() {
       setPasswords({ current_password: '', new_password: '', confirm_password: '' });
       setMsg('✅ 密码已修改，下次登录请使用新密码');
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '密码修改失败');
+      setErr(getApiErrorMessage(e, '密码修改失败'));
     } finally { setPasswordBusy(false); }
   };
 
@@ -84,7 +86,7 @@ export default function Profile() {
       setLicenseVersion(v => v + 1);
       setMsg('✅ 营业执照已重新提交，企业认证状态已更新为待认证');
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || '营业执照上传失败');
+      setErr(getApiErrorMessage(e, '营业执照上传失败'));
     } finally { setLicenseBusy(false); }
   };
 
@@ -92,13 +94,9 @@ export default function Profile() {
     setErr(null);
     try {
       const r = await api.get('/api/client/profile/license', { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([r.data], { type: profile?.client.license_mime_type || 'application/octet-stream' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      const mimeType = profile?.client.license_mime_type || 'application/octet-stream';
+      const fileName = profile?.client.license_file_name || `营业执照.${mimeType === 'application/pdf' ? 'pdf' : 'png'}`;
+      await openOrShareFile(new Blob([r.data], { type: mimeType }), fileName);
     } catch { setErr('营业执照加载失败，请稍后重试'); }
   };
 

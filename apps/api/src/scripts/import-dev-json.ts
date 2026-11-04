@@ -19,6 +19,8 @@ import { QuoteOrderEntity } from '../entities/quote-order.entity';
 import { FeeRateEntity } from '../entities/fee-rate.entity';
 import { ClientImageEntity } from '../entities/client-image.entity';
 import { ClientCnpjEntity } from '../entities/client-cnpj.entity';
+import { CustomsCnpjEntity } from '../entities/customs-cnpj.entity';
+import { ProductCatalogEntity } from '../entities/product-catalog.entity';
 import { OrderFileEntity } from '../entities/order-file.entity';
 import { PaymentRecordEntity } from '../entities/payment-record.entity';
 import { HelpArticleEntity } from '../entities/help-article.entity';
@@ -34,6 +36,8 @@ const TABLE_MAP: [string, EntityTarget<ObjectLiteral>][] = [
   ['audit_logs', AuditLogEntity],
   ['client_images', ClientImageEntity],
   ['client_cnpjs', ClientCnpjEntity],
+  ['customs_cnpjs', CustomsCnpjEntity],
+  ['product_catalogs', ProductCatalogEntity],
   ['order_files', OrderFileEntity],
   ['payments', PaymentRecordEntity],
   ['help_articles', HelpArticleEntity]

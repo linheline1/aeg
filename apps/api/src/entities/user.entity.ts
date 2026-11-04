@@ -21,7 +21,7 @@ export class UserEntity {
   password_hash!: string;
 
   @Column({ type: 'varchar', length: 20 })
-  role!: 'admin' | 'operator' | 'sales' | 'client';
+  role!: 'admin' | 'operator' | 'sales' | 'customs' | 'client';
 
   @Column({ type: 'uuid', nullable: true })
   client_id?: string | null;

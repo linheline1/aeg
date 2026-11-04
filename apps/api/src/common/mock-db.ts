@@ -11,7 +11,7 @@ export interface UserRow {
   id: string;
   username: string;
   password_hash: string;
-  role: 'admin' | 'operator' | 'sales' | 'client';
+  role: 'admin' | 'operator' | 'sales' | 'customs' | 'client';
   client_id?: string;
   status: 'active' | 'disabled';
   created_at: string;
@@ -119,6 +119,14 @@ export interface QuoteOrderRow {
   di_analysis?: Record<string, any> | null;
   /** DI 复核的完整不可变版本快照 */
   di_review_versions?: Record<string, any>[] | null;
+  customs_review?: {
+    status: 'pending' | 'approved' | 'changes_requested';
+    di_review_version?: number | null;
+    total_di_brl?: number | null;
+    note?: string | null;
+    reviewed_by?: string | null;
+    reviewed_at?: string | null;
+  } | null;
   /** M9：开票 CNPJ 快照（客户在订单上选择的开票抬头，删除 CNPJ 不影响已绑定订单） */
   invoice_cnpj?: { id: string; cnpj: string; company_name: string; ie?: string | null } | null;
   error_message: string | null;
@@ -182,6 +190,27 @@ export interface ClientCnpjRow {
   queried_at?: string | null;
   /** 是否默认开票抬头 */
   is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomsCnpjRow {
+  id: string;
+  cnpj: string;
+  company_name: string;
+  status: 'active' | 'disabled';
+  quota_limit_usd: number;
+  quota_used_usd: number;
+  cert_a1_file_path?: string | null;
+  cert_a1_file_name?: string | null;
+  cert_a1_mime_type?: string | null;
+  cert_a1_size_bytes?: number | null;
+  cert_a1_uploaded_at?: string | null;
+  ecpf_file_path?: string | null;
+  ecpf_file_name?: string | null;
+  ecpf_mime_type?: string | null;
+  ecpf_size_bytes?: number | null;
+  ecpf_uploaded_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -292,6 +321,7 @@ interface DBSnapshot {
   audit_logs: AuditLogRow[];
   client_images?: ClientImageRow[];
   client_cnpjs?: ClientCnpjRow[];
+  customs_cnpjs?: CustomsCnpjRow[];
   order_files?: OrderFileRow[];
   payments?: PaymentRow[];
   help_articles?: HelpArticleRow[];
@@ -320,12 +350,17 @@ function load(): DBSnapshot {
       fee_rates: [], audit_logs: [], ...raw,
       client_images: (raw as any).client_images || [],
       client_cnpjs: (raw as any).client_cnpjs || [],
+      customs_cnpjs: ((raw as any).customs_cnpjs || []).map((row: any) => ({
+        ...row,
+        quota_limit_usd: row.quota_limit_usd ?? row.quota_limit_brl ?? 0,
+        quota_used_usd: row.quota_used_usd ?? row.quota_used_brl ?? 0
+      })),
       order_files: (raw as any).order_files || [],
       payments: (raw as any).payments || [],
       ai_config: (raw as any).ai_config || []
     };
   } catch {
-    return { users: [], clients: [], templates: [], quotes: [], fee_rates: [], audit_logs: [], client_images: [], client_cnpjs: [], order_files: [], payments: [], ai_config: [] };
+    return { users: [], clients: [], templates: [], quotes: [], fee_rates: [], audit_logs: [], client_images: [], client_cnpjs: [], customs_cnpjs: [], order_files: [], payments: [], ai_config: [] };
   }
 }
 
@@ -388,6 +423,19 @@ export async function seedIfEmpty() {
     });
     changed = true;
   }
+  if (db.users.filter(u => u.role === 'customs').length === 0) {
+    db.users.push({
+      id: uid(),
+      username: 'customs01',
+      password_hash: await bcrypt.hash('customs123', 12),
+      role: 'customs',
+      status: 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+    changed = true;
+  }
+
   // 示例客户默认归属 sales01（仅当未设置时）
   const salesUser = db.users.find(u => u.role === 'sales');
   if (salesUser && db.clients.length > 0 && !db.clients[0].salesperson_id) {
@@ -935,6 +983,39 @@ export class ClientCnpjsRepo {
     }
     save(db);
     return Promise.resolve(true);
+  }
+}
+
+export class CustomsCnpjsRepo {
+  findAll(): Promise<CustomsCnpjRow[]> {
+    const db = load();
+    const rows = (db.customs_cnpjs || []).slice();
+    rows.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return Promise.resolve(rows);
+  }
+  findById(id: string): Promise<CustomsCnpjRow | null> {
+    const db = load();
+    return Promise.resolve((db.customs_cnpjs || []).find(c => c.id === id) || null);
+  }
+  findByCnpj(cnpj: string): Promise<CustomsCnpjRow | null> {
+    const db = load();
+    return Promise.resolve((db.customs_cnpjs || []).find(c => c.cnpj === cnpj) || null);
+  }
+  insert(row: Omit<CustomsCnpjRow, 'id' | 'created_at' | 'updated_at'>): Promise<CustomsCnpjRow> {
+    const db = load();
+    const now = new Date().toISOString();
+    const full: CustomsCnpjRow = { ...row, id: uid(), created_at: now, updated_at: now };
+    db.customs_cnpjs = [...(db.customs_cnpjs || []), full];
+    save(db);
+    return Promise.resolve(full);
+  }
+  update(id: string, patch: Partial<CustomsCnpjRow>): Promise<CustomsCnpjRow | null> {
+    const db = load();
+    const idx = (db.customs_cnpjs || []).findIndex(c => c.id === id);
+    if (idx < 0) return Promise.resolve(null);
+    db.customs_cnpjs![idx] = { ...db.customs_cnpjs![idx], ...patch, updated_at: new Date().toISOString() };
+    save(db);
+    return Promise.resolve(db.customs_cnpjs![idx]);
   }
 }
 

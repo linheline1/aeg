@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 
 interface FeeRateRow {
@@ -94,7 +95,7 @@ export default function Rates() {
       if (d.global) {
         setGlobalFees(feeOf(d.global));
       }
-    }).catch((e: any) => setMsg({ type: 'err', text: e?.response?.data?.message || e?.message }));
+    }).catch((e: any) => setMsg({ type: 'err', text: getApiErrorMessage(e, '') }));
   };
 
   useEffect(() => { load(); }, []);
@@ -110,7 +111,7 @@ export default function Rates() {
       await api.put('/api/ops/rates/global', ratePayload(globalFees));
       flash('ok', '全局默认费率已更新（已写审计日志）');
       load();
-    } catch (e: any) { flash('err', e?.response?.data?.message || '保存失败'); }
+    } catch (e: any) { flash('err', getApiErrorMessage(e, '保存失败')); }
     finally { setSaving(false); }
   };
 
@@ -128,7 +129,7 @@ export default function Rates() {
       flash('ok', editingId ? '客户费率覆盖已更新' : '客户费率覆盖已创建');
       setEditingId(null); setOvClient(''); setOvFees(EMPTY_FEES);
       load();
-    } catch (e: any) { flash('err', e?.response?.data?.message || '保存失败'); }
+    } catch (e: any) { flash('err', getApiErrorMessage(e, '保存失败')); }
     finally { setSaving(false); }
   };
 
@@ -139,7 +140,7 @@ export default function Rates() {
       flash('ok', '已移除覆盖');
       if (editingId === row.id) { setEditingId(null); setOvClient(''); setOvFees(EMPTY_FEES); }
       load();
-    } catch (e: any) { flash('err', e?.response?.data?.message || '删除失败'); }
+    } catch (e: any) { flash('err', getApiErrorMessage(e, '删除失败')); }
   };
 
   const overriddenIds = new Set(data?.overrides.map(o => o.client_id) || []);
