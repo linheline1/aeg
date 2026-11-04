@@ -28,7 +28,15 @@ function LangSelect({ t, lang, onLangChange, className = '' }: HeaderProps & { c
 
 export default function Header({ t, lang, loggedIn, activeId, onLangChange }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -44,7 +52,7 @@ export default function Header({ t, lang, loggedIn, activeId, onLangChange }: He
   const closeMenu = () => setMenuOpen(false);
 
   return (
-    <header className="lp-header" data-menu-open={menuOpen || undefined}>
+    <header className="lp-header" data-menu-open={menuOpen || undefined} data-scrolled={scrolled || undefined}>
       <div className="lp-container lp-header-inner">
         <a className="lp-brand" href="#top" aria-label="AEG">
           <img className="lp-brand-mark" src={logo} alt="AEG" width={207} height={96} />
@@ -75,7 +83,7 @@ export default function Header({ t, lang, loggedIn, activeId, onLangChange }: He
             className="lp-menu-btn"
             aria-expanded={menuOpen}
             aria-controls="lp-mobile-menu"
-            aria-label={t.menu}
+            aria-label={menuOpen ? t.closeMenu : t.menu}
             onClick={() => setMenuOpen((open) => !open)}
           >
             {menuOpen ? <CloseIcon width={22} height={22} /> : <MenuIcon width={22} height={22} />}

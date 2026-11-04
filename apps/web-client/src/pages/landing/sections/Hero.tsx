@@ -1,11 +1,14 @@
 import { Link } from 'react-router-dom';
 import type { LandingContent } from '../content';
-import { ArrowRightIcon, BoltIcon } from '../icons';
+import { ArrowRightIcon, BanknoteIcon, BoltIcon, FileCheckIcon, HistoryIcon } from '../icons';
 
 interface HeroProps {
   t: LandingContent;
   loggedIn: boolean;
 }
+
+/** stats 图标按序对应 content.ts 中的 stats 数组 */
+const STAT_ICONS = [FileCheckIcon, BanknoteIcon, HistoryIcon];
 
 export default function Hero({ t, loggedIn }: HeroProps) {
   return (
@@ -27,12 +30,15 @@ export default function Hero({ t, loggedIn }: HeroProps) {
             </a>
           </div>
           <div className="lp-hero-stats">
-            {t.hero.stats.map((stat) => (
-              <div key={stat.label}>
-                <strong>{stat.value}</strong>
-                <span>{stat.label}</span>
-              </div>
-            ))}
+            {t.hero.stats.map((stat, index) => {
+              const StatIcon = STAT_ICONS[index] ?? FileCheckIcon;
+              return (
+                <div key={stat.label}>
+                  <strong><StatIcon width={19} height={19} />{stat.value}</strong>
+                  <span>{stat.label}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -50,7 +56,10 @@ export default function Hero({ t, loggedIn }: HeroProps) {
               <span className="lp-route-dot lp-route-dot-a" aria-hidden="true" />
               <span>{t.hero.routes.from}</span>
             </div>
-            <span className="lp-route-line" aria-hidden="true" />
+            <div className="lp-route-mid">
+              <span className="lp-route-line" aria-hidden="true" />
+              <span className="lp-route-label">{t.hero.routes.label}</span>
+            </div>
             <div className="lp-route-row">
               <span className="lp-route-dot lp-route-dot-b" aria-hidden="true" />
               <span>{t.hero.routes.to}</span>

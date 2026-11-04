@@ -136,6 +136,33 @@
   .lp-btn:hover { transform: none; }
 }
 
+/* ── voltar ao topo ── */
+.lp-backtop {
+  position: fixed;
+  right: 22px;
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(223, 175, 0, .45);
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--gold-hi);
+  cursor: pointer;
+  box-shadow: 0 12px 28px rgba(6, 42, 110, .32);
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  transition: opacity .25s var(--ease-out), transform .25s var(--ease-out),
+              background-color .18s ease;
+}
+.lp-backtop.is-show { opacity: 1; transform: none; pointer-events: auto; }
+.lp-backtop:hover { background: var(--ink-2); transform: translateY(-2px); }
+.lp-backtop:active { transform: none; }
+
 /* ── grão de papel sobre toda a página ── */
 .lp::after {
   content: '';

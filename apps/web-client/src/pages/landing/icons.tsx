@@ -25,6 +25,10 @@ export const ArrowRightIcon = (props: IconProps) => (
   <Base {...props}><path d="M4 12h16m-6-6 6 6-6 6" /></Base>
 );
 
+export const ArrowUpIcon = (props: IconProps) => (
+  <Base {...props}><path d="M12 20V4m-6 6 6-6 6 6" /></Base>
+);
+
 export const CheckIcon = (props: IconProps) => (
   <Base {...props}><path d="m4 12.5 5 5L20 6.5" /></Base>
 );

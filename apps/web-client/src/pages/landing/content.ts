@@ -50,6 +50,8 @@ export interface LandingContent {
   closeMenu: string;
   languageLabel: string;
   skipToContent: string;
+  /** 回到顶部按钮的无障碍标签 */
+  backTop: string;
   ticker: string[];
   hero: {
     eyebrow: string;
@@ -61,7 +63,7 @@ export interface LandingContent {
     stats: Stat[];
     imgAlt: string;
     badge: string;
-    routes: { from: string; to: string };
+    routes: { from: string; to: string; label: string };
   };
   steps: {
     kicker: string;
@@ -122,6 +124,7 @@ export const T: Record<Lang, LandingContent> = {
     closeMenu: 'Fechar menu',
     languageLabel: 'Idioma',
     skipToContent: 'Pular para o conteúdo',
+    backTop: 'Voltar ao topo',
     ticker: ['Xangai → Santos', 'DDP com custos discriminados', 'Shenzhen → Paranaguá', 'FCL com estimativa por contêiner', 'Ningbo → Santos', 'Estimativa imediata em BRL'],
     hero: {
       eyebrow: 'Porta a porta · China → Brasil',
@@ -141,7 +144,7 @@ export const T: Record<Lang, LandingContent> = {
       ],
       imgAlt: 'Navio porta-contêineres cruzando o oceano',
       badge: 'Estimativa automática · 24/7',
-      routes: { from: 'Shenzhen / Ningbo / Xangai', to: 'Santos / Paranaguá + entrega' }
+      routes: { from: 'Shenzhen / Ningbo / Xangai', to: 'Santos / Paranaguá + entrega', label: 'DDP porta a porta' }
     },
     steps: {
       kicker: 'Fluxo do cliente',
@@ -223,6 +226,7 @@ export const T: Record<Lang, LandingContent> = {
     closeMenu: '关闭菜单',
     languageLabel: '语言',
     skipToContent: '跳至主要内容',
+    backTop: '回到顶部',
     ticker: ['上海 → 桑托斯', 'DDP 全链路明细透明', '深圳 → 巴拉那瓜', '整柜海运 · 按柜参考价', '宁波 → 桑托斯', '雷亚尔即时预估'],
     hero: {
       eyebrow: '门到门 · 中国 → 巴西',
@@ -242,7 +246,7 @@ export const T: Record<Lang, LandingContent> = {
       ],
       imgAlt: '集装箱货轮航行在大海上',
       badge: '自动预估 · 24/7',
-      routes: { from: '深圳 / 宁波 / 上海', to: '桑托斯 / 巴拉那瓜 + 派送' }
+      routes: { from: '深圳 / 宁波 / 上海', to: '桑托斯 / 巴拉那瓜 + 派送', label: '门到门 · 双清包税' }
     },
     steps: {
       kicker: '客户流程',

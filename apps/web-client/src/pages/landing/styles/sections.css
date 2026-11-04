@@ -302,7 +302,7 @@
   .lp-steps { grid-template-columns: 1fr 1fr; }
   .lp-step { border-right: 0; border-bottom: 1px dashed var(--line); }
   .lp-step:nth-child(2n) { border-left: 1px dashed var(--line); }
-  .lp-included { grid-template-columns: 1fr; }
+  .lp-included { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 720px) {
   .lp-section { padding: 60px 0; }
@@ -312,6 +312,7 @@
   .lp-step { padding: 22px 20px 26px; }
   .lp-step:nth-child(2n) { border-left: 0; }
   .lp-step:last-child { border-bottom: 0; }
+  .lp-included { grid-template-columns: 1fr; }
   .lp-included-total { font-size: 13.5px; }
   .lp-adv-grid { grid-template-columns: 1fr; }
   .lp-cta-band { padding: 48px 0; }

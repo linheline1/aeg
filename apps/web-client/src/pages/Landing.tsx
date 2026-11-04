@@ -10,6 +10,7 @@ import Included from './landing/sections/Included';
 import Advantages from './landing/sections/Advantages';
 import CtaBand from './landing/sections/CtaBand';
 import Footer from './landing/sections/Footer';
+import BackTop from './landing/BackTop';
 import './landing.css';
 
 export default function Landing() {
@@ -38,6 +39,7 @@ export default function Landing() {
         <CtaBand t={t} loggedIn={loggedIn} />
       </main>
       <Footer t={t} />
+      <BackTop label={t.backTop} />
     </div>
   );
 }
