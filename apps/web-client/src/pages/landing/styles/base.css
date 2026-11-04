@@ -31,7 +31,7 @@
 .lp-skip-link:focus-visible { transform: translateY(0); }
 
 /* ── tipografia óptica ── */
-.lp-hero-copy h1, .lp-section-head h2, .lp-cta-inner h2 { text-wrap: balance; }
+.lp-hero-title, .lp-section-head h2, .lp-cta-inner h2 { text-wrap: balance; }
 .lp-lead, .lp-section-sub { text-wrap: pretty; }
 
 /* ── animações ── */

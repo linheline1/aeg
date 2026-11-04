@@ -8,6 +8,7 @@
 @import './landing/styles/footer.css';
 @import './landing/styles/refinements.css';
 @import './landing/styles/motion.css';
+@import './landing/styles/hero-monument.css';
 
 /* 中文排版微调 */
 .lp[data-lang='zh'] .lp-eyebrow,
@@ -16,11 +17,10 @@
 .lp[data-lang='zh'] .lp-footer-col h4 {
   letter-spacing: .5px;
 }
-.lp[data-lang='zh'] .lp-hero-copy h1,
+.lp[data-lang='zh'] .lp-hero-title,
 .lp[data-lang='zh'] .lp-section-head h2,
 .lp[data-lang='zh'] .lp-cta-inner h2 { letter-spacing: 0; }
-.lp[data-lang='zh'] .lp-hero-copy h1 {
-  font-size: clamp(30px, 3.7vw, 46px);
-  line-height: 1.2;
+.lp[data-lang='zh'] .lp-hero-title {
+  line-height: 1.06;
 }
-.lp[data-lang='zh'] .lp-hero-copy h1 em { font-style: normal; }
+.lp[data-lang='zh'] .lp-hero-title em { font-style: normal; }

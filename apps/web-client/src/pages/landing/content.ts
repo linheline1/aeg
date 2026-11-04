@@ -65,6 +65,8 @@ export interface LandingContent {
     stats: Stat[];
     imgAlt: string;
     badge: string;
+    /** 装饰性竖排提示（aria-hidden） */
+    scrollHint: string;
     routes: { from: string; to: string; label: string };
   };
   steps: {
@@ -158,6 +160,7 @@ export const T: Record<Lang, LandingContent> = {
       ],
       imgAlt: 'Navio porta-contêineres cruzando o oceano',
       badge: 'China → Brasil · FCL',
+      scrollHint: 'Role para explorar',
       routes: { from: 'Shenzhen / Ningbo / Xangai', to: 'Santos / Paranaguá + entrega', label: 'DDP porta a porta' }
     },
     steps: {
@@ -272,6 +275,7 @@ export const T: Record<Lang, LandingContent> = {
       ],
       imgAlt: '集装箱货轮航行在大海上',
       badge: '中国 → 巴西 · 整柜海运',
+      scrollHint: '向下滚动浏览',
       routes: { from: '深圳 / 宁波 / 上海', to: '桑托斯 / 巴拉那瓜 + 派送', label: '门到门 · 双清包税' }
     },
     steps: {
