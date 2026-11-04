@@ -9,6 +9,7 @@
 @import './landing/styles/refinements.css';
 @import './landing/styles/motion.css';
 @import './landing/styles/hero-monument.css';
+@import './landing/styles/monument.css';
 
 /* 中文排版微调 */
 .lp[data-lang='zh'] .lp-eyebrow,
