@@ -6,6 +6,8 @@
 @import './landing/styles/hero.css';
 @import './landing/styles/sections.css';
 @import './landing/styles/footer.css';
+@import './landing/styles/refinements.css';
+@import './landing/styles/motion.css';
 
 /* 中文排版微调 */
 .lp[data-lang='zh'] .lp-eyebrow,

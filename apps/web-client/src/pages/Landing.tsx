@@ -11,6 +11,7 @@ import Advantages from './landing/sections/Advantages';
 import CtaBand from './landing/sections/CtaBand';
 import Footer from './landing/sections/Footer';
 import BackTop from './landing/BackTop';
+import Faq from './landing/sections/Faq';
 import './landing.css';
 
 export default function Landing() {
@@ -36,6 +37,7 @@ export default function Landing() {
         <Process t={t} />
         <Included t={t} />
         <Advantages t={t} />
+        <Faq t={t} />
         <CtaBand t={t} loggedIn={loggedIn} />
       </main>
       <Footer t={t} />

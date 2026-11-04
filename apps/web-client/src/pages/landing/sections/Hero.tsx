@@ -17,7 +17,8 @@ export default function Hero({ t, loggedIn }: HeroProps) {
         <div className="lp-hero-copy">
           <p className="lp-eyebrow">{t.hero.eyebrow}</p>
           <h1 id="lp-hero-title">
-            {t.hero.title.before}<em>{t.hero.title.accent}</em>{t.hero.title.after}
+            <span className="lp-hero-title-intro">{t.hero.title.before}</span>
+            <span className="lp-hero-title-detail"><em>{t.hero.title.accent}</em>{t.hero.title.after}</span>
           </h1>
           <p className="lp-lead">{t.hero.lead}</p>
           <div className="lp-hero-actions">
@@ -29,6 +30,9 @@ export default function Hero({ t, loggedIn }: HeroProps) {
               {t.hero.ctaHow}
             </a>
           </div>
+          <a className="lp-consult-link" href={`mailto:${t.footer.contact.email}`}>
+            {t.consultation.button} <ArrowRightIcon width={16} height={16} />
+          </a>
           <div className="lp-hero-stats">
             {t.hero.stats.map((stat, index) => {
               const StatIcon = STAT_ICONS[index] ?? FileCheckIcon;

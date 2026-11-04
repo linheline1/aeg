@@ -52,6 +52,8 @@ export interface LandingContent {
   skipToContent: string;
   /** 回到顶部按钮的无障碍标签 */
   backTop: string;
+  consultation: { button: string; note: string };
+  faq: { kicker: string; title: string; items: { question: string; answer: string }[] };
   ticker: string[];
   hero: {
     eyebrow: string;
@@ -125,7 +127,19 @@ export const T: Record<Lang, LandingContent> = {
     languageLabel: 'Idioma',
     skipToContent: 'Pular para o conteúdo',
     backTop: 'Voltar ao topo',
-    ticker: ['Xangai → Santos', 'DDP com custos discriminados', 'Shenzhen → Paranaguá', 'FCL com estimativa por contêiner', 'Ningbo → Santos', 'Estimativa imediata em BRL'],
+    consultation: { button: 'Falar com a equipe por e-mail', note: 'Informe o tipo de mercadoria, a origem e a cidade de entrega. O link abre seu aplicativo de e-mail.' },
+    faq: {
+      kicker: 'Antes de começar', title: 'Dúvidas sobre a sua estimativa',
+      items: [
+        { question: 'Como solicito uma estimativa?', answer: 'Crie sua conta, acesse o painel e envie a planilha de empacotamento. Confira os dados identificados antes de confirmar a solicitação. Acompanhe o status no painel.' },
+        { question: 'Quais informações devo preparar?', answer: 'Prepare a descrição das mercadorias, quantidades, dimensões, pesos e valores declarados. O modelo disponível no painel orienta o preenchimento da planilha.' },
+        { question: 'A estimativa é o preço final?', answer: 'Não. Os valores são referências e podem mudar conforme tributos, câmbio e despesas adicionais. O preço final depende da confirmação por escrito e da fatura oficial.' },
+        { question: 'Em qual moeda os valores são apresentados?', answer: 'A estimativa DDP é apresentada em reais (BRL). O frete marítimo é discriminado separadamente; confira a moeda e o câmbio indicados em cada item.' },
+        { question: 'Qual é o prazo de transporte?', answer: 'O prazo depende da rota, disponibilidade de embarque, liberação aduaneira e destino da entrega. Consulte a equipe sobre a sua operação antes de planejar o recebimento.' },
+        { question: 'Ainda não tenho a planilha pronta. Posso conversar com a equipe?', answer: 'Sim. Use o contato por e-mail para apresentar sua mercadoria, origem e cidade de entrega. Não envie senhas ou documentos pessoais no primeiro contato.' }
+      ]
+    },
+    ticker: ['Xangai → Santos', 'DDP com custos discriminados', 'Shenzhen → Paranaguá', 'FCL com estimativa por contêiner', 'Ningbo → Santos', 'Estimativa de referência em BRL'],
     hero: {
       eyebrow: 'Porta a porta · China → Brasil',
       title: {
@@ -134,16 +148,16 @@ export const T: Record<Lang, LandingContent> = {
         after: '.'
       },
       lead: 'Estimativa DDP em reais a partir da sua planilha de empacotamento. Frete marítimo, taxas de origem, DI e tributos discriminados linha a linha. Valores de referência — não é proposta final.',
-      ctaStart: 'Começar agora',
+      ctaStart: 'Solicitar estimativa',
       ctaPanel: 'Abrir meu painel',
       ctaHow: 'Ver como funciona',
       stats: [
         { value: '5', label: 'itens de custo discriminados' },
         { value: 'BRL', label: 'estimativa em reais' },
-        { value: '24/7', label: 'cotação automática' }
+        { value: 'Online', label: 'acompanhe no painel' }
       ],
       imgAlt: 'Navio porta-contêineres cruzando o oceano',
-      badge: 'Estimativa automática · 24/7',
+      badge: 'China → Brasil · FCL',
       routes: { from: 'Shenzhen / Ningbo / Xangai', to: 'Santos / Paranaguá + entrega', label: 'DDP porta a porta' }
     },
     steps: {
@@ -173,13 +187,13 @@ export const T: Record<Lang, LandingContent> = {
       items: [
         { title: 'Estimativa em reais', description: 'Estimativa em BRL, com câmbio e memória de cálculo transparentes.' },
         { title: 'Detalhamento transparente', description: 'DDP porta a porta: cada item de custo é discriminado e auditável, com valores de referência.' },
-        { title: 'Cotação imediata', description: 'Suba a planilha e receba a estimativa em segundos, 24/7.' },
+        { title: 'Acompanhamento online', description: 'Envie a planilha e acompanhe a análise e a estimativa no painel.' },
         { title: 'Histórico completo', description: 'Todas as estimativas ficam salvas no seu painel para comparação.' }
       ]
     },
     cta: {
       title: 'Pronto para simular o próximo contêiner?',
-      description: 'Envie sua planilha hoje e receba a estimativa DDP de referência em minutos.',
+      description: 'Envie sua planilha para solicitar uma estimativa. Ainda tem dúvidas? Converse com a equipe.',
       button: 'Acessar o painel'
     },
     footer: {
@@ -227,7 +241,19 @@ export const T: Record<Lang, LandingContent> = {
     languageLabel: '语言',
     skipToContent: '跳至主要内容',
     backTop: '回到顶部',
-    ticker: ['上海 → 桑托斯', 'DDP 全链路明细透明', '深圳 → 巴拉那瓜', '整柜海运 · 按柜参考价', '宁波 → 桑托斯', '雷亚尔即时预估'],
+    consultation: { button: '邮件咨询团队', note: '请说明货物类型、起运地与派送城市。点击将打开您的邮件应用。' },
+    faq: {
+      kicker: '开始前了解', title: '关于参考预估，您可能想问',
+      items: [
+        { question: '如何申请参考预估？', answer: '注册账号后进入工作台，上传装箱清单，核对识别出的数据后确认申请。您可以在工作台跟进处理状态。' },
+        { question: '需要提前准备哪些资料？', answer: '请准备货物名称、数量、尺寸、重量和申报金额。工作台提供的装箱清单模板会引导您填写对应字段。' },
+        { question: '参考预估就是最终价格吗？', answer: '不是。税费、汇率及附加费用可能调整，最终价格以我司书面确认及正式账单为准。' },
+        { question: '费用使用什么币种展示？', answer: 'DDP 参考预估以巴西雷亚尔（BRL）展示，海运费单独列示。请核对各项费用标注的币种与参考汇率。' },
+        { question: '运输需要多长时间？', answer: '运输时间受航线、舱位、清关进度和派送地点影响。安排收货前，请向团队确认您这票货物的具体计划。' },
+        { question: '清单尚未准备好，可以先咨询吗？', answer: '可以。您可以通过邮件介绍货物类型、起运地与派送城市，先与团队沟通需求。首次联系请勿发送密码或个人证件。' }
+      ]
+    },
+    ticker: ['上海 → 桑托斯', 'DDP 全链路明细透明', '深圳 → 巴拉那瓜', '整柜海运 · 按柜参考价', '宁波 → 桑托斯', '雷亚尔参考预估'],
     hero: {
       eyebrow: '门到门 · 中国 → 巴西',
       title: {
@@ -236,16 +262,16 @@ export const T: Record<Lang, LandingContent> = {
         after: '，费用逐项可查。'
       },
       lead: '上传装箱清单即可获得 DDP 雷亚尔参考预估。海运费单独列示，DDP 总价包含税费及综合运营费用。金额为参考预估，不构成最终报价。',
-      ctaStart: '立即开始',
+      ctaStart: '申请参考预估',
       ctaPanel: '打开我的工作台',
       ctaHow: '查看操作流程',
       stats: [
         { value: '5', label: '项费用逐项拆解' },
         { value: 'BRL', label: '雷亚尔参考预估' },
-        { value: '24/7', label: '自动预估' }
+        { value: '在线', label: '工作台跟进进度' }
       ],
       imgAlt: '集装箱货轮航行在大海上',
-      badge: '自动预估 · 24/7',
+      badge: '中国 → 巴西 · 整柜海运',
       routes: { from: '深圳 / 宁波 / 上海', to: '桑托斯 / 巴拉那瓜 + 派送', label: '门到门 · 双清包税' }
     },
     steps: {
@@ -275,13 +301,13 @@ export const T: Record<Lang, LandingContent> = {
       items: [
         { title: '雷亚尔参考预估', description: '参考预估以 BRL 呈现，汇率与计算明细透明可查。' },
         { title: '明细透明', description: 'DDP 门到门：每项费用单独列出、逐项可核对，均为参考预估。' },
-        { title: '即时预估', description: '上传清单，几秒钟出参考预估，全天候可用。' },
+        { title: '在线跟进', description: '上传装箱清单，在工作台跟进核算状态与参考预估。' },
         { title: '完整历史', description: '所有报价单保存在工作台，随时对比追溯。' }
       ]
     },
     cta: {
       title: '准备好测算下一个整柜了吗？',
-      description: '今天上传装箱清单，几分钟内获得 DDP 参考预估。',
+      description: '上传装箱清单，申请参考预估。资料还没准备好？也可以先与团队沟通。',
       button: '进入工作台'
     },
     footer: {
