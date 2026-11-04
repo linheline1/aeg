@@ -215,6 +215,34 @@ export interface CustomsCnpjRow {
   updated_at: string;
 }
 
+export interface ProductCatalogRow {
+  id: string;
+  sku_key: string;
+  sku: string;
+  product_cn?: string | null;
+  product_en?: string | null;
+  description?: string | null;
+  material?: string | null;
+  base_unit_price_rmb?: number | null;
+  ncm?: string | null;
+  ncm_confidence?: number | null;
+  ncm_rationale?: string | null;
+  ncm_sources: string[];
+  tax_rates?: {
+    ii_rate?: number | null;
+    ipi_rate?: number | null;
+    pis_rate?: number | null;
+    cofins_rate?: number | null;
+  } | null;
+  image_ids: string[];
+  last_quote_id?: string | null;
+  last_client_id?: string | null;
+  ncm_reviewed_by?: string | null;
+  ncm_reviewed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** 订单交付文件（M8：运营上传的放行截图 / 发票 PDF，客户查看下载） */
 export interface OrderFileRow {
   id: string;
@@ -322,6 +350,7 @@ interface DBSnapshot {
   client_images?: ClientImageRow[];
   client_cnpjs?: ClientCnpjRow[];
   customs_cnpjs?: CustomsCnpjRow[];
+  product_catalogs?: ProductCatalogRow[];
   order_files?: OrderFileRow[];
   payments?: PaymentRow[];
   help_articles?: HelpArticleRow[];
@@ -355,12 +384,13 @@ function load(): DBSnapshot {
         quota_limit_usd: row.quota_limit_usd ?? row.quota_limit_brl ?? 0,
         quota_used_usd: row.quota_used_usd ?? row.quota_used_brl ?? 0
       })),
+      product_catalogs: (raw as any).product_catalogs || [],
       order_files: (raw as any).order_files || [],
       payments: (raw as any).payments || [],
       ai_config: (raw as any).ai_config || []
     };
   } catch {
-    return { users: [], clients: [], templates: [], quotes: [], fee_rates: [], audit_logs: [], client_images: [], client_cnpjs: [], customs_cnpjs: [], order_files: [], payments: [], ai_config: [] };
+    return { users: [], clients: [], templates: [], quotes: [], fee_rates: [], audit_logs: [], client_images: [], client_cnpjs: [], customs_cnpjs: [], product_catalogs: [], order_files: [], payments: [], ai_config: [] };
   }
 }
 
@@ -1016,6 +1046,71 @@ export class CustomsCnpjsRepo {
     db.customs_cnpjs![idx] = { ...db.customs_cnpjs![idx], ...patch, updated_at: new Date().toISOString() };
     save(db);
     return Promise.resolve(db.customs_cnpjs![idx]);
+  }
+}
+
+export class ProductCatalogRepo {
+  findBySku(skuKey: string): Promise<ProductCatalogRow | null> {
+    const db = load();
+    return Promise.resolve((db.product_catalogs || []).find(p => p.sku_key === skuKey) || null);
+  }
+  findById(id: string): Promise<ProductCatalogRow | null> {
+    const db = load();
+    return Promise.resolve((db.product_catalogs || []).find(p => p.id === id) || null);
+  }
+  upsertBySku(skuKey: string, patch: Partial<ProductCatalogRow>): Promise<ProductCatalogRow> {
+    const db = load();
+    const rows = db.product_catalogs || [];
+    const idx = rows.findIndex(p => p.sku_key === skuKey);
+    const now = new Date().toISOString();
+    let full: ProductCatalogRow;
+    if (idx >= 0) {
+      const existing = rows[idx];
+      full = {
+        ...existing, ...patch,
+        id: existing.id, sku_key: skuKey, created_at: existing.created_at, updated_at: now
+      };
+      rows[idx] = full;
+    } else {
+      full = {
+        ...patch,
+        id: uid(), sku_key: skuKey, sku: patch.sku ?? skuKey,
+        ncm_sources: patch.ncm_sources ?? [], image_ids: patch.image_ids ?? [],
+        created_at: now, updated_at: now
+      };
+      rows.push(full);
+    }
+    db.product_catalogs = rows;
+    save(db);
+    return Promise.resolve(full);
+  }
+  list(opts: { q?: string; page?: number; pageSize?: number } = {}): Promise<{
+    items: ProductCatalogRow[]; total: number; page: number; pageSize: number;
+  }> {
+    const db = load();
+    let rows = (db.product_catalogs || []).slice();
+    const kw = opts.q?.trim().toLowerCase();
+    if (kw) {
+      rows = rows.filter(p => [p.sku, p.product_cn, p.product_en, p.ncm]
+        .some(value => (value || '').toLowerCase().includes(kw)));
+    }
+    rows.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    const page = Math.max(1, opts.page || 1);
+    const pageSize = Math.min(100, Math.max(1, opts.pageSize || 20));
+    return Promise.resolve({
+      items: rows.slice((page - 1) * pageSize, page * pageSize),
+      total: rows.length,
+      page,
+      pageSize
+    });
+  }
+  update(id: string, patch: Partial<ProductCatalogRow>): Promise<ProductCatalogRow | null> {
+    const db = load();
+    const idx = (db.product_catalogs || []).findIndex(p => p.id === id);
+    if (idx < 0) return Promise.resolve(null);
+    db.product_catalogs![idx] = { ...db.product_catalogs![idx], ...patch, updated_at: new Date().toISOString() };
+    save(db);
+    return Promise.resolve(db.product_catalogs![idx]);
   }
 }
 

@@ -14,25 +14,6 @@ import Products from './pages/Products';
 import Profile from './pages/Profile';
 import { useAuth } from './store/auth';
 
-/** 无权访问提示页（顶层路由，避免守卫重定向死循环） */
-function Forbidden() {
-  return (
-    <div className="login-page">
-      <div className="login-card" style={{ textAlign: 'center' }}>
-        <h2 style={{ marginTop: 0 }}>403 · 无权访问</h2>
-        <p className="sub">当前账号角色无权进入运营端（报价员 operator / 业务员 sales）</p>
-        <a
-          className="btn btn-lg"
-          href="#back"
-          onClick={e => { e.preventDefault(); window.location.href = '/login'; }}
-        >
-          返回登录
-        </a>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   const { user } = useAuth();
   // M4：业务员登录运营端后落在「成交统计」，报价员落在「报价订单」
@@ -41,7 +22,6 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to={home} /> : <Login />} />
-      <Route path="/403" element={<Forbidden />} />
       <Route
         path="/"
         element={

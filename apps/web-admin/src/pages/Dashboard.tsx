@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 
 interface Stats {
@@ -25,7 +26,7 @@ export default function Dashboard() {
   useEffect(() => {
     api.get('/api/admin/stats')
       .then(r => setStats(r.data))
-      .catch(e => setErr(e?.response?.data?.message || e?.message || '加载失败'));
+      .catch(e => setErr(getApiErrorMessage(e, '加载失败')));
   }, []);
 
   if (err) {

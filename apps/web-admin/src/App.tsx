@@ -14,31 +14,11 @@ import HelpArticles from './pages/HelpArticles';
 import AiConfig from './pages/AiConfig';
 import Profile from './pages/Profile';
 
-/** 无权访问提示页（顶层路由，避免守卫重定向死循环） */
-function Forbidden() {
-  return (
-    <div className="login-page">
-      <div className="login-card" style={{ textAlign: 'center' }}>
-        <h2 style={{ marginTop: 0 }}>403 · 无权访问</h2>
-        <p className="muted">当前账号角色无权访问该页面（管理员功能）</p>
-        <a
-          className="btn btn-lg"
-          href="#back"
-          onClick={e => { e.preventDefault(); window.location.href = '/login'; }}
-        >
-          返回登录
-        </a>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   const { user } = useAuth();
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
-      <Route path="/403" element={<Forbidden />} />
       <Route
         path="/*"
         element={

@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import axios from 'axios';
+import { Capacitor } from '@capacitor/core';
+import { createAuthenticatedApi } from '@aeg/web-shared/auth';
 import type { Role } from '@aeg/shared-types';
 
 interface User {
@@ -18,6 +20,10 @@ interface AuthState {
 
 const TOKEN_KEY = 'aeg_admin_token';
 const USER_KEY = 'aeg_admin_user';
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL
+  || (Capacitor.isNativePlatform() ? 'https://admin.linsgeekai.com.br' : '')
+).replace(/\/+$/, '');
 
 export const useAuth = create<AuthState>((set) => ({
   token: localStorage.getItem(TOKEN_KEY),
@@ -27,7 +33,7 @@ export const useAuth = create<AuthState>((set) => ({
   })(),
 
   login: async (username, password) => {
-    const res = await axios.post('/api/auth/login', { username, password });
+    const res = await axios.post(`${API_BASE_URL}/api/auth/login`, { username, password });
     const { access_token, user } = res.data;
     localStorage.setItem(TOKEN_KEY, access_token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
@@ -41,20 +47,11 @@ export const useAuth = create<AuthState>((set) => ({
   }
 }));
 
-export const api = axios.create();
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-api.interceptors.response.use(
-  (r) => r,
-  (err) => {
-    if (err.response?.status === 401) {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
-      window.location.href = '/login';
-    }
-    return Promise.reject(err);
+export const api = createAuthenticatedApi({
+  tokenKey: TOKEN_KEY,
+  userKey: USER_KEY,
+  onUnauthorized: () => {
+    window.location.href = Capacitor.isNativePlatform() ? '#/login' : '/login';
   }
-);
+});
+api.defaults.baseURL = API_BASE_URL;
