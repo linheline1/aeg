@@ -52,7 +52,10 @@ const ACTION_CN: Record<string, string> = {
   'ai_config.profile_create': 'AI 配置新增',
   'ai_config.profile_update': 'AI 配置编辑',
   'ai_config.profile_activate': 'AI 配置切换',
-  'ai_config.profile_delete': 'AI 配置删除'
+  'ai_config.profile_delete': 'AI 配置删除',
+  'product.update': '产品档案编辑',
+  'product.sync': '产品档案同步',
+  'order.images.reextract': '订单图片重新提取'
 };
 
 const ACTION_TAG: Record<string, string> = {

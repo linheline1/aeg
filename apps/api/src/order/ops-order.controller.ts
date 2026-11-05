@@ -149,6 +149,7 @@ export class OpsOrderController {
       template_version: q.template_version,
       status: q.status,
       input_file_name: q.input_file_name,
+      has_file: !!q.input_file_path && fs.existsSync(path.join(repoRoot(), q.input_file_path)),
       converted_by_ai: q.converted_by_ai || false,
       declared_currency: q.declared_currency || 'RMB',
       ai_notes: q.ai_notes || null,
@@ -439,6 +440,13 @@ export class OpsOrderController {
       detail: { quote_no: order.quote_no, stage: target.stage, happened_at: target.happened_at }
     });
     return { ok: true, id, shipment: ship };
+  }
+
+  /** 重新提取订单 Excel 内嵌产品图片（含 WPS 嵌入单元格图片），替换旧记录 */
+  @Post(':id/images/reextract')
+  @Roles('operator', 'admin')
+  async reExtractImages(@Param('id') id: string, @Req() req: Request & { user?: any }) {
+    return this.quoteService.reExtractImages(id, this.actor(req));
   }
 
   /** 下载客户上传的原 Excel */

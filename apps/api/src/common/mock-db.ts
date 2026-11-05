@@ -966,6 +966,14 @@ export class ImageRepo {
     save(db);
     return Promise.resolve(full);
   }
+  /** 删除某订单全部图片（返回被删记录，便于清理物理文件） */
+  deleteByQuote(quoteId: string): Promise<ClientImageRow[]> {
+    const db = load();
+    const removed = (db.client_images || []).filter(i => i.quote_id === quoteId);
+    db.client_images = (db.client_images || []).filter(i => i.quote_id !== quoteId);
+    save(db);
+    return Promise.resolve(removed);
+  }
 }
 
 /** M9：客户开票 CNPJ 仓库 */
