@@ -274,10 +274,14 @@ export interface HelpArticleRow {
 /** AI 模型 API 配置（单行，管理端运行时维护，环境变量兜底） */
 export interface AiConfigRow {
   id: string;
+  /** 配置名称（如「生产 Key」「备用线路」），供管理端多配置选择 */
+  name: string;
   base_url: string;
   api_key: string;
   model: string;
   timeout_ms: number;
+  /** 是否为当前启用的配置（同一时刻最多一条 active） */
+  active: boolean;
   updated_by: string;
   updated_at: string;
 }
@@ -387,7 +391,11 @@ function load(): DBSnapshot {
       })),
       order_files: (raw as any).order_files || [],
       payments: (raw as any).payments || [],
-      ai_config: (raw as any).ai_config || []
+      ai_config: ((raw as any).ai_config || []).map((row: any, i: number) => ({
+        ...row,
+        name: row.name || (i === 0 ? '默认配置' : `配置 ${i + 1}`),
+        active: row.active ?? i === 0
+      }))
     };
   } catch {
     return { users: [], clients: [], templates: [], quotes: [], fee_rates: [], audit_logs: [], client_images: [], client_cnpjs: [], customs_cnpjs: [], order_files: [], payments: [], ai_config: [] };
@@ -1113,18 +1121,35 @@ export class PaymentsRepo {
 }
 
 export class AiConfigRepo {
+  /** 当前启用的配置（active 行，兜底第一条） */
   get(): Promise<AiConfigRow | null> {
     const db = load();
-    return Promise.resolve(db.ai_config?.[0] || null);
+    const rows = db.ai_config || [];
+    return Promise.resolve(rows.find(r => r.active) || rows[0] || null);
   }
-  upsert(values: { base_url: string; api_key?: string; model: string; timeout_ms: number }, updatedBy: string): Promise<AiConfigRow> {
+  /** 全部配置（启用中的排最前，其余按更新时间倒序） */
+  listAll(): Promise<AiConfigRow[]> {
+    const db = load();
+    const rows = (db.ai_config || []).slice();
+    rows.sort((a, b) => Number(b.active) - Number(a.active) || b.updated_at.localeCompare(a.updated_at));
+    return Promise.resolve(rows);
+  }
+  findById(id: string): Promise<AiConfigRow | null> {
+    const db = load();
+    return Promise.resolve((db.ai_config || []).find(r => r.id === id) || null);
+  }
+  /** 新建或更新配置；首个配置自动启用 */
+  upsertProfile(values: { id?: string; name: string; base_url: string; api_key?: string; model: string; timeout_ms: number }, updatedBy: string): Promise<AiConfigRow> {
     const db = load();
     const now = new Date().toISOString();
-    const existing = db.ai_config?.[0];
+    db.ai_config = db.ai_config || [];
     let row: AiConfigRow;
-    if (existing) {
+    if (values.id) {
+      const existing = db.ai_config.find(r => r.id === values.id);
+      if (!existing) throw new Error('配置不存在');
       row = {
         ...existing,
+        name: values.name,
         base_url: values.base_url,
         api_key: values.api_key ? values.api_key : existing.api_key,
         model: values.model,
@@ -1132,21 +1157,45 @@ export class AiConfigRepo {
         updated_by: updatedBy,
         updated_at: now
       };
-      db.ai_config![0] = row;
+      db.ai_config[db.ai_config.indexOf(existing)] = row;
     } else {
       row = {
-        id: 'default',
+        id: uid(),
+        name: values.name,
         base_url: values.base_url,
         api_key: values.api_key || '',
         model: values.model,
         timeout_ms: values.timeout_ms,
+        active: db.ai_config.length === 0,
         updated_by: updatedBy,
         updated_at: now
       };
-      db.ai_config = [row];
+      db.ai_config.push(row);
     }
     save(db);
     return Promise.resolve(row);
+  }
+  /** 切换启用中的配置 */
+  async activate(id: string, updatedBy: string): Promise<AiConfigRow | null> {
+    const db = load();
+    const target = (db.ai_config || []).find(r => r.id === id);
+    if (!target) return null;
+    const now = new Date().toISOString();
+    db.ai_config!.forEach(r => { r.active = r.id === id; });
+    target.updated_by = updatedBy;
+    target.updated_at = now;
+    save(db);
+    return target;
+  }
+  /** 删除配置（返回 false 表示不存在） */
+  remove(id: string): Promise<boolean> {
+    const db = load();
+    const rows = db.ai_config || [];
+    const idx = rows.findIndex(r => r.id === id);
+    if (idx < 0) return Promise.resolve(false);
+    rows.splice(idx, 1);
+    save(db);
+    return Promise.resolve(true);
   }
   async resolve(defaultModel: string, defaultTimeoutMs: number): Promise<ResolvedAiConfig> {
     return resolveAiConfig(await this.get(), process.env, defaultModel, defaultTimeoutMs);

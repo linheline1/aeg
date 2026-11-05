@@ -47,7 +47,12 @@ const ACTION_CN: Record<string, string> = {
   'order.file.delete': '交付文件删除',
   'order.line_item.price': '产品按百分比计价',
   'finance.payment.create': '回款登记',
-  'finance.payment.delete': '回款删除'
+  'finance.payment.delete': '回款删除',
+  'ai_config.update': 'AI 配置保存',
+  'ai_config.profile_create': 'AI 配置新增',
+  'ai_config.profile_update': 'AI 配置编辑',
+  'ai_config.profile_activate': 'AI 配置切换',
+  'ai_config.profile_delete': 'AI 配置删除'
 };
 
 const ACTION_TAG: Record<string, string> = {
@@ -113,6 +118,18 @@ function fmtDetail(a: string, detail: any): string {
         return `${detail.cnpj || ''}${detail.company_name ? ` · ${detail.company_name}` : ''}`;
       case 'order.invoice_cnpj':
         return `${detail.quote_no} → ${detail.invoice_cnpj ? `${detail.invoice_cnpj} · ${detail.company_name}` : '暂不指定'}`;
+      case 'ai_config.update':
+      case 'ai_config.profile_create':
+      case 'ai_config.profile_update':
+      case 'ai_config.profile_activate':
+      case 'ai_config.profile_delete': {
+        const segs = [
+          detail.name ? `「${detail.name}」` : '',
+          detail.model ? `模型 ${detail.model}` : '',
+          detail.timeout_ms ? `超时 ${detail.timeout_ms}ms` : ''
+        ].filter(Boolean).join(' · ');
+        return segs || (detail.base_url ? String(detail.base_url) : '—');
+      }
       default:
         return JSON.stringify(detail).slice(0, 160);
     }

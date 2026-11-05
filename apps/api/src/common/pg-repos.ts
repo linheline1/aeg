@@ -4,6 +4,7 @@
  * 输出行的 Date 字段统一转 ISO 字符串，与 mock 行形状保持一致。
  */
 import { DataSource, DeepPartial, Repository } from 'typeorm';
+import * as crypto from 'crypto';
 import { UserEntity } from '../entities/user.entity';
 import { ClientEntity } from '../entities/client.entity';
 import { TemplateVersionEntity } from '../entities/template-version.entity';
@@ -539,13 +540,28 @@ export class PgAiConfigRepo {
   private repo: Repository<AiConfigEntity>;
   constructor(ds: DataSource) { this.repo = ds.getRepository(AiConfigEntity); }
 
+  /** 当前启用的配置（active 行，兜底 'default' 行） */
   async get(): Promise<AiConfigRow | null> {
-    const e = await this.repo.findOne({ where: { id: 'default' } });
+    let e = await this.repo.findOne({ where: { active: true } });
+    if (!e) e = await this.repo.findOne({ where: { id: 'default' } });
     return e ? (toRow(e) as AiConfigRow) : null;
   }
-  async upsert(values: { base_url: string; api_key?: string; model: string; timeout_ms: number }, updatedBy: string): Promise<AiConfigRow> {
-    let e = await this.repo.findOne({ where: { id: 'default' } });
+  /** 全部配置（启用中的排最前，其余按更新时间倒序） */
+  async listAll(): Promise<AiConfigRow[]> {
+    const rows = await this.repo.find({ order: { updated_at: 'DESC' } });
+    const sorted = rows.slice().sort((a, b) => Number(b.active) - Number(a.active));
+    return sorted.map(e => toRow(e) as AiConfigRow);
+  }
+  async findById(id: string): Promise<AiConfigRow | null> {
+    const e = await this.repo.findOne({ where: { id } });
+    return e ? (toRow(e) as AiConfigRow) : null;
+  }
+  /** 新建或更新配置；首个配置自动启用 */
+  async upsertProfile(values: { id?: string; name: string; base_url: string; api_key?: string; model: string; timeout_ms: number }, updatedBy: string): Promise<AiConfigRow> {
+    let e = values.id ? await this.repo.findOne({ where: { id: values.id } }) : null;
+    if (values.id && !e) throw new Error('配置不存在');
     if (e) {
+      e.name = values.name;
       e.base_url = values.base_url;
       if (values.api_key) e.api_key = values.api_key;
       e.model = values.model;
@@ -553,17 +569,37 @@ export class PgAiConfigRepo {
       e.updated_by = updatedBy;
       e.updated_at = new Date();
     } else {
+      const count = await this.repo.count();
       e = this.repo.create({
-        id: 'default',
+        id: crypto.randomUUID(),
+        name: values.name,
         base_url: values.base_url,
         api_key: values.api_key || '',
         model: values.model,
         timeout_ms: values.timeout_ms,
+        active: count === 0,
         updated_by: updatedBy,
         updated_at: new Date()
       });
     }
     return toRow(await this.repo.save(e)) as AiConfigRow;
+  }
+  /** 切换启用中的配置 */
+  async activate(id: string, updatedBy: string): Promise<AiConfigRow | null> {
+    const target = await this.repo.findOne({ where: { id } });
+    if (!target) return null;
+    await this.repo.update({}, { active: false });
+    target.active = true;
+    target.updated_by = updatedBy;
+    target.updated_at = new Date();
+    return toRow(await this.repo.save(target)) as AiConfigRow;
+  }
+  /** 删除配置 */
+  async remove(id: string): Promise<boolean> {
+    const e = await this.repo.findOne({ where: { id } });
+    if (!e) return false;
+    await this.repo.remove(e);
+    return true;
   }
   async resolve(defaultModel: string, defaultTimeoutMs: number): Promise<ResolvedAiConfig> {
     return resolveAiConfig(await this.get(), process.env, defaultModel, defaultTimeoutMs);
