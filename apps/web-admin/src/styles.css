@@ -614,3 +614,64 @@ code {
     transition-duration: .01ms !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Monument 同步层 · 与落地页风格对齐
+   ink 深蓝 + gold 金 · 硬角 · 硬阴影 · Karla/Fraunces
+   追加于文件末尾：删除本段即可整体回退
+   ═══════════════════════════════════════════════════════════ */
+:root {
+  --primary:       #102e53;
+  --primary-dark:   #0a2349;
+  --primary-soft:   #e9eff7;
+  --accent:         #102e53;
+  --bg:             #f7f9fc;
+  --border:         #dce5ee;
+  --border-strong:  #c3d2e2;
+  --muted:          #596b7e;
+  --muted-soft:     #8ea0b3;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --shadow-sm: 2px 2px 0 rgba(16, 46, 83, .08);
+  --shadow-md: 4px 4px 0 rgba(16, 46, 83, .10);
+  --shadow-lg: 8px 8px 0 rgba(16, 46, 83, .12);
+  --gold:    #dfaf00;
+  --gold-hi: #f7cf1e;
+}
+body { font-family: 'Karla', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif; }
+h1, h2 { font-family: 'Fraunces', 'Noto Serif SC', 'Songti SC', Georgia, serif; letter-spacing: -.4px; }
+a { color: var(--primary); }
+code { border-radius: 0; }
+
+/* 硬角兜底（spinner 除外） */
+.layout *, .login-page * { border-radius: 0; }
+.layout .spinner, .login-page .spinner { border-radius: 50%; }
+
+/* 按钮 · 硬阴影 + 位移 */
+.btn { box-shadow: 3px 3px 0 rgba(16, 46, 83, .16); }
+.btn:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 rgba(16, 46, 83, .18); }
+.btn:active:not(:disabled) { transform: none; box-shadow: 2px 2px 0 rgba(16, 46, 83, .16); }
+.btn-link { box-shadow: none; }
+
+/* 输入聚焦 ink */
+.form-input:focus, .form-input-sm:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(16, 46, 83, .12); }
+
+/* 侧边栏 · 金色品牌线 + active 金底 */
+.sidebar .brand { border-bottom-color: rgba(247, 207, 30, .28); }
+.sidebar nav a.active { background: var(--gold-hi); color: #241b00; font-weight: 700; }
+.sidebar nav a.active:hover { background: var(--gold-hi); color: #241b00; }
+
+/* 登录页 · ink 底 + 网格肌理 + 硬角卡 + 金色 CTA */
+.login-page {
+  border-top: 3px solid var(--gold-hi);
+  background:
+    linear-gradient(rgba(247, 207, 30, .05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(247, 207, 30, .05) 1px, transparent 1px),
+    linear-gradient(155deg, #0b2a56 0%, #102e53 58%, #0a2349 100%);
+  background-size: 84px 84px, 84px 84px, auto;
+}
+.login-card { border-top: 4px solid var(--gold-hi); box-shadow: 10px 10px 0 rgba(223, 175, 0, .30); }
+.login-card button.btn { background: var(--gold-hi); color: #241b00; font-weight: 700; box-shadow: 3px 3px 0 rgba(36, 27, 0, .28); }
+.login-card button.btn:hover:not(:disabled) { background: #102e53; color: var(--gold-hi); box-shadow: 3px 3px 0 rgba(16, 46, 83, .22); }
+.login-card button.btn:active:not(:disabled) { transform: none; }
