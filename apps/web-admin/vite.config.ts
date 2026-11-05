@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -7,6 +8,7 @@ const basePath = process.env.BASE_PATH || '/';
 export default defineConfig({
   base: basePath,
   plugins: [react()],
+  resolve: { alias: { '@aeg/web-shared': fileURLToPath(new URL('../../packages/web-shared/src', import.meta.url)) } },
   server: {
     proxy: {
       '/api': {

@@ -312,6 +312,35 @@ export function resolveAiConfig(
   return { baseUrl, apiKey, model, timeoutMs, source };
 }
 
+/** 产品目录（按 SKU 归档 AI 识别结果与 NCM 复核） */
+export interface ProductCatalogRow {
+  id: string;
+  sku_key: string;
+  sku: string;
+  product_cn?: string | null;
+  product_en?: string | null;
+  description?: string | null;
+  material?: string | null;
+  base_unit_price_rmb?: number | null;
+  ncm?: string | null;
+  ncm_confidence?: number | null;
+  ncm_rationale?: string | null;
+  ncm_sources: string[];
+  tax_rates?: {
+    ii_rate?: number | null;
+    ipi_rate?: number | null;
+    pis_rate?: number | null;
+    cofins_rate?: number | null;
+  } | null;
+  image_ids: string[];
+  last_quote_id?: string | null;
+  last_client_id?: string | null;
+  ncm_reviewed_by?: string | null;
+  ncm_reviewed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface DBSnapshot {
   users: UserRow[];
   clients: ClientRow[];
@@ -326,6 +355,7 @@ interface DBSnapshot {
   payments?: PaymentRow[];
   help_articles?: HelpArticleRow[];
   ai_config?: AiConfigRow[];
+  product_catalog?: ProductCatalogRow[];
 }
 
 /** 仓库根目录（以 pnpm-workspace.yaml 为标记向上查找，不依赖 process.cwd()） */
@@ -1168,4 +1198,77 @@ export class HelpArticlesRepo {
     save(db);
     return Promise.resolve(true);
   }
+}
+
+/** 产品目录仓库（mock：JSON 表，方法与 PgProductCatalogRepo 对齐） */
+export class ProductCatalogRepo {
+  findBySku(skuKey: string): Promise<ProductCatalogRow | null> {
+    const db = load();
+    return Promise.resolve((db.product_catalog || []).find(p => p.sku_key === skuKey) || null);
+  }
+  findById(id: string): Promise<ProductCatalogRow | null> {
+    const db = load();
+    return Promise.resolve((db.product_catalog || []).find(p => p.id === id) || null);
+  }
+  upsertBySku(skuKey: string, patch: Partial<ProductCatalogRow>): Promise<ProductCatalogRow> {
+    const db = load();
+    const now = new Date().toISOString();
+    let row = (db.product_catalog || []).find(p => p.sku_key === skuKey);
+    if (row) {
+      const { id, created_at } = row;
+      row = { ...row, ...stripUndefinedPatch(patch), id, sku_key: skuKey, created_at, updated_at: now };
+      const idx = db.product_catalog!.findIndex(p => p.sku_key === skuKey);
+      db.product_catalog![idx] = row;
+    } else {
+      row = {
+        ...patch,
+        id: uid(),
+        sku_key: skuKey,
+        sku: patch.sku ?? skuKey,
+        ncm_sources: patch.ncm_sources ?? [],
+        image_ids: patch.image_ids ?? [],
+        created_at: now,
+        updated_at: now
+      } as ProductCatalogRow;
+      db.product_catalog = [...(db.product_catalog || []), row];
+    }
+    save(db);
+    return Promise.resolve(row);
+  }
+  list(opts: { q?: string; page?: number; pageSize?: number } = {}): Promise<{
+    items: ProductCatalogRow[]; total: number; page: number; pageSize: number;
+  }> {
+    const db = load();
+    const page = Math.max(1, opts.page || 1);
+    const pageSize = Math.min(100, Math.max(1, opts.pageSize || 20));
+    const kw = opts.q?.trim().toLowerCase();
+    let rows = (db.product_catalog || []).slice();
+    if (kw) {
+      rows = rows.filter(p =>
+        `${p.sku} ${p.product_cn || ''} ${p.product_en || ''} ${p.ncm || ''}`.toLowerCase().includes(kw)
+      );
+    }
+    rows.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    return Promise.resolve({
+      items: rows.slice((page - 1) * pageSize, page * pageSize),
+      total: rows.length, page, pageSize
+    });
+  }
+  update(id: string, patch: Partial<ProductCatalogRow>): Promise<ProductCatalogRow | null> {
+    const db = load();
+    const idx = (db.product_catalog || []).findIndex(p => p.id === id);
+    if (idx < 0) return Promise.resolve(null);
+    db.product_catalog![idx] = { ...db.product_catalog![idx], ...stripUndefinedPatch(patch), updated_at: new Date().toISOString() };
+    save(db);
+    return Promise.resolve(db.product_catalog![idx]);
+  }
+}
+
+/** 同 pg 侧 stripUndefined：undefined 字段不覆盖已有值 */
+function stripUndefinedPatch<T extends object>(patch: T): Partial<T> {
+  const out: Partial<T> = {};
+  for (const k of Object.keys(patch) as (keyof T)[]) {
+    if (patch[k] !== undefined) out[k] = patch[k];
+  }
+  return out;
 }
