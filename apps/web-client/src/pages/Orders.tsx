@@ -1,4 +1,4 @@
-import { useDeferredValue, useCallback, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
@@ -62,12 +62,14 @@ const fmtUSD = (n: number) =>
 const fmtTime = (s?: string | null) => (s ? s.slice(0, 16).replace('T', ' ') : '—');
 
 /** ≤640px 视为移动端：报价列表切换为卡片流，避免 10 列表格横向滚动 */
+const MOBILE_MQ = '(max-width: 640px)';
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(
-    () => window.matchMedia('(max-width: 640px)').matches
+    () => window.matchMedia(MOBILE_MQ).matches
   );
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 640px)');
+    const mq = window.matchMedia(MOBILE_MQ);
     const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
@@ -81,11 +83,19 @@ export default function Orders() {
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const loadSeq = useRef(0);
   const load = useCallback(() => {
     setErr(null);
+    const seq = ++loadSeq.current;
     api.get('/api/client/orders')
-      .then(r => setList([...(r.data as QuoteOrder[])].sort((a, b) => b.created_at.localeCompare(a.created_at))))
-      .catch(e => setErr(getApiErrorMessage(e, '加载失败')));
+      .then(r => {
+        if (seq !== loadSeq.current) return;
+        setList([...(r.data as QuoteOrder[])].sort((a, b) => b.created_at.localeCompare(a.created_at)));
+      })
+      .catch(e => {
+        if (seq !== loadSeq.current) return;
+        setErr(getApiErrorMessage(e, '加载失败'));
+      });
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -107,8 +117,6 @@ export default function Orders() {
     const params = toOrderSearchParams(next);
     setSearchParams(params, { replace });
   };
-
-  const clearFilters = () => setSearchParams(new URLSearchParams(), { replace: true });
 
   const latest = list && list.length > 0
     ? list.reduce((a, b) =>
@@ -162,7 +170,7 @@ export default function Orders() {
             <div className="card empty-state">
               <p className="empty-title">没有符合当前筛选条件的报价</p>
               <p className="muted">调整关键词或清除筛选条件后重新查看</p>
-              <button type="button" className="btn btn-ghost" onClick={clearFilters}>清除筛选</button>
+              <button type="button" className="btn btn-ghost" onClick={() => applyFilters(DEFAULT_ORDER_FILTERS, true)}>清除筛选</button>
             </div>
           ) : isMobile ? (
             <div className="quote-grid">

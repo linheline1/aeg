@@ -77,7 +77,8 @@ export default function OrdersFilterBar({
     return () => window.removeEventListener('keydown', onKey);
   }, [sheetOpen]);
 
-  const patch = (next: Partial<OrderFilterState>, replace = false) =>
+  // 筛选状态本来就体现在 URL 中（刷新可恢复），统一 replace，避免浏览器返回键逐条回退
+  const patch = (next: Partial<OrderFilterState>, replace = true) =>
     onChange({ ...filters, ...next }, replace);
 
   const onQueryChange = (value: string) => {

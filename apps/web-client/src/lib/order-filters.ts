@@ -109,13 +109,13 @@ export function toOrderSearchParams(filters: OrderFilterState): URLSearchParams 
   return params;
 }
 
+/** 是否有激活的过滤条件（排序不算过滤：仅改排序不应显示“筛选中”提示） */
 export function hasActiveOrderFilters(filters: OrderFilterState): boolean {
   return filters.q.trim() !== ''
     || filters.status !== 'all'
     || filters.period !== 'all'
     || filters.shipment !== 'all'
-    || filters.invoice !== 'all'
-    || filters.sort !== 'created_desc';
+    || filters.invoice !== 'all';
 }
 
 export function matchesOrderFilters(order: FilterableOrder, filters: OrderFilterState): boolean {
