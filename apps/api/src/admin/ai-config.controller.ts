@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
-import type { AiConfigRepo, AiConfigRow, AuditRepo, AuditLogRow } from '../common/mock-db';
+import type { AiConfigRepo, AiConfigRow, AuditRepo } from '../common/mock-db';
 
 interface AiConfigBody {
   name?: string;
@@ -64,8 +64,8 @@ async function pickValues(body: AiConfigBody, repo: AiConfigRepo, selfId?: strin
  *   PUT    /api/admin/ai-config/profiles/:id → 编辑配置；api_key 留空表示保持原值
  *   POST   /api/admin/ai-config/profiles/:id/activate → 切换为启用中的配置
  *   DELETE /api/admin/ai-config/profiles/:id → 删除配置（启用中的不可删）
- *   GET    /api/admin/ai-config/history → 保存/启用/删除记录（审计日志，倒序）
  *   POST   /api/admin/ai-config/test → 用当前启用配置发一条最小请求，验证可用性
+ *   POST   /api/admin/ai-config/models → 用指定 Base URL + Key 同步可用模型列表
  */
 @Controller('admin/ai-config')
 @UseGuards(AuthGuard, RolesGuard)
@@ -165,16 +165,6 @@ export class AiConfigController {
     if (!ok) throw new BadRequestException('配置不存在或已被删除');
     await this.audit(req, 'ai_config.profile_delete', { name: row.name, model: row.model });
     return { ok: true };
-  }
-
-  /** 操作记录：所有 ai_config.* 审计日志，倒序最多 20 条 */
-  @Get('history')
-  async history() {
-    const rows = await this.auditRepo.list(1000);
-    const items = (rows as AuditLogRow[])
-      .filter(a => a.action === 'ai_config.update' || a.action.startsWith('ai_config.profile_'))
-      .slice(0, 20);
-    return { items };
   }
 
   /** 连接测试：用当前启用配置发一条最小 chat 请求，返回延迟与回复 */

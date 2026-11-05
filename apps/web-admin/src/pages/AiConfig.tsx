@@ -15,45 +15,8 @@ interface Profile {
   updated_at: string;
 }
 
-interface HistoryRow {
-  id: string;
-  ts: string;
-  actor_username: string;
-  action: string;
-  detail: Record<string, any> | null;
-}
-
-const ACTION_CN: Record<string, string> = {
-  'ai_config.update': '保存',
-  'ai_config.profile_create': '新增配置',
-  'ai_config.profile_update': '编辑配置',
-  'ai_config.profile_activate': '切换使用',
-  'ai_config.profile_delete': '删除配置'
-};
-
-const ACTION_TAG: Record<string, string> = {
-  'ai_config.update': 'status-active',
-  'ai_config.profile_create': 'status-active',
-  'ai_config.profile_update': 'status-computing',
-  'ai_config.profile_activate': 'status-pending_fee',
-  'ai_config.profile_delete': 'status-failed'
-};
-
 function fmtTime(s?: string | null) {
   return s ? s.slice(0, 19).replace('T', ' ') : '—';
-}
-
-/** 记录详情一句话描述 */
-function fmtHistoryDetail(h: HistoryRow): string {
-  const d = h.detail || {};
-  const parts: string[] = [];
-  if (d.name) parts.push(`「${d.name}」`);
-  if (d.before_model && d.model) parts.push(`模型 ${d.before_model} → ${d.model}`);
-  else if (d.model) parts.push(`模型 ${d.model}`);
-  if (d.timeout_ms) parts.push(`超时 ${d.timeout_ms}ms`);
-  if (d.api_key_changed !== undefined) parts.push(d.api_key_changed ? '更换密钥' : '密钥未变');
-  if (d.auto_activated) parts.push('自动启用');
-  return parts.join(' · ') || '—';
 }
 
 const emptyForm = { name: '', baseUrl: '', model: '', timeoutMs: 60000, apiKey: '' };
@@ -68,7 +31,6 @@ export default function AiConfigPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
 
-  const [history, setHistory] = useState<HistoryRow[] | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [models, setModels] = useState<string[] | null>(null);
@@ -80,18 +42,10 @@ export default function AiConfigPage() {
     return r.data.items;
   };
 
-  const loadHistory = async () => {
-    try {
-      const r = await api.get<{ items: HistoryRow[] }>('/api/admin/ai-config/history');
-      setHistory(r.data.items);
-    } catch { /* 记录加载失败不打断主流程 */ }
-  };
-
   const load = async () => {
     setLoading(true); setErr(null);
     try {
       const items = await loadProfiles();
-      await loadHistory();
       // 默认进入「编辑当前启用配置」模式，直接保存即修改生效中的配置
       const active = items.find(p => p.active);
       if (active) {
@@ -132,7 +86,7 @@ export default function AiConfigPage() {
       }
       setForm({ ...emptyForm });
       setEditingId(null);
-      await Promise.all([loadProfiles(), loadHistory()]);
+      await loadProfiles();
     } catch (e: any) {
       setErr(getApiErrorMessage(e, '保存失败'));
     } finally { setSaving(false); }
@@ -157,7 +111,7 @@ export default function AiConfigPage() {
     try {
       await api.post(`/api/admin/ai-config/profiles/${p.id}/activate`);
       flash(`✅ 已切换使用「${p.name}」，AI 功能立即按该配置运行`);
-      await Promise.all([loadProfiles(), loadHistory()]);
+      await loadProfiles();
     } catch (e: any) {
       setErr(getApiErrorMessage(e, '切换失败'));
     }
@@ -170,7 +124,7 @@ export default function AiConfigPage() {
       await api.delete(`/api/admin/ai-config/profiles/${p.id}`);
       if (editingId === p.id) { setEditingId(null); setForm({ ...emptyForm }); }
       flash(`🗑️ 已删除配置「${p.name}」`);
-      await Promise.all([loadProfiles(), loadHistory()]);
+      await loadProfiles();
     } catch (e: any) {
       setErr(getApiErrorMessage(e, '删除失败'));
     }
@@ -405,51 +359,12 @@ export default function AiConfigPage() {
 
       <div className="card">
         <div className="card-title">
-          <h3>📝 保存记录</h3>
-          <span className="muted text-sm">最近 20 次配置操作（新增 / 编辑 / 切换 / 删除）</span>
-        </div>
-
-        {history === null && <p className="muted">加载中…</p>}
-        {history?.length === 0 && <p className="muted">暂无操作记录</p>}
-
-        {history && history.length > 0 && (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th style={{ width: 160 }}>时间</th>
-                  <th style={{ width: 110 }}>操作人</th>
-                  <th style={{ width: 110 }}>动作</th>
-                  <th>详情</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map(h => (
-                  <tr key={h.id}>
-                    <td className="text-sm muted text-num">{fmtTime(h.ts)}</td>
-                    <td><strong>{h.actor_username}</strong></td>
-                    <td>
-                      <span className={`status-tag ${ACTION_TAG[h.action] || ''}`}>
-                        {ACTION_CN[h.action] || h.action}
-                      </span>
-                    </td>
-                    <td className="text-sm">{fmtHistoryDetail(h)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="card-title">
           <h3>说明</h3>
         </div>
         <ul style={{ margin: 0, paddingLeft: 20, color: 'var(--muted)', fontSize: 13, lineHeight: 1.9 }}>
           <li>支持保存多套 API 配置：保存后出现在「配置列表」，点「使用」切换后立即生效，无需重启服务。</li>
           <li>配置优先级：<strong>使用中的配置</strong> &gt; 环境变量（.env 中的 AI_*）&gt; 内置默认。</li>
-          <li>每次新增 / 编辑 / 切换 / 删除都会写入审计日志，可在上方「保存记录」与「审计日志」页追溯。</li>
+          <li>每次新增 / 编辑 / 切换 / 删除都会写入审计日志，可在「审计日志」页追溯。</li>
           <li>该配置同时用于「非标 Excel 的 AI 自动转换」和「DI/NCM 智能归类」两个功能。</li>
           <li>使用中的配置不可删除；「测试连接」仅验证当前使用中的配置。</li>
         </ul>
