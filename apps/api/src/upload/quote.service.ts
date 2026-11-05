@@ -905,6 +905,10 @@ export class QuoteService {
     fs.mkdirSync(imageDir, { recursive: true });
     const rows: any[] = [];
 
+    // 有效产品行号集合：浮动图片锚定在标题/logo 等非产品行时丢弃
+    const order: any = await this.quotesRepo.findById(quoteId);
+    const validRowNos = new Set<number>((order?.line_items || []).map((it: any) => Number(it.row_no)));
+
     // 先收集：drawing 锚点占用的 media 下标 + WPS DISPIMG（嵌入单元格图片）所在行
     const drawingImageIds = new Set<number>();
     const dispimgRows: number[] = [];
@@ -934,6 +938,7 @@ export class QuoteService {
       for (let i = 0; i < pairs; i++) {
         const { media } = dispimgMedia[i];
         const rowNo = dispimgRows[i];
+        if (validRowNos.size > 0 && !validRowNos.has(rowNo)) continue; // 非产品行的 DISPIMG 跳过
         const extension = String(media.extension || 'png').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'png';
         const buffer = Buffer.from(media.buffer as any);
         const fileName = `excel-dispimg-row${rowNo}-${crypto.randomUUID()}.${extension}`;
@@ -952,6 +957,7 @@ export class QuoteService {
     }
 
     // 普通 drawing 浮动图片（按锚点行号归属；同一 imageId 多锚点时只取首个，避免重复副本）
+    // 仅保留锚定在产品行的浮动图片；锚定在标题/logo 等非产品行的丢弃
     const placedImageIds = new Set<number>();
     for (const worksheet of workbook.worksheets) {
       const placements = worksheet.getImages();
@@ -960,12 +966,13 @@ export class QuoteService {
         const imageId = Number(placement.imageId);
         if (placedImageIds.has(imageId)) continue;
         placedImageIds.add(imageId);
+        const nativeRow = Number((placement.range as any)?.tl?.nativeRow);
+        const rowNo = Number.isInteger(nativeRow) && nativeRow >= 0 ? nativeRow + 1 : null;
+        if (validRowNos.size > 0 && rowNo !== null && !validRowNos.has(rowNo)) continue; // 非产品行的浮动图跳过
         const media = workbook.getImage(Number(placement.imageId));
         const extension = String(media.extension || 'png').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'png';
         const buffer = Buffer.from(media.buffer as any);
         if (!buffer || buffer.length === 0) continue;
-        const nativeRow = Number((placement.range as any)?.tl?.nativeRow);
-        const rowNo = Number.isInteger(nativeRow) && nativeRow >= 0 ? nativeRow + 1 : null;
         const fileName = `excel-embedded-${crypto.randomUUID()}.${extension}`;
         const absolutePath = path.join(imageDir, fileName);
         fs.writeFileSync(absolutePath, buffer);
