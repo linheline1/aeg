@@ -381,41 +381,6 @@ code {
 }
 .deal-none { background: var(--chip-bg); color: var(--muted); }
 
-/* ──────────────────────────────────────────────────────
-   M5 · 客户图片
-   ────────────────────────────────────────────────────── */
-.img-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 14px;
-}
-.img-thumb {
-  position: relative;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  background: #f8fafc;
-  aspect-ratio: 4 / 3;
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  transition: transform .15s ease, box-shadow .15s ease;
-}
-.img-thumb:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
-.img-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.img-thumb .img-name {
-  position: absolute; left: 0; right: 0; bottom: 18px;
-  padding: 12px 8px 4px;
-  background: linear-gradient(transparent, rgba(15,23,42,.72));
-  color: #fff; font-size: 11.5px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.img-thumb .img-meta {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  padding: 3px 8px 5px;
-  background: rgba(15,23,42,.72);
-  color: #e2e8f0; font-size: 10.5px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
 .img-preview-mask {
   position: fixed; inset: 0; z-index: 100;
   background: rgba(15,23,42,.66);
@@ -530,7 +495,7 @@ code {
   .page-title .sub { margin: 0; line-height: 1.6; }
   .row, .row-between, .row-center, .pagination { flex-wrap: wrap; }
   .grid-2, .grid-3, .grid-4, .stat-grid, .ship-form-grid,
-  .content .img-grid, .content .help-categories, .content .help-featured-grid,
+  .content .help-categories, .content .help-featured-grid,
   .content .help-article-links, .finance-reconciliation {
     grid-template-columns: minmax(0, 1fr);
   }

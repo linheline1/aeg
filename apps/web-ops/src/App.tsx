@@ -6,7 +6,6 @@ import Orders from './pages/Orders';
 import OrderDetail from './pages/OrderDetail';
 import Rates from './pages/Rates';
 import Deals from './pages/Deals';
-import Images from './pages/Images';
 import Template from './pages/Template';
 import Finance from './pages/Finance';
 import Help from './pages/Help';
@@ -66,14 +65,6 @@ export default function App() {
           element={
             <RequireAuth allowedRole={['operator', 'admin']}>
               <Rates />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="images"
-          element={
-            <RequireAuth allowedRole={['operator', 'admin']}>
-              <Images />
             </RequireAuth>
           }
         />

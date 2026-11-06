@@ -93,7 +93,6 @@ export default function Layout() {
         <nav className="nav" aria-label="运营功能">
           <NavLink to="/orders">{isSales ? '📞 报价跟进' : '📦 报价订单'}</NavLink>
           <NavLink to="/deals">📊 成交统计</NavLink>
-          {!isSales && <NavLink to="/images">🖼 客户图片</NavLink>}
           {!isSales && <NavLink to="/products">🗂 产品档案</NavLink>}
           {!isSales && <NavLink to="/rates">💰 费率表</NavLink>}
           <NavLink to="/finance">💵 财务应收</NavLink>
