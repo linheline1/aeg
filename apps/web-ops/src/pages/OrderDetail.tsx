@@ -770,7 +770,7 @@ export default function OrderDetail() {
           </p>
 
           <div className="table-wrap mt-12">
-            <table className="table">
+            <table className="table ddp-edit-table">
               <thead>
                 <tr>
                   <th>费用项</th>

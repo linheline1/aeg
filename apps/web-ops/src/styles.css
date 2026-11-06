@@ -211,12 +211,16 @@ code {
 .text-right { text-align: right; }
 .text-center { text-align: center; }
 .text-num { font-variant-numeric: tabular-nums; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; }
 .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
 .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
 .row-editing { outline: 2px solid var(--primary); outline-offset: -2px; }
 @media (max-width: 900px) { .grid-4 { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 1100px) { .grid-2 { grid-template-columns: 1fr; } }
+@media (max-width: 1200px) { .grid-2 { grid-template-columns: 1fr; } }
+
+/* DDP 可编辑参数表：窄列下保证输入框宽度，避免数值被裁切 */
+.ddp-edit-table th, .ddp-edit-table td { padding-left: 10px; padding-right: 10px; }
+.ddp-edit-table .form-input { min-width: 96px; }
 
 /* 登录 */
 .login-page {
