@@ -309,8 +309,8 @@ export default function Orders() {
             <thead>
               <tr>
                 <th>报价号</th>
-                <th>客户</th>
-                <th>状态</th>
+                <th className="text-nowrap">客户</th>
+                <th className="text-nowrap">状态</th>
                 <th>报关审核</th>
                 <th>BRL 合计</th>
                 <th>成交状态</th>
@@ -355,8 +355,8 @@ export default function Orders() {
                         </a>
                       )}
                     </td>
-                    <td data-label="客户">{o.client_name}</td>
-                    <td data-label="状态"><span className={`status-${o.status}`}>{STATUS_CN[o.status] || o.status}</span></td>
+                    <td data-label="客户" className="text-nowrap">{o.client_name}</td>
+                    <td data-label="状态" className="text-nowrap"><span className={`status-${o.status}`}>{STATUS_CN[o.status] || o.status}</span></td>
                     <td data-label="报关审核">
                       {o.customs_review ? (
                         <div>
@@ -433,7 +433,7 @@ export default function Orders() {
                         <div className="row-actions">
                           <Link to={`/orders/${o.id}`}>查看</Link>
                           {COMPUTABLE.has(o.status) && (
-                            <a href="#compute" onClick={e => { e.preventDefault(); compute(o); }}>⚡ 核算</a>
+                            <a href="#compute" onClick={e => { e.preventDefault(); compute(o); }}>核算</a>
                           )}
                         </div>
                       </td>

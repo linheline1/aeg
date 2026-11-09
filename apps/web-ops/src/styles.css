@@ -147,6 +147,9 @@ code {
 .table tbody tr:hover .actions-col { background: #fafbfc; }
 .table tbody tr.row-editing .actions-col { background: #fff; }
 
+/* 操作列：查看 / 核算 纵向排列 */
+.row-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+
 /* 状态标签 */
 .status-tag { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; line-height: 1.5; }
 .status-done { background: var(--ok-bg); color: #166534; }
@@ -211,6 +214,7 @@ code {
 .text-right { text-align: right; }
 .text-center { text-align: center; }
 .text-num { font-variant-numeric: tabular-nums; }
+.text-nowrap { white-space: nowrap; }
 .grid-2 { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; }
 .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
 .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
@@ -583,13 +587,14 @@ code {
     content: attr(data-label); color: var(--text-2); font-size: 13px; font-weight: 600;
   }
   .orders-table td:last-child, .products-table td:last-child { border-bottom: 0; }
+  .orders-table td.text-nowrap { white-space: normal; }
   .orders-table td.actions-col, .products-table td.actions-col {
     position: static; min-width: 0; background: #fff; box-shadow: none;
   }
   .orders-table .form-input, .products-table .form-input {
     width: 100% !important; min-width: 0; max-width: none !important;
   }
-  .orders-table .row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .orders-table .row-actions { display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; }
   .orders-table .row-actions a {
     display: inline-flex; align-items: center; justify-content: center;
     min-height: 44px; padding: 8px 14px; border: 1px solid var(--border);
