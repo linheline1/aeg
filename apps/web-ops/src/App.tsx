@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Layout from './components/Layout';
 import RequireAuth from './components/RequireAuth';
@@ -15,6 +15,8 @@ import { useAuth } from './store/auth';
 
 /** 无权访问提示页（顶层路由，避免守卫重定向死循环） */
 function Forbidden() {
+  const logout = useAuth((s) => s.logout);
+  const navigate = useNavigate();
   return (
     <div className="login-page">
       <div className="login-card" style={{ textAlign: 'center' }}>
@@ -23,7 +25,7 @@ function Forbidden() {
         <a
           className="btn btn-lg"
           href="#back"
-          onClick={e => { e.preventDefault(); window.location.href = '/login'; }}
+          onClick={e => { e.preventDefault(); logout(); navigate('/login'); }}
         >
           返回登录
         </a>
