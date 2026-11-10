@@ -5,6 +5,9 @@
 @import './landing/styles/header.css';
 @import './landing/styles/hero.css';
 @import './landing/styles/sections.css';
+@import './landing/styles/partners.css';
+@import './landing/styles/company.css';
+@import './landing/styles/lines.css';
 @import './landing/styles/footer.css';
 @import './landing/styles/refinements.css';
 @import './landing/styles/motion.css';

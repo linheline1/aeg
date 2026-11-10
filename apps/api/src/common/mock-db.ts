@@ -345,6 +345,20 @@ export interface ProductCatalogRow {
   updated_at: string;
 }
 
+export interface PartnerRow {
+  id: string;
+  /** 分类：carrier=海运承运商；ecosystem=生态合作伙伴 */
+  category: 'carrier' | 'ecosystem';
+  name: string;
+  /** 相对仓库根的 logo 存储路径 apps/api/uploads/partners/xxx.svg */
+  logo_file_path: string;
+  logo_mime_type: string;
+  logo_size_bytes: number;
+  /** 官网链接（落地页点击 logo 跳转；空串表示未设置） */
+  website_url: string;
+  created_at: string;
+}
+
 interface DBSnapshot {
   users: UserRow[];
   clients: ClientRow[];
@@ -360,6 +374,7 @@ interface DBSnapshot {
   help_articles?: HelpArticleRow[];
   ai_config?: AiConfigRow[];
   product_catalog?: ProductCatalogRow[];
+  partners?: PartnerRow[];
 }
 
 /** 仓库根目录（以 pnpm-workspace.yaml 为标记向上查找，不依赖 process.cwd()） */
@@ -971,6 +986,51 @@ export class ImageRepo {
     const db = load();
     const removed = (db.client_images || []).filter(i => i.quote_id === quoteId);
     db.client_images = (db.client_images || []).filter(i => i.quote_id !== quoteId);
+    save(db);
+    return Promise.resolve(removed);
+  }
+}
+
+/** 合作伙伴（海运承运商 / 生态合作伙伴）：管理端增删，logo 必传 */
+export class PartnerRepo {
+  /** 全部合作伙伴（分类内按创建时间正序，新增的排在后面） */
+  listAll(): Promise<PartnerRow[]> {
+    const db = load();
+    const rows = (db.partners || []).slice();
+    rows.sort((a, b) => a.category.localeCompare(b.category) || a.created_at.localeCompare(b.created_at));
+    return Promise.resolve(rows);
+  }
+  findByCategory(category: 'carrier' | 'ecosystem'): Promise<PartnerRow[]> {
+    const db = load();
+    const rows = (db.partners || []).filter(p => p.category === category);
+    rows.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    return Promise.resolve(rows);
+  }
+  findById(id: string): Promise<PartnerRow | null> {
+    const db = load();
+    return Promise.resolve((db.partners || []).find(p => p.id === id) || null);
+  }
+  insert(row: Omit<PartnerRow, 'id' | 'created_at'>): Promise<PartnerRow> {
+    const db = load();
+    const full: PartnerRow = { ...row, id: crypto.randomUUID(), created_at: new Date().toISOString() };
+    db.partners = [...(db.partners || []), full];
+    save(db);
+    return Promise.resolve(full);
+  }
+  /** 更新官网链接；找不到返回 null */
+  updateWebsite(id: string, websiteUrl: string): Promise<PartnerRow | null> {
+    const db = load();
+    const target = (db.partners || []).find(p => p.id === id);
+    if (!target) return Promise.resolve(null);
+    target.website_url = websiteUrl;
+    save(db);
+    return Promise.resolve(target);
+  }
+  /** 删除（返回被删记录，便于清理物理文件） */
+  remove(id: string): Promise<PartnerRow | null> {
+    const db = load();
+    const removed = (db.partners || []).find(p => p.id === id) || null;
+    db.partners = (db.partners || []).filter(p => p.id !== id);
     save(db);
     return Promise.resolve(removed);
   }

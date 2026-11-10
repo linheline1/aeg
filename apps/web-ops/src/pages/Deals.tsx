@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api, useAuth } from '../store/auth';
+import { useTranslation } from 'react-i18next';
 
 interface DealStats {
   scope: 'all' | 'self';
@@ -34,6 +35,7 @@ function StatCard({ label, value, cls }: { label: string; value: string; cls?: s
 }
 
 export default function Deals() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [s, setS] = useState<DealStats | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -43,7 +45,7 @@ export default function Deals() {
     setBusy(true);
     api.get('/api/ops/deals/stats')
       .then(r => setS(r.data))
-      .catch(e => setErr(getApiErrorMessage(e, '加载失败')))
+      .catch(e => setErr(getApiErrorMessage(e, t('deals.loadError'))))
       .finally(() => setBusy(false));
   };
 
@@ -52,11 +54,11 @@ export default function Deals() {
   return (
     <>
       <div className="page-title">
-        <h1>成交统计</h1>
+        <h1>{t('deals.title')}</h1>
         <p className="sub">
           {user?.role === 'sales'
-            ? '业务员视角 · 仅统计归属您的报价单'
-            : '全公司报价成交情况：按月 / 按客户 / 按业务员汇总（口径：已核算发布的报价）'}
+            ? t('deals.subtitleSales')
+            : t('deals.subtitleAll')}
         </p>
       </div>
 
@@ -64,32 +66,32 @@ export default function Deals() {
       {s && (
         <>
           <div className="stat-grid">
-            <StatCard label="已发布报价" value={String(s.overall.done)} />
-            <StatCard label="已成交" value={String(s.overall.won)} cls="var(--ok)" />
-            <StatCard label="未成交" value={String(s.overall.lost)} cls="var(--err)" />
-            <StatCard label="跟进中/未标记" value={String(s.overall.open)} cls="var(--muted)" />
-            <StatCard label="成交率" value={rate(s.overall.win_rate)} />
-            <StatCard label="成交金额（BRL）" value={brl(s.overall.won_amount_brl)} cls="var(--ok)" />
+            <StatCard label={t('deals.published')} value={String(s.overall.done)} />
+            <StatCard label={t('deals.won')} value={String(s.overall.won)} cls="var(--ok)" />
+            <StatCard label={t('deals.lost')} value={String(s.overall.lost)} cls="var(--err)" />
+            <StatCard label={t('deals.open')} value={String(s.overall.open)} cls="var(--muted)" />
+            <StatCard label={t('deals.winRate')} value={rate(s.overall.win_rate)} />
+            <StatCard label={t('deals.amountBrl')} value={brl(s.overall.won_amount_brl)} cls="var(--ok)" />
           </div>
 
           {/* 按月统计 */}
           <div className="card">
             <div className="card-title">
-              <h3>📅 按月统计</h3>
-              <button className="btn btn-ghost" disabled={busy} onClick={load}>刷新</button>
+              <h3>📅 {t('deals.byMonth')}</h3>
+              <button className="btn btn-ghost" disabled={busy} onClick={load}>{t('common.refresh')}</button>
             </div>
               <div className="table-wrap">
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>月份</th><th className="amt">发布</th><th className="amt">成交</th>
-                      <th className="amt">未成交</th><th className="amt">跟进中</th>
-                      <th>成交率</th><th className="amt">成交金额</th>
+                      <th>{t('deals.month')}</th><th className="amt">{t('deals.publishedShort')}</th><th className="amt">{t('deals.wonShort')}</th>
+                      <th className="amt">{t('deals.lostShort')}</th><th className="amt">{t('deals.following')}</th>
+                      <th>{t('deals.winRate')}</th><th className="amt">{t('deals.amount')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {s.by_month.length === 0 && (
-                      <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 18 }}>暂无数据</td></tr>
+                      <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 18 }}>{t('common.noData')}</td></tr>
                     )}
                     {s.by_month.map(m => (
                       <tr key={m.month}>
@@ -110,21 +112,21 @@ export default function Deals() {
           {/* 按客户统计 */}
           <div className="card" style={{ marginTop: 16 }}>
               <div className="card-title">
-                <h3>🏢 按客户统计</h3>
-                <span className="muted text-sm">共 {s.by_client.length} 个客户</span>
+                <h3>🏢 {t('deals.byClient')}</h3>
+                <span className="muted text-sm">{t('deals.clientCount', { count: s.by_client.length })}</span>
               </div>
               <div className="table-wrap">
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>客户</th><th className="amt">发布</th><th className="amt">成交</th>
-                      <th className="amt">未成交</th><th className="amt">跟进中</th>
-                      <th>成交率</th><th className="amt">成交金额</th>
+                      <th>{t('deals.client')}</th><th className="amt">{t('deals.publishedShort')}</th><th className="amt">{t('deals.wonShort')}</th>
+                      <th className="amt">{t('deals.lostShort')}</th><th className="amt">{t('deals.following')}</th>
+                      <th>{t('deals.winRate')}</th><th className="amt">{t('deals.amount')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {s.by_client.length === 0 && (
-                      <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 18 }}>暂无数据</td></tr>
+                      <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 18 }}>{t('common.noData')}</td></tr>
                     )}
                     {s.by_client.map(c => (
                       <tr key={c.client_id}>
@@ -145,23 +147,23 @@ export default function Deals() {
           {/* 按业务员统计 */}
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-title">
-              <h3>👤 按业务员统计</h3>
+              <h3>👤 {t('deals.bySales')}</h3>
               <span className="muted text-sm">
-                {user?.role === 'sales' ? '您名下的报价表现' : '未分配的报价单计入「未分配」行'}
+                {user?.role === 'sales' ? t('deals.salesOwn') : t('deals.unassignedHint')}
               </span>
             </div>
             <div className="table-wrap">
               <table className="table">
                 <thead>
                   <tr>
-                    <th>业务员</th><th className="amt">发布</th><th className="amt">成交</th>
-                    <th className="amt">未成交</th><th className="amt">跟进中</th>
-                    <th>成交率</th><th className="amt">成交金额</th>
+                    <th>{t('deals.salesperson')}</th><th className="amt">{t('deals.publishedShort')}</th><th className="amt">{t('deals.wonShort')}</th>
+                    <th className="amt">{t('deals.lostShort')}</th><th className="amt">{t('deals.following')}</th>
+                    <th>{t('deals.winRate')}</th><th className="amt">{t('deals.amount')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {s.by_salesperson.length === 0 && (
-                    <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 18 }}>暂无数据</td></tr>
+                    <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 18 }}>{t('common.noData')}</td></tr>
                   )}
                   {s.by_salesperson.map(p => (
                     <tr key={p.salesperson_id || '_none'}>
@@ -182,22 +184,22 @@ export default function Deals() {
           {/* 最近成交记录 */}
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-title">
-              <h3>🧾 最近成交/未成交记录</h3>
-              <span className="muted text-sm">最近 {s.recent.length} 条</span>
+              <h3>🧾 {t('deals.recentTitle')}</h3>
+              <span className="muted text-sm">{t('deals.recentCount', { count: s.recent.length })}</span>
             </div>
             <div className="table-wrap">
               <table className="table">
                 <thead>
                   <tr>
-                    <th>报价号</th><th>客户</th><th>业务员</th><th>结果</th>
-                    <th className="amt">金额（BRL）</th><th>备注</th><th>标记时间</th>
+                    <th>{t('deals.quote')}</th><th>{t('deals.client')}</th><th>{t('deals.salesperson')}</th><th>{t('deals.result')}</th>
+                    <th className="amt">{t('deals.amountBrl')}</th><th>{t('deals.note')}</th><th>{t('deals.markedAt')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {s.recent.length === 0 && (
                     <tr>
                       <td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 18 }}>
-                        还没有成交记录 —— 在「{user?.role === 'sales' ? '报价跟进' : '报价订单'}」列表标记成交状态后，这里会展示明细
+                        {t('deals.noRecent', { list: t(user?.role === 'sales' ? 'nav.ordersSales' : 'nav.orders') })}
                       </td>
                     </tr>
                   )}
@@ -208,7 +210,7 @@ export default function Deals() {
                       <td>{r.salesperson_name || '—'}</td>
                       <td>
                         <span className={`deal-tag ${r.deal_status === 'won' ? 'deal-won' : 'deal-lost'}`}>
-                          {r.deal_status === 'won' ? '已成交' : '未成交'}
+                          {r.deal_status === 'won' ? t('deals.won') : t('deals.lost')}
                         </span>
                       </td>
                       <td className="amt">{brl(r.amount_brl)}</td>

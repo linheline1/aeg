@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { downloadOrShareFile } from '@aeg/web-shared/file-actions';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
+import { useTranslation } from 'react-i18next';
 
 interface TemplateInfo {
   version_no: string;
@@ -16,6 +17,7 @@ interface TemplateInfo {
 
 /** 运营端模板页：查看当前启用模板信息 + 下载（后端 /api/client/template 对 operator 开放） */
 export default function Template() {
+  const { t, i18n } = useTranslation();
   const [info, setInfo] = useState<TemplateInfo | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [dlLoading, setDlLoading] = useState(false);
@@ -24,8 +26,8 @@ export default function Template() {
   useEffect(() => {
     api.get('/api/client/template/current')
       .then(r => setInfo(r.data))
-      .catch(e => setErr(getApiErrorMessage(e, '加载失败')));
-  }, []);
+      .catch(e => setErr(getApiErrorMessage(e, t('template.loadError'))));
+  }, [t]);
 
   const download = async () => {
     if (!info) return;
@@ -33,28 +35,28 @@ export default function Template() {
     setDlMsg(null);
     try {
       const r = await api.get(info.download_url, { responseType: 'blob' });
-      await downloadOrShareFile(new Blob([r.data as any]), `巴西整柜装箱清单_模板_v${info.version_no}.xlsx`);
-      setDlMsg('✅ 下载完成');
+      await downloadOrShareFile(new Blob([r.data as any]), `${t('template.fileName')}_v${info.version_no}.xlsx`);
+      setDlMsg(t('template.downloadSuccess'));
       setTimeout(() => setDlMsg(null), 3000);
     } catch (e: any) {
-      setDlMsg('❌ ' + getApiErrorMessage(e, '下载失败'));
+      setDlMsg('❌ ' + getApiErrorMessage(e, t('template.downloadError')));
     } finally {
       setDlLoading(false);
     }
   };
 
   if (err) {
-    return <div className="card"><p style={{ color: 'var(--err)' }}>模板信息加载失败：{err}</p></div>;
+    return <div className="card"><p style={{ color: 'var(--err)' }}>{t('template.infoLoadError')}：{err}</p></div>;
   }
   if (!info) {
-    return <div className="card"><p className="muted">加载中…</p></div>;
+    return <div className="card"><p className="muted">{t('common.loading')}</p></div>;
   }
 
   return (
     <>
       <div className="page-title">
-        <h1>模板预览</h1>
-        <span className="muted text-sm">当前启用版本 · 客户上传清单使用此模板</span>
+        <h1>{t('template.title')}</h1>
+        <span className="muted text-sm">{t('template.subtitle')}</span>
       </div>
 
       <div className="card" style={{ maxWidth: 720 }}>
@@ -62,19 +64,19 @@ export default function Template() {
           <h3>{info.template_code} · v{info.version_no}</h3>
           <div className="actions">
             <button className="btn" onClick={download} disabled={dlLoading}>
-              {dlLoading ? '下载中…' : '⬇ 下载模板'}
+              {dlLoading ? t('template.downloading') : `⬇ ${t('template.download')}`}
             </button>
           </div>
         </div>
 
         <table className="table" style={{ marginTop: 12 }}>
           <tbody>
-            <tr><td style={{ width: 140 }} className="muted">状态</td><td><span className="status-done">启用中</span></td></tr>
-            <tr><td className="muted">发布/更新时间</td><td>{new Date(info.updated_at).toLocaleString('zh-CN')}</td></tr>
-            <tr><td className="muted">数据起始行</td><td>第 {info.data_start_row} 行起</td></tr>
-            <tr><td className="muted">行数上限</td><td>{info.max_rows} 行</td></tr>
-            <tr><td className="muted">字段列数</td><td>{info.field_count} 列（A–AA）</td></tr>
-            <tr><td className="muted">填写说明</td><td>{info.description}</td></tr>
+            <tr><td style={{ width: 140 }} className="muted">{t('template.status')}</td><td><span className="status-done">{t('template.active')}</span></td></tr>
+            <tr><td className="muted">{t('template.updatedAt')}</td><td>{new Date(info.updated_at).toLocaleString(i18n.language.startsWith('pt') ? 'pt-BR' : 'zh-CN')}</td></tr>
+            <tr><td className="muted">{t('template.startRow')}</td><td>{t('template.startRowValue', { row: info.data_start_row })}</td></tr>
+            <tr><td className="muted">{t('template.maxRows')}</td><td>{t('template.rowsValue', { count: info.max_rows })}</td></tr>
+            <tr><td className="muted">{t('template.fields')}</td><td>{t('template.fieldsValue', { count: info.field_count })}</td></tr>
+            <tr><td className="muted">{t('template.instructions')}</td><td>{info.description}</td></tr>
           </tbody>
         </table>
 

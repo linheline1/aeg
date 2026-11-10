@@ -1,0 +1,235 @@
+/* ===== 公司介绍页（/company） ===== */
+
+/* 图文两栏 */
+.lp-company-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 48px;
+  align-items: center;
+  margin-top: 40px;
+}
+.lp-company-grid-flip {
+  grid-template-columns: 1fr 1.2fr;
+}
+.lp-company-story p {
+  margin: 0 0 18px;
+  font-size: 15px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+.lp-company-story p:last-child { margin-bottom: 0; }
+
+.lp-company-figure {
+  border-radius: var(--radius-lg, 14px);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--line);
+  background: #fff;
+}
+.lp-company-figure img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  aspect-ratio: 4 / 3;
+}
+.lp-company-figure-wide {
+  max-width: 860px;
+  margin: 36px auto 0;
+}
+.lp-company-figure-wide img { aspect-ratio: 21 / 9; }
+
+/* 核心数据带 */
+.lp-company-stats-section {
+  background: var(--ink);
+  color: #fff;
+}
+.lp-company-stats {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 18px;
+  margin-top: 36px;
+}
+.lp-company-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px 18px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.lp-company-stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: #fff;
+}
+.lp-company-stat-label {
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* 双板块 */
+.lp-company-regions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 40px;
+}
+.lp-company-region {
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg, 14px);
+  background: #fff;
+  box-shadow: var(--shadow-card);
+}
+.lp-company-region-tag {
+  display: inline-block;
+  margin-bottom: 12px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  border-radius: 999px;
+  background: var(--accent-soft, #eef4f8);
+  color: var(--ink);
+  text-transform: uppercase;
+}
+.lp-company-region h3 {
+  margin: 0 0 16px;
+  font-size: 20px;
+  color: var(--ink);
+}
+.lp-company-region ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lp-company-region li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.lp-company-region li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  color: var(--accent, #2b6cb0);
+}
+
+/* 海外仓网格 */
+.lp-company-warehouses-section { background: #f7fafc; }
+.lp-company-warehouse-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-top: 40px;
+}
+.lp-company-warehouse {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--shadow-card);
+}
+.lp-company-warehouse-country {
+  font-size: 15px;
+  color: var(--ink);
+}
+.lp-company-warehouse-city {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.lp-company-warehouse-area {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent, #2b6cb0);
+}
+.lp-company-warehouse-services {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+.lp-company-chip {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+/* 增值服务 / 价值观卡片 */
+.lp-company-values {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  margin-top: 36px;
+}
+.lp-company-value {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent, #2b6cb0);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: var(--shadow-card);
+}
+.lp-company-value-alt { border-left-color: var(--ink); }
+.lp-company-value strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 15px;
+  color: var(--ink);
+}
+.lp-company-value p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.lp-company-subhead { margin-top: 56px; }
+
+/* 总部 / 分公司 */
+.lp-company-hq h3,
+.lp-company-branch h3 {
+  margin: 14px 0 10px;
+  font-size: 22px;
+  color: var(--ink);
+}
+.lp-company-hq-address {
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+
+/* 响应式 */
+@media (max-width: 1080px) {
+  .lp-company-stats { grid-template-columns: repeat(3, 1fr); }
+  .lp-company-values { grid-template-columns: repeat(2, 1fr); }
+  .lp-company-warehouse-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 860px) {
+  .lp-company-grid,
+  .lp-company-grid-flip,
+  .lp-company-regions { grid-template-columns: 1fr; }
+  .lp-company-figure-wide img { aspect-ratio: 16 / 9; }
+}
+@media (max-width: 560px) {
+  .lp-company-stats { grid-template-columns: repeat(2, 1fr); }
+  .lp-company-values,
+  .lp-company-warehouse-grid { grid-template-columns: 1fr; }
+}

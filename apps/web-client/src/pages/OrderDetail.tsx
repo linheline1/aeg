@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 import { downloadOrShareFile } from '../lib/file-actions';
@@ -83,39 +85,31 @@ const fmtNum = (v: any) => (v == null || v === '' ? '—' : typeof v === 'number
 
 /** 客户端展示的费用项统一加“参考”口径（后端返回值原样展示，不做任何重算） */
 const FEE_REF_LABELS: Record<string, string> = {
-  OCEAN_FREIGHT: '参考海运费',
-  PORT_FEE_ORIGIN: '参考港杂费（起运港）',
-  AI_DI: '巴西进口税费预估（参考）',
-  DI: '巴西进口税费预估（参考）',
-  BR_IMPORT_DI: '巴西进口税费预估（参考）',
-  SALES_TAX: '销售税务（参考）',
-  BR_SALES_TAX: '销售税务（参考）',
-  ICMS: '销售税务（参考）',
-  PROFIT: '运营服务费用（参考）',
-  BR_PROFIT: '运营服务费用（参考）',
-  PROFIT_REFERENCE: '运营服务费用（参考）',
-  REFERENCE_PROFIT: '运营服务费用（参考）',
-  BR_CLEARANCE: '参考巴西清关与税费合计'
+  OCEAN_FREIGHT: 'ocean', PORT_FEE_ORIGIN: 'port', AI_DI: 'importTax', DI: 'importTax',
+  BR_IMPORT_DI: 'importTax', SALES_TAX: 'salesTax', BR_SALES_TAX: 'salesTax',
+  ICMS: 'salesTax', PROFIT: 'service', BR_PROFIT: 'service',
+  PROFIT_REFERENCE: 'service', REFERENCE_PROFIT: 'service', BR_CLEARANCE: 'clearance'
 };
 /** 兼容后端新增/历史费用编码：先按编码，再按名称关键字识别 */
-const feeRefLabel = (item: FeeItem) => {
+const feeRefLabel = (item: FeeItem, translate: TFunction, isPt: boolean) => {
   const label = FEE_REF_LABELS[(item.code || '').toUpperCase()];
-  if (label) return label;
+  if (label) return translate(`orderDetail.fee.${label}`);
   const name = item.name || '';
-  if (name.startsWith('参考')) return name;
-  if (/海运费|海运/.test(name)) return '参考海运费';
-  if (/港杂|起运港/.test(name)) return '参考港杂费（起运港）';
-  if (/利润/.test(name)) return '运营服务费用（参考）';
-  if (/AI\s*DI|(^|[_\s(（])DI([_\s)）]|$)/i.test(name)) return '巴西进口税费预估（参考）';
-  if (/税|TAX|ICMS/i.test(name)) return '销售税务（参考）';
-  return `${name}（参考）`;
+  if (/海运费|海运|ocean freight/i.test(name)) return translate('orderDetail.fee.ocean');
+  if (/港杂|起运港|port fee/i.test(name)) return translate('orderDetail.fee.port');
+  if (/利润|服务费|profit|service fee/i.test(name)) return translate('orderDetail.fee.service');
+  if (/AI\s*DI|(^|[_\s(（])DI([_\s)）]|$)|进口税|import tax/i.test(name)) return translate('orderDetail.fee.importTax');
+  if (/销售税|TAX|ICMS/i.test(name)) return translate('orderDetail.fee.salesTax');
+  return isPt ? `${translate('orderDetail.fee.other')} (${item.code || name})` : `${name}（参考）`;
 };
 /** 费用说明沿用后端文本，但不得出现承诺性措辞 */
-const refFeeNote = (note?: string) =>
-  note ? note.replace(/一口价|锁价/g, '参考价') : null;
+const refFeeNote = (note: string | undefined, isPt: boolean, fallback: string) =>
+  note ? (isPt && /[\u3400-\u9fff]/.test(note) ? fallback : note.replace(/一口价|锁价/g, '参考价')) : null;
 
 
 export default function OrderDetail() {
+  const { t, i18n } = useTranslation();
+  const isPt = i18n.resolvedLanguage?.startsWith('pt') ?? false;
   const { id } = useParams<{ id: string }>();
   const [d, setD] = useState<ClientOrderDetail | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -142,12 +136,12 @@ export default function OrderDetail() {
         const processing = ['analyzing', 'calculating'].includes(response.data.di_analysis?.status);
         timer = setTimeout(load, processing ? 2000 : 5000);
       } catch (e: any) {
-        if (!cancelled) setErr(getApiErrorMessage(e, '加载失败'));
+        if (!cancelled) setErr(getApiErrorMessage(e, t('orderDetail.loadError')));
       }
     };
     load();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
-  }, [id]);
+  }, [id, t]);
 
   // 拉取该报价单的截图（鉴权 blob → objectURL）
   useEffect(() => {
@@ -213,7 +207,7 @@ export default function OrderDetail() {
       const r = await api.patch(`/api/client/orders/${id}/invoice-cnpj`, { cnpj_id: cnpjId || null });
       setD(prev => prev ? { ...prev, invoice_cnpj: r.data.invoice_cnpj } : prev);
     } catch (e: any) {
-      alert(getApiErrorMessage(e, '保存失败'));
+      alert(getApiErrorMessage(e, t('orderDetail.saveError')));
     } finally { setCnpjBusy(false); }
   };
 
@@ -222,23 +216,23 @@ export default function OrderDetail() {
     try {
       const r = await api.get(`/api/client/files/${f.id}/file`, { responseType: 'blob' });
       await downloadOrShareFile(r.data, f.file_name);
-    } catch { alert('下载失败，请稍后重试'); }
+    } catch { alert(t('orderDetail.downloadError')); }
   };
 
   if (err) {
     return (
       <>
-        <div className="page-head"><h1>报价详情</h1></div>
+        <div className="page-head"><h1>{t('orderDetail.title')}</h1></div>
         <div className="alert alert-err">❌ {err}</div>
-        <Link className="btn btn-ghost" to="/orders">← 返回我的报价</Link>
+        <Link className="btn btn-ghost" to="/orders">← {t('orderDetail.back')}</Link>
       </>
     );
   }
   if (!d) {
     return (
       <>
-        <div className="page-head"><h1>报价详情</h1></div>
-        <div className="card"><p className="muted">加载中…</p></div>
+        <div className="page-head"><h1>{t('orderDetail.title')}</h1></div>
+        <div className="card"><p className="muted">{t('orderDetail.loading')}</p></div>
       </>
     );
   }
@@ -259,20 +253,16 @@ export default function OrderDetail() {
   return (
     <>
       <div className="page-head">
-        <h1>报价详情 · {d.quote_no}</h1>
+        <h1>{t('orderDetail.title')} · {d.quote_no}</h1>
         <p className="sub">
-          <Link to="/orders" style={{ color: 'var(--primary)' }}>← 返回我的报价</Link>
-          {'　'}清单文件：{d.input_file_name || '—'} · 更新于 {fmtTime(d.updated_at || d.created_at)}
+          <Link to="/orders" style={{ color: 'var(--primary)' }}>← {t('orderDetail.back')}</Link>
+          {'　'}{t('orderDetail.file')}: {d.input_file_name || '—'} · {t('orderDetail.updatedAt')} {fmtTime(d.updated_at || d.created_at)}
         </p>
       </div>
 
       <div className="quote-note">
-        <b>费用说明：</b>
-        <span>
-          US$ 为<b>参考海运费</b>（中国起运港 + 海运段，美元计价）；
-          R$ 为 <b>参考DDP 巴西全程总价</b>，包含国际海运费、其他成本、进口税费、销售环节税费及综合运营费用。
-          国际海运费单独列示；内部运营成本不拆分展示，所有金额均为参考预估。
-        </span>
+        <b>{t('orderDetail.costNoteTitle')}</b>
+        <span>{t('orderDetail.costNote')}</span>
       </div>
 
       <PriceReferenceNote className="price-ref-note-mb" />
@@ -281,41 +271,41 @@ export default function OrderDetail() {
       {/* 金额汇总 */}
       <div className="card">
         <div className="card-title">
-          <h3>💰 参考报价金额</h3>
+          <h3>💰 {t('orderDetail.amountTitle')}</h3>
           <span className={`status-tag ${d.pricing_processing ? 'status-pending_fee' : `status-${d.status}`}`}>
-            {d.pricing_processing ? '核算中' : (STATUS_CN[d.status] || d.status)}
+            {d.pricing_processing ? t('orderDetail.status.computing') : t(`orderDetail.status.${d.status}`, { defaultValue: STATUS_CN[d.status] || d.status })}
           </span>
         </div>
         {d.pricing_processing ? (
           <div className="calc-loading" role="status" aria-live="polite">
             <span className="calc-spinner" aria-hidden="true" />
             <div>
-              <strong>正在核算参考 DDP…</strong>
-              <span className="text-sm muted">系统正在计算税费、默认海运费和参考总价，本页会自动更新。</span>
+              <strong>{t('orderDetail.calculating')}</strong>
+              <span className="text-sm muted">{t('orderDetail.calculatingHint')}</span>
             </div>
           </div>
         ) : d.pricing_failed ? (
-          <div className="alert alert-err">参考报价自动核算未完成，请联系运营人员处理。</div>
+          <div className="alert alert-err">{t('orderDetail.calculationFailed')}</div>
         ) : (
           <>
             <div className="quote-amt-block">
-              <div className="quote-amt-label">参考DDP 巴西全程总价</div>
+              <div className="quote-amt-label">{t('orderDetail.ddpTotal')}</div>
               <div className="quote-amt">
                 {d.total_amount_brl != null ? fmtBRL(d.total_amount_brl) : '—'}
-                {d.total_amount_brl != null && <span className="ref-tag">参考预估</span>}
+                {d.total_amount_brl != null && <span className="ref-tag">{t('orderDetail.reference')}</span>}
               </div>
             </div>
             <div className="quote-usd-row">
-              <span className="quote-usd-label">参考海运费（USD）</span>
+              <span className="quote-usd-label">{t('orderDetail.oceanFreight')}</span>
               <span className="quote-usd">{d.total_amount_usd != null ? fmtUSD(d.total_amount_usd) : '—'}</span>
             </div>
           </>
         )}
         <div className="muted text-sm" style={{ marginTop: 8 }}>
-          {d.valid_rows ?? d.total_rows ?? 0} 行明细
-          {d.total_cbm != null ? ` · 总体积 ${Number(d.total_cbm).toLocaleString('pt-BR')} CBM` : ''}
-          {d.total_gw_kg != null ? ` · 总毛重 ${Number(d.total_gw_kg).toLocaleString('pt-BR')} kg` : ''}
-          {' · '}模板 v{d.template_version}
+          {t('orderDetail.rows', { count: d.valid_rows ?? d.total_rows ?? 0 })}
+          {d.total_cbm != null ? ` · ${t('orderDetail.volume')} ${Number(d.total_cbm).toLocaleString('pt-BR')} CBM` : ''}
+          {d.total_gw_kg != null ? ` · ${t('orderDetail.weight')} ${Number(d.total_gw_kg).toLocaleString('pt-BR')} kg` : ''}
+          {' · '}{t('orderDetail.template')} v{d.template_version}
         </div>
       </div>
 
@@ -323,25 +313,25 @@ export default function OrderDetail() {
       {(d.shipment || d.deal_status === 'won') && (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="card-title">
-            <h3>🚢 国际物流</h3>
+            <h3>🚢 {t('orderDetail.shipping')}</h3>
             {curStage ? (
-              <span className="ship-stage-chip">当前：{SHIP_STAGE_CN[curStage] || curStage}</span>
-            ) : <span className="muted text-sm">等待运营安排</span>}
+              <span className="ship-stage-chip">{t('orderDetail.current')}: {t(`orderDetail.shipStage.${curStage}`, { defaultValue: SHIP_STAGE_CN[curStage] || curStage })}</span>
+            ) : <span className="muted text-sm">{t('orderDetail.awaitingOps')}</span>}
           </div>
 
           {d.shipment ? (
             <>
               <div className="ship-grid">
-                <div><span className="ship-k">船名</span><span className="ship-v">{d.shipment.vessel || '—'}</span></div>
-                <div><span className="ship-k">航次</span><span className="ship-v">{d.shipment.voyage || '—'}</span></div>
-                <div><span className="ship-k">提单号</span><span className="ship-v">{d.shipment.bill_no || '—'}</span></div>
-                <div><span className="ship-k">柜号</span><span className="ship-v">{d.shipment.container_no || '—'}</span></div>
-                <div><span className="ship-k">航线</span><span className="ship-v">
+                <div><span className="ship-k">{t('orderDetail.vessel')}</span><span className="ship-v">{d.shipment.vessel || '—'}</span></div>
+                <div><span className="ship-k">{t('orderDetail.voyage')}</span><span className="ship-v">{d.shipment.voyage || '—'}</span></div>
+                <div><span className="ship-k">{t('orderDetail.billNo')}</span><span className="ship-v">{d.shipment.bill_no || '—'}</span></div>
+                <div><span className="ship-k">{t('orderDetail.containerNo')}</span><span className="ship-v">{d.shipment.container_no || '—'}</span></div>
+                <div><span className="ship-k">{t('orderDetail.route')}</span><span className="ship-v">
                   {[d.shipment.pol, d.shipment.pod].filter(Boolean).join(' → ') || '—'}
                 </span></div>
-                <div><span className="ship-k">船期</span><span className="ship-v">
+                <div><span className="ship-k">{t('orderDetail.schedule')}</span><span className="ship-v">
                   {d.shipment.etd || d.shipment.eta
-                    ? `${d.shipment.etd ? `开船 ${d.shipment.etd.slice(0, 10)}` : ''}${d.shipment.etd && d.shipment.eta ? ' · ' : ''}${d.shipment.eta ? `到港 ${d.shipment.eta.slice(0, 10)}` : ''}`
+                    ? `${d.shipment.etd ? `${t('orderDetail.departure')} ${d.shipment.etd.slice(0, 10)}` : ''}${d.shipment.etd && d.shipment.eta ? ' · ' : ''}${d.shipment.eta ? `${t('orderDetail.arrival')} ${d.shipment.eta.slice(0, 10)}` : ''}`
                     : '—'}
                 </span></div>
               </div>
@@ -351,11 +341,11 @@ export default function OrderDetail() {
               )}
             </>
           ) : (
-            <div className="alert alert-warn">报价已接手，我司正在安排物流。运营录入船期与节点后，会实时显示在这里。</div>
+            <div className="alert alert-warn">{t('orderDetail.shippingPending')}</div>
           )}
 
           {d.shipment && shipEvents.length === 0 && (
-            <p className="muted text-sm" style={{ marginTop: 12 }}>物流基本信息已录入，后续节点更新将显示在这里。</p>
+            <p className="muted text-sm" style={{ marginTop: 12 }}>{t('orderDetail.shippingInfoReady')}</p>
           )}
           {shipEvents.length > 0 && (
             <div className="ship-timeline">
@@ -364,7 +354,7 @@ export default function OrderDetail() {
                   <span className="ship-tl-dot" />
                   <div className="ship-tl-body">
                     <div className="ship-tl-head">
-                      <strong>{SHIP_STAGE_CN[ev.stage] || ev.stage}</strong>
+                      <strong>{t(`orderDetail.shipStage.${ev.stage}`, { defaultValue: SHIP_STAGE_CN[ev.stage] || ev.stage })}</strong>
                       <span className="muted text-sm">{ev.happened_at.slice(0, 16).replace('T', ' ')}</span>
                     </div>
                     {ev.note && <div className="muted text-sm" style={{ marginTop: 2 }}>{ev.note}</div>}
@@ -380,28 +370,28 @@ export default function OrderDetail() {
       {d.status === 'done' && (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="card-title">
-            <h3>🏢 开票信息</h3>
-            <span className="muted text-sm">我司运营端将按所选巴西公司的 CNPJ、IE 开具 NF</span>
+            <h3>🏢 {t('orderDetail.invoiceTitle')}</h3>
+            <span className="muted text-sm">{t('orderDetail.invoiceHint')}</span>
           </div>
           <div className="row gap-md" style={{ flexWrap: 'wrap' }}>
-            <select className="form-input" style={{ minWidth: 320 }} value={d.invoice_cnpj?.id || ''}
+            <select className="form-input" style={{ minWidth: 0, maxWidth: '100%', width: 320 }} value={d.invoice_cnpj?.id || ''}
               disabled={cnpjBusy || cnpjs.length === 0} onChange={e => bindCnpj(e.target.value)}>
-              <option value="">{cnpjs.length === 0 ? '暂无维护的 CNPJ（请到工作台添加）' : '暂不指定'}</option>
+              <option value="">{cnpjs.length === 0 ? t('orderDetail.noCnpj') : t('orderDetail.noSelection')}</option>
               {cnpjs.map(c => (
                 <option key={c.id} value={c.id}>
-                  {c.company_name} · CNPJ: {c.cnpj} · IE: {c.ie || '未登记'}{c.is_default ? '（默认）' : ''}
+                  {c.company_name} · CNPJ: {c.cnpj} · IE: {c.ie || t('cnpj.notRegistered')}{c.is_default ? ` (${t('cnpj.default')})` : ''}
                 </option>
               ))}
             </select>
             {d.invoice_cnpj && (
               <span className="muted text-sm" style={{ alignSelf: 'center' }}>
-                当前：{d.invoice_cnpj.company_name} · CNPJ: <strong>{d.invoice_cnpj.cnpj}</strong> · IE: <strong>{d.invoice_cnpj.ie || '未登记'}</strong>
+                {t('orderDetail.current')}: {d.invoice_cnpj.company_name} · CNPJ: <strong>{d.invoice_cnpj.cnpj}</strong> · IE: <strong>{d.invoice_cnpj.ie || t('cnpj.notRegistered')}</strong>
               </span>
             )}
           </div>
           {cnpjs.length === 0 && (
             <p className="muted text-sm" style={{ margin: '10px 0 0' }}>
-              还没有维护开票信息。请到「工作台 → 巴西公司开票信息」添加 CNPJ 和 IE，供我司向该巴西公司开具 NF。
+              {t('orderDetail.noInvoiceHint')}
             </p>
           )}
         </div>
@@ -411,21 +401,21 @@ export default function OrderDetail() {
       {orderFiles.length > 0 && (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="card-title">
-            <h3>📎 交付文件</h3>
-            <span className="muted text-sm">清关放行证明与发票等文件，由我司运营上传</span>
+            <h3>📎 {t('orderDetail.deliveryFiles')}</h3>
+            <span className="muted text-sm">{t('orderDetail.deliveryHint')}</span>
           </div>
 
           {/* 放行截图（图片缩略图，点击放大） */}
           {orderFiles.filter(f => f.kind === 'clearance_shot').length > 0 && (
             <>
-              <p className="muted text-sm" style={{ margin: '0 0 8px' }}>🖼 清关放行截图</p>
+              <p className="muted text-sm" style={{ margin: '0 0 8px' }}>🖼 {t('orderDetail.clearanceImage')}</p>
               <div className="img-grid">
                 {orderFiles.filter(f => f.kind === 'clearance_shot').map(f => (
                   <div className="img-thumb" key={f.id} title={f.file_name}
                     onClick={() => fileUrls[f.id] && setPreview({ url: fileUrls[f.id], name: f.file_name })}>
                     {fileUrls[f.id]
                       ? <img src={fileUrls[f.id]} alt={f.file_name} />
-                      : <span className="muted text-sm">加载中…</span>}
+                      : <span className="muted text-sm">{t('orderDetail.loading')}</span>}
                     <span className="img-name">{f.file_name}</span>
                   </div>
                 ))}
@@ -436,11 +426,11 @@ export default function OrderDetail() {
           {/* 发票 PDF / 其他文件（下载行） */}
           {orderFiles.filter(f => f.kind !== 'clearance_shot').length > 0 && (
             <>
-              <p className="muted text-sm" style={{ margin: '14px 0 8px' }}>🧾 发票与文件</p>
+              <p className="muted text-sm" style={{ margin: '14px 0 8px' }}>🧾 {t('orderDetail.invoicesAndFiles')}</p>
               <div className="order-file-list">
                 {orderFiles.filter(f => f.kind !== 'clearance_shot').map(f => (
                   <div className="order-file-row" key={f.id}>
-                    <span className="deal-tag deal-open">{f.kind === 'invoice' ? '发票' : '文件'}</span>
+                    <span className="deal-tag deal-open">{f.kind === 'invoice' ? t('orderDetail.invoice') : t('orderDetail.fileKind')}</span>
                     <span className="text-sm" title={f.file_name}
                       style={{ minWidth: 0, maxWidth: 340, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {f.mime_type === 'application/pdf' ? '📕' : '📄'} {f.file_name}
@@ -449,7 +439,7 @@ export default function OrderDetail() {
                       {(f.size_bytes / 1024).toFixed(0)} KB · {f.created_at?.slice(0, 10)}
                     </span>
                     {f.note && <span className="muted text-sm" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.note}</span>}
-                    <button className="btn btn-sm" onClick={() => doFileDownload(f)}>⬇ 下载</button>
+                    <button className="btn btn-sm" onClick={() => doFileDownload(f)}>⬇ {t('orderDetail.download')}</button>
                   </div>
                 ))}
               </div>
@@ -462,31 +452,31 @@ export default function OrderDetail() {
       {d.pricing_breakdown && d.pricing_breakdown.items?.length > 0 && (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="card-title">
-            <h3>🧮 参考 DDP 费用分项</h3>
+            <h3>🧮 {t('orderDetail.breakdown')}</h3>
             <span className="muted text-sm">
-              {d.pricing_breakdown.fx_rate ? `参考汇率 USD→BRL ${d.pricing_breakdown.fx_rate}` : ''}
+              {d.pricing_breakdown.fx_rate ? `${t('orderDetail.fxRate')} USD→BRL ${d.pricing_breakdown.fx_rate}` : ''}
             </span>
           </div>
           <p className="muted text-sm" style={{ margin: '0 0 10px' }}>
-            分项由海运费、港杂费、进口税费与销售税务构成，内部运营成本已计入 DDP 总价但不拆分展示；金额均为参考预估。
+            {t('orderDetail.breakdownHint')}
           </p>
           <div className="table-wrap">
             <table className="table">
               <thead>
-                <tr><th>费用项目</th><th className="amt">金额（R$）</th><th>说明</th></tr>
+                <tr><th>{t('orderDetail.feeItem')}</th><th className="amt">{t('orderDetail.amountBrl')}</th><th>{t('orderDetail.note')}</th></tr>
               </thead>
               <tbody>
                 {d.pricing_breakdown.items.map(it => (
                   <tr key={it.code}>
-                    <td><strong>{feeRefLabel(it)}</strong></td>
+                    <td><strong>{feeRefLabel(it, t, isPt)}</strong></td>
                     <td className="amt">{fmtBRL(it.amount)}</td>
-                    <td className="muted">{refFeeNote(it.note) || '—'}</td>
+                    <td className="muted">{refFeeNote(it.note, isPt, t('orderDetail.serverNote')) || '—'}</td>
                   </tr>
                 ))}
                 <tr>
-                  <td><strong>参考合计</strong></td>
+                  <td><strong>{t('orderDetail.referenceTotal')}</strong></td>
                   <td className="amt"><strong>{fmtBRL(d.pricing_breakdown.total)}</strong></td>
-                  <td className="muted">参考预估，不构成最终报价</td>
+                  <td className="muted">{t('orderDetail.referenceDisclaimer')}</td>
                 </tr>
               </tbody>
             </table>
@@ -497,17 +487,17 @@ export default function OrderDetail() {
       {/* 我上传的 Excel 明细 */}
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-title">
-          <h3>📋 我的装箱清单明细</h3>
-          <span className="muted text-sm">{d.line_items?.length || 0} 行 · {liKeys.length} 列</span>
+          <h3>📋 {t('orderDetail.packingList')}</h3>
+          <span className="muted text-sm">{t('orderDetail.tableSize', { rows: d.line_items?.length || 0, columns: liKeys.length })}</span>
         </div>
         {d.line_items && d.line_items.length > 0 ? (
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
-                  <th>行号</th>
-                  {liKeys.map(k => <th key={k}>{FIELD_LABELS[k] || k}</th>)}
-                  <th>🖼 图片</th>
+                  <th>{t('orderDetail.field.row_no')}</th>
+                  {liKeys.map(k => <th key={k}>{k in FIELD_LABELS ? t(`orderDetail.field.${k}`) : k}</th>)}
+                  <th>🖼 {t('orderDetail.images')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -536,14 +526,14 @@ export default function OrderDetail() {
             </table>
           </div>
         ) : (
-          <p className="muted">该报价单暂无明细行数据</p>
+          <p className="muted">{t('orderDetail.noLines')}</p>
         )}
 
         {/* 未关联到具体行的截图 */}
         {unlinked.length > 0 && (
           <div style={{ marginTop: 12 }}>
             <div className="muted text-sm" style={{ marginBottom: 8 }}>
-              📎 整单截图（未关联到具体明细行）· {unlinked.length} 张
+              📎 {t('orderDetail.unlinkedImages', { count: unlinked.length })}
             </div>
             <div className="shot-strip">
               {unlinked.map(img => (
@@ -565,7 +555,7 @@ export default function OrderDetail() {
       {preview && (
         <div className="shot-preview" onClick={() => setPreview(null)}>
           <img src={preview.url} alt={preview.name} />
-          <div className="shot-preview-name">{preview.name}（点击任意处关闭）</div>
+          <div className="shot-preview-name">{preview.name} ({t('orderDetail.closePreview')})</div>
         </div>
       )}
     </>

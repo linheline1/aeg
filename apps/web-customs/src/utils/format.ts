@@ -1,22 +1,23 @@
-const brlFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
-const usdFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD' });
-const rmbFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'CNY' });
-const numberFormatter = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 });
+import i18n from '../i18n';
 
-export const brl = (value?: number | null) => value == null || !Number.isFinite(Number(value)) ? '—' : brlFormatter.format(Number(value));
-export const usd = (value?: number | null) => value == null || !Number.isFinite(Number(value)) ? '—' : usdFormatter.format(Number(value));
-export const rmb = (value?: number | null) => value == null || !Number.isFinite(Number(value)) ? '—' : rmbFormatter.format(Number(value));
-export const number = (value?: number | null) => value == null || !Number.isFinite(Number(value)) ? '—' : numberFormatter.format(Number(value));
-export const percent = (value?: number | null) => value == null ? '—' : `${numberFormatter.format(Number(value))}%`;
+const locale = () => i18n.language?.startsWith('pt') ? 'pt-BR' : 'zh-CN';
+const currency = (value: number, code: string) => new Intl.NumberFormat(locale(), { style: 'currency', currency: code }).format(value);
+const formattedNumber = (value: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 3 }).format(value);
+
+export const brl = (value?: number | null) => value == null || !Number.isFinite(Number(value)) ? '—' : currency(Number(value), 'BRL');
+export const usd = (value?: number | null) => value == null || !Number.isFinite(Number(value)) ? '—' : currency(Number(value), 'USD');
+export const rmb = (value?: number | null) => value == null || !Number.isFinite(Number(value)) ? '—' : currency(Number(value), 'CNY');
+export const number = (value?: number | null) => value == null || !Number.isFinite(Number(value)) ? '—' : formattedNumber(Number(value));
+export const percent = (value?: number | null) => value == null ? '—' : `${formattedNumber(Number(value))}%`;
 export const dateTime = (value?: string | null) => {
   if (!value) return '—';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(date);
+  return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat(locale(), { dateStyle: 'short', timeStyle: 'short' }).format(date);
 };
 export const bytes = (value: number) => {
   if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${numberFormatter.format(value / 1024)} KB`;
-  return `${numberFormatter.format(value / (1024 * 1024))} MB`;
+  if (value < 1024 * 1024) return `${formattedNumber(value / 1024)} KB`;
+  return `${formattedNumber(value / (1024 * 1024))} MB`;
 };
 
 export const ORDER_STATUS: Record<string, string> = {

@@ -1,15 +1,17 @@
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import CnpjManager from '../components/CnpjManager';
 
 export default function CnpjPage() {
+  const { t } = useTranslation();
   return (
     <>
       <div className="page-head row-between">
         <div>
-          <h1>开票资料</h1>
-          <p className="sub">管理巴西公司的 CNPJ、IE 与发票抬头资料</p>
+          <h1>{t('cnpj.pageTitle')}</h1>
+          <p className="sub">{t('cnpj.pageSubtitle')}</p>
         </div>
-        <Link className="btn btn-ghost" to="/profile">返回用户中心</Link>
+        <Link className="btn btn-ghost" to="/profile">{t('cnpj.backProfile')}</Link>
       </div>
       <CnpjManager />
     </>

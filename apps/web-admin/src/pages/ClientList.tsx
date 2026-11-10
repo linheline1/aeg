@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api, useAuth } from '../store/auth';
 
@@ -30,6 +31,7 @@ function fmtTime(s?: string | null) {
 }
 
 export default function ClientList() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [rows, setRows] = useState<ClientRow[]>([]);
@@ -56,19 +58,18 @@ export default function ClientList() {
       const r = await api.get('/api/admin/clients');
       setRows(r.data);
     } catch (e: any) {
-      setErr(getApiErrorMessage(e, '加载失败'));
+      setErr(getApiErrorMessage(e, t('client.err.loadFail')));
     } finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
-  // M4：业务员列表（归属分配下拉）
   useEffect(() => {
     api.get('/api/ops/salespeople')
       .then(r => setSalespeople(r.data))
       .catch(() => {});
   }, []);
 
-  const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(null), 3000); };
+  const flash = (text: string) => { setMsg(text); setTimeout(() => setMsg(null), 3000); };
 
   const create = async () => {
     setErr(null); setCreating(true);
@@ -78,48 +79,47 @@ export default function ClientList() {
         salesperson_id: salesperson || null
       });
       setName(''); setUsername(''); setPassword(''); setSalesperson('');
-      flash('✅ 客户已创建，可让客户用该账号登录客户端');
+      flash(t('client.flash.created'));
       await load();
     } catch (e: any) {
-      setErr(getApiErrorMessage(e, '创建失败'));
+      setErr(getApiErrorMessage(e, t('client.err.createFail')));
     } finally { setCreating(false); }
   };
 
-  /** M4：设置归属业务员（该客户新报价自动继承，写审计日志） */
   const assignSales = async (row: ClientRow, salespersonId: string) => {
     setBusyId(row.id); setErr(null);
     try {
       await api.patch(`/api/admin/clients/${row.id}`, { salesperson_id: salespersonId || null });
-      flash('✅ 归属业务员已更新（该客户新上传的报价将自动分配）');
+      flash(t('client.flash.salesUpdated'));
       await load();
     } catch (e: any) {
-      setErr(getApiErrorMessage(e, '设置失败'));
+      setErr(getApiErrorMessage(e, t('client.err.assignFail')));
       await load();
     } finally { setBusyId(null); }
   };
 
   const toggleStatus = async (row: ClientRow) => {
     const next = row.status === 'active' ? 'disabled' : 'active';
-    if (next === 'disabled' && !window.confirm(`确认禁用「${row.name}」？该客户的登录账号将无法登录。`)) return;
+    if (next === 'disabled' && !window.confirm(t('client.confirm.disable', { name: row.name }))) return;
     setBusyId(row.id); setErr(null);
     try {
       await api.patch(`/api/admin/clients/${row.id}`, { status: next });
-      flash(next === 'active' ? '✅ 客户已启用' : '✅ 客户已禁用');
+      flash(next === 'active' ? t('client.flash.enabled') : t('client.flash.disabled'));
       await load();
     } catch (e: any) {
-      setErr(getApiErrorMessage(e, '操作失败'));
+      setErr(getApiErrorMessage(e, t('client.err.opFail')));
     } finally { setBusyId(null); }
   };
 
   const resetPassword = async (row: ClientRow) => {
-    if (pwdValue.length < 6) { setErr('新密码至少 6 位（6-72 字节，不含首尾空格）'); return; }
+    if (pwdValue.length < 6) { setErr(t('client.err.pwdTooShort')); return; }
     setBusyId(row.id); setErr(null);
     try {
       await api.patch(`/api/admin/clients/${row.id}/password`, { password: pwdValue });
       setPwdFor(null); setPwdValue('');
-      flash(`✅ 已重置「${row.username}」的登录密码`);
+      flash(t('client.flash.pwdReset', { username: row.username }));
     } catch (e: any) {
-      setErr(getApiErrorMessage(e, '重置失败'));
+      setErr(getApiErrorMessage(e, t('client.err.resetFail')));
     } finally { setBusyId(null); }
   };
 
@@ -129,25 +129,25 @@ export default function ClientList() {
   return (
     <>
       <div className="page-title">
-        <h1>客户管理</h1>
-        <span className="muted text-sm">创建客户 · 开通登录账号 · 启用 / 禁用</span>
+        <h1>{t('client.title')}</h1>
+        <span className="muted text-sm">{t('client.subtitle')}</span>
       </div>
 
       <div className="stat-grid">
         <div className="stat-card">
-          <span className="label">客户总数</span>
+          <span className="label">{t('client.label.total')}</span>
           <span className="value">{rows.length}</span>
         </div>
         <div className="stat-card">
-          <span className="label">启用中</span>
+          <span className="label">{t('client.label.active')}</span>
           <span className="value" style={{ color: 'var(--ok)' }}>{activeCount}</span>
         </div>
         <div className="stat-card">
-          <span className="label">已禁用</span>
+          <span className="label">{t('client.label.disabled')}</span>
           <span className="value" style={{ color: 'var(--muted)' }}>{rows.length - activeCount}</span>
         </div>
         <div className="stat-card">
-          <span className="label">待认证</span>
+          <span className="label">{t('client.label.pendingVerify')}</span>
           <span className="value" style={{ color: 'var(--warn)' }}>{pendingCount}</span>
         </div>
       </div>
@@ -157,26 +157,26 @@ export default function ClientList() {
 
       {isAdmin && <div className="card">
         <div className="card-title">
-          <h3>➕ 新建客户</h3>
-          <span className="muted text-sm">创建后客户可直接登录客户端上传装箱清单</span>
+          <h3>{t('client.create.title')}</h3>
+          <span className="muted text-sm">{t('client.create.hint')}</span>
         </div>
         <div className="grid-3">
           <div className="form-row" style={{ margin: 0 }}>
-            <label>客户名称</label>
-            <input className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder="如：巴西进口商 A" />
+            <label>{t('client.create.name')}</label>
+            <input className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder={t('client.create.namePlaceholder')} />
           </div>
           <div className="form-row" style={{ margin: 0 }}>
-            <label>登录账号</label>
-            <input className="form-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="如：client_b" />
+            <label>{t('client.create.username')}</label>
+            <input className="form-input" value={username} onChange={e => setUsername(e.target.value)} placeholder={t('client.create.usernamePlaceholder')} />
           </div>
           <div className="form-row" style={{ margin: 0 }}>
-            <label>初始密码</label>
-            <input className="form-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="6-72 位，不含首尾空格" autoComplete="new-password" />
+            <label>{t('client.create.password')}</label>
+            <input className="form-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={t('client.create.passwordPlaceholder')} autoComplete="new-password" />
           </div>
           <div className="form-row" style={{ margin: 0 }}>
-            <label>归属业务员（可选）</label>
+            <label>{t('client.create.salesperson')}</label>
             <select className="form-input" value={salesperson} onChange={e => setSalesperson(e.target.value)}>
-              <option value="">暂不分配</option>
+              <option value="">{t('client.create.noAssign')}</option>
               {salespeople.map(s => (
                 <option key={s.id} value={s.id}>{s.username}</option>
               ))}
@@ -184,77 +184,83 @@ export default function ClientList() {
           </div>
         </div>
         <div className="row-between mt-16">
-          <span className="muted text-sm">账号规则：3-32 位字母、数字或 _ . -</span>
+          <span className="muted text-sm">{t('client.create.rules')}</span>
           <button className="btn" disabled={creating || !name || !username || password.length < 6} onClick={create}>
-            {creating ? '创建中…' : '创建客户'}
+            {creating ? t('client.create.submitting') : t('client.create.submit')}
           </button>
         </div>
       </div>}
 
       <div className="card">
         <div className="card-title">
-          <h3>👥 客户列表</h3>
-          <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>刷新</button>
+          <h3>{t('client.list.title')}</h3>
+          <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>{t('client.list.refresh')}</button>
         </div>
 
         {loading ? (
-          <p className="muted">加载中…</p>
+          <p className="muted">{t('client.list.loading')}</p>
         ) : rows.length === 0 ? (
-          <p className="muted">暂无客户，请先在上方创建。</p>
+          <p className="muted">{t('client.list.noData')}</p>
         ) : (
           <div className="table-wrap responsive-table">
             <table className="table">
               <thead>
                 <tr>
-                  <th>客户 / 国内企业认证信息</th>
-                  <th>登录账号</th>
-                  <th>认证状态</th>
-                  <th>账号状态</th>
-                  <th>归属业务员</th>
-                  <th className="num">报价数</th>
-                  <th>创建时间</th>
-                  <th>操作</th>
+                  <th>{t('client.col.basic')}</th>
+                  <th>{t('client.col.username')}</th>
+                  <th>{t('client.col.verifyStatus')}</th>
+                  <th>{t('client.col.accountStatus')}</th>
+                  <th>{t('client.col.salesperson')}</th>
+                  <th className="num">{t('client.col.quoteCount')}</th>
+                  <th>{t('client.col.createdAt')}</th>
+                  <th>{t('client.col.actions')}</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map(r => (
                   <tr key={r.id}>
-                    <td data-label="客户 / 企业认证">
+                    <td data-label={t('client.col.basic')}>
                       <strong>{r.china_company_name || r.name}</strong>
-                      <span className="sub">{r.china_uscc ? `统一社会信用代码：${r.china_uscc}` : '未登记国内企业认证信息'}</span>
+                      <span className="sub">
+                        {r.china_uscc
+                          ? t('client.verify.uscc', { code: r.china_uscc })
+                          : t('client.verify.unregistered')}
+                      </span>
                     </td>
-                    <td data-label="登录账号">{r.username ? <code>{r.username}</code> : <span className="muted">未开通</span>}</td>
-                    <td data-label="认证状态">
+                    <td data-label={t('client.col.username')}>
+                      {r.username ? <code>{r.username}</code> : <span className="muted">{t('client.account.notOpened')}</span>}
+                    </td>
+                    <td data-label={t('client.col.verifyStatus')}>
                       <span className={`status-tag ${r.verification_status === 'approved' ? 'status-active' : r.verification_status === 'pending' ? 'status-pending_fee' : 'status-disabled'}`}
                         title={r.verification_note || undefined}>
-                        {r.verification_status === 'approved' ? '已认证' : r.verification_status === 'pending' ? '待认证' : '已驳回'}
+                        {r.verification_status === 'approved' ? t('client.verify.approved') : r.verification_status === 'pending' ? t('client.verify.pending') : t('client.verify.rejected')}
                       </span>
                     </td>
-                    <td data-label="账号状态">
+                    <td data-label={t('client.col.accountStatus')}>
                       <span className={`status-tag ${r.status === 'active' ? 'status-active' : 'status-disabled'}`}>
-                        {r.status === 'active' ? '启用' : '禁用'}
+                        {r.status === 'active' ? t('client.status.active') : t('client.status.disabled')}
                       </span>
                     </td>
-                    <td data-label="归属业务员">
+                    <td data-label={t('client.col.salesperson')}>
                       <select
                         className="form-input form-input-sm"
                         style={{ width: 120 }}
                         value={r.salesperson_id || ''}
                         disabled={!isAdmin || busyId === r.id}
                         onChange={e => assignSales(r, e.target.value)}
-                        title={isAdmin ? '归属业务员：该客户新上传的报价自动分配给他跟进' : '仅管理员可修改归属业务员'}
+                        title={isAdmin ? t('client.salesperson.title') : t('client.salesperson.notAdmin')}
                       >
-                        <option value="">未分配</option>
+                        <option value="">{t('client.salesperson.unassigned')}</option>
                         {salespeople.map(s => (
                           <option key={s.id} value={s.id}>{s.username}</option>
                         ))}
                       </select>
                     </td>
-                    <td className="num" data-label="报价数">{r.quote_count}</td>
-                    <td className="muted text-sm" data-label="创建时间">{fmtTime(r.created_at)}</td>
-                    <td className="table-action-cell" data-label="操作">
+                    <td className="num" data-label={t('client.col.quoteCount')}>{r.quote_count}</td>
+                    <td className="muted text-sm" data-label={t('client.col.createdAt')}>{fmtTime(r.created_at)}</td>
+                    <td className="table-action-cell" data-label={t('client.col.actions')}>
                       {!isAdmin ? (
-                        <Link className="btn btn-ghost btn-sm" to={`/clients/${r.id}`}>审核认证 / 查看详情</Link>
+                        <Link className="btn btn-ghost btn-sm" to={`/clients/${r.id}`}>{t('client.action.reviewDetail')}</Link>
                       ) : pwdFor === r.id ? (
                         <div className="row gap-sm table-actions">
                           <input
@@ -262,25 +268,25 @@ export default function ClientList() {
                             style={{ width: 120 }}
                             type="text"
                             value={pwdValue}
-                            placeholder="新密码 ≥6 位"
+                            placeholder={t('client.pwd.placeholder')}
                             onChange={e => setPwdValue(e.target.value)}
                           />
-                          <button className="btn btn-sm" disabled={busyId === r.id} onClick={() => resetPassword(r)}>确认</button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => { setPwdFor(null); setPwdValue(''); }}>取消</button>
+                          <button className="btn btn-sm" disabled={busyId === r.id} onClick={() => resetPassword(r)}>{t('common.ok')}</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => { setPwdFor(null); setPwdValue(''); }}>{t('common.cancel')}</button>
                         </div>
                       ) : (
                         <div className="row gap-sm table-actions">
-                          <Link className="btn btn-ghost btn-sm" to={`/clients/${r.id}`}>查看详情</Link>
+                          <Link className="btn btn-ghost btn-sm" to={`/clients/${r.id}`}>{t('client.action.viewDetail')}</Link>
                           <button
                             className="btn btn-ghost btn-sm"
                             disabled={!r.username}
                             onClick={() => { setPwdFor(r.id); setPwdValue(''); }}
-                          >重置密码</button>
+                          >{t('client.action.resetPwd')}</button>
                           <button
                             className={`btn btn-sm ${r.status === 'active' ? 'btn-danger' : 'btn-ghost'}`}
                             disabled={busyId === r.id}
                             onClick={() => toggleStatus(r)}
-                          >{r.status === 'active' ? '禁用' : '启用'}</button>
+                          >{r.status === 'active' ? t('client.action.toggleDisable') : t('client.action.toggleEnable')}</button>
                         </div>
                       )}
                     </td>

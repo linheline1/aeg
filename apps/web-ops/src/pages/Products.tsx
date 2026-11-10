@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 
@@ -43,6 +44,7 @@ const fmtPrice = (value: number | null) => value == null
   : `¥ ${value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function Products() {
+  const { t } = useTranslation();
   const [items, setItems] = useState<ProductRow[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -75,12 +77,12 @@ export default function Products() {
       setTotal(response.data.total || 0);
     } catch (e) {
       if (requestId.current === currentRequest) {
-        setError(getApiErrorMessage(e, '产品档案加载失败'));
+        setError(getApiErrorMessage(e, t('products.loadError')));
       }
     } finally {
       if (requestId.current === currentRequest) setLoading(false);
     }
-  }, [page, q]);
+  }, [page, q, t]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => () => { requestId.current += 1; }, []);
@@ -144,11 +146,11 @@ export default function Products() {
     const ncm = draft.ncm.trim();
     const price = priceText ? Number(priceText) : null;
     if (price != null && (!Number.isFinite(price) || price <= 0)) {
-      setError('原单价必须为空或大于 0 的数字');
+      setError(t('products.invalidPrice'));
       return;
     }
     if (ncm && !/^\d{8}$/.test(ncm)) {
-      setError('NCM 必须为空或 8 位数字');
+      setError(t('products.invalidNcm'));
       return;
     }
 
@@ -165,9 +167,9 @@ export default function Products() {
       setItems(current => current?.map(item => item.id === row.id ? response.data : item) || null);
       setEditingId(null);
       setDraft(null);
-      setMessage(`产品 ${response.data.sku || row.sku} 已保存`);
+      setMessage(t('products.saved', { sku: response.data.sku || row.sku }));
     } catch (e) {
-      setError(getApiErrorMessage(e, '产品保存失败'));
+      setError(getApiErrorMessage(e, t('products.saveError')));
     } finally {
       setSavingId(null);
     }
@@ -179,10 +181,10 @@ export default function Products() {
     setMessage(null);
     try {
       await api.post('/api/ops/products/sync');
-      setMessage('历史订单同步完成，产品档案已刷新');
+      setMessage(t('products.syncSuccess'));
       await load();
     } catch (e) {
-      setError(getApiErrorMessage(e, '历史订单同步失败'));
+      setError(getApiErrorMessage(e, t('products.syncError')));
     } finally {
       setSyncing(false);
     }
@@ -194,11 +196,11 @@ export default function Products() {
     <>
       <div className="page-title">
         <div>
-          <h1>产品档案</h1>
-          <p className="sub">维护历史订单产品的品名、原单价与 NCM 信息</p>
+          <h1>{t('products.title')}</h1>
+          <p className="sub">{t('products.subtitle')}</p>
         </div>
         <button className="btn btn-ghost" type="button" disabled={syncing} onClick={() => void sync()}>
-          {syncing ? '同步中…' : '同步历史订单'}
+          {syncing ? t('products.syncing') : t('products.sync')}
         </button>
       </div>
 
@@ -218,37 +220,37 @@ export default function Products() {
           <input
             className="form-input form-input-sm"
             style={{ flex: 1, minWidth: 220, maxWidth: 420 }}
-            aria-label="搜索产品"
-            placeholder="搜索 SKU / 中文品名 / 英文品名 / NCM，回车搜索"
+            aria-label={t('products.searchLabel')}
+            placeholder={t('products.searchPlaceholder')}
             value={keyword}
             onChange={event => setKeyword(event.target.value)}
           />
-          <button className="btn btn-sm" type="submit" disabled={loading}>搜索</button>
+          <button className="btn btn-sm" type="submit" disabled={loading}>{t('common.search')}</button>
           {q && (
             <button
               className="btn btn-sm btn-ghost"
               type="button"
               onClick={() => { setKeyword(''); setPage(1); setQ(''); }}
             >
-              清除
+              {t('products.clear')}
             </button>
           )}
-          <span className="muted text-sm">共 {total} 个产品</span>
+          <span className="muted text-sm">{t('products.count', { count: total })}</span>
         </form>
       </div>
 
-      {loading && <div className="card"><p className="muted">产品档案加载中…</p></div>}
+      {loading && <div className="card"><p className="muted">{t('products.loading')}</p></div>}
 
       {!loading && items === null && (
         <div className="card">
-          <p className="muted">暂时无法加载产品档案，请稍后重试。</p>
-          <button className="btn btn-sm btn-ghost" type="button" onClick={() => void load()}>重新加载</button>
+          <p className="muted">{t('products.loadRetryHint')}</p>
+          <button className="btn btn-sm btn-ghost" type="button" onClick={() => void load()}>{t('products.reload')}</button>
         </div>
       )}
 
       {!loading && items?.length === 0 && (
         <div className="card">
-          <p className="muted">{q ? '没有符合条件的产品，请调整搜索关键词。' : '暂无产品档案，可点击“同步历史订单”导入。'}</p>
+          <p className="muted">{q ? t('products.noResults') : t('products.empty')}</p>
         </div>
       )}
 
@@ -257,14 +259,14 @@ export default function Products() {
           <table className="table products-table">
             <thead>
               <tr>
-                <th>图片</th>
+                <th>{t('products.image')}</th>
                 <th>SKU</th>
-                <th>品名</th>
-                <th className="amt">原单价</th>
+                <th>{t('products.name')}</th>
+                <th className="amt">{t('products.basePrice')}</th>
                 <th>NCM</th>
-                <th>可信状态</th>
-                <th>更新时间</th>
-                <th className="actions-col">操作</th>
+                <th>{t('products.reviewStatus')}</th>
+                <th>{t('products.updatedAt')}</th>
+                <th className="actions-col">{t('products.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -273,25 +275,25 @@ export default function Products() {
                 const saving = savingId === row.id;
                 return (
                   <tr key={row.id} className={editing || saving ? 'row-editing' : ''}>
-                    <td data-label="图片">
+                    <td data-label={t('products.image')}>
                       {row.image_ids.length > 0 ? (
                         <div className="product-image-list">
                           {row.image_ids.map(imageId => {
                             const url = thumbs[imageId];
-                            const name = `${row.sku} · ${row.product_cn || row.product_en || '产品图片'}`;
+                            const name = `${row.sku} · ${row.product_cn || row.product_en || t('products.productImage')}`;
                             return url ? (
                               <button
                                 className="product-image-btn"
                                 type="button"
                                 key={imageId}
-                                aria-label={`预览 ${name}`}
+                                aria-label={t('products.preview', { name })}
                                 onClick={() => setPreview({ url, name })}
                               >
                                 <img src={url} alt={name} />
                               </button>
                             ) : (
                               <span className="product-image-placeholder muted" key={imageId}>
-                                {url === null ? '失败' : '加载中'}
+                                {url === null ? t('products.imageFailed') : t('products.imageLoading')}
                               </span>
                             );
                           })}
@@ -299,21 +301,21 @@ export default function Products() {
                       ) : <span className="muted">—</span>}
                     </td>
                     <td data-label="SKU"><strong>{row.sku}</strong></td>
-                    <td data-label="品名" className="product-name-cell">
+                    <td data-label={t('products.name')} className="product-name-cell">
                       {editing ? (
                         <div className="product-edit-names">
                           <input
                             className="form-input form-input-sm"
-                            aria-label={`${row.sku} 中文品名`}
-                            placeholder="中文品名"
+                            aria-label={t('products.cnNameLabel', { sku: row.sku })}
+                            placeholder={t('products.cnName')}
                             value={draft.product_cn}
                             disabled={saving}
                             onChange={event => setDraft({ ...draft, product_cn: event.target.value })}
                           />
                           <input
                             className="form-input form-input-sm"
-                            aria-label={`${row.sku} 英文品名`}
-                            placeholder="英文品名"
+                            aria-label={t('products.enNameLabel', { sku: row.sku })}
+                            placeholder={t('products.enName')}
                             value={draft.product_en}
                             disabled={saving}
                             onChange={event => setDraft({ ...draft, product_en: event.target.value })}
@@ -326,15 +328,15 @@ export default function Products() {
                         </>
                       )}
                     </td>
-                    <td data-label="原单价" className="amt">
+                    <td data-label={t('products.basePrice')} className="amt">
                       {editing ? (
                         <input
                           className="form-input form-input-sm product-price-input"
                           type="number"
                           min="0"
                           step="0.01"
-                          aria-label={`${row.sku} 原单价（人民币）`}
-                          placeholder="留空"
+                          aria-label={t('products.priceLabel', { sku: row.sku })}
+                          placeholder={t('products.optional')}
                           value={draft.base_unit_price_rmb}
                           disabled={saving}
                           onChange={event => setDraft({ ...draft, base_unit_price_rmb: event.target.value })}
@@ -348,29 +350,29 @@ export default function Products() {
                           inputMode="numeric"
                           maxLength={8}
                           aria-label={`${row.sku} NCM`}
-                          placeholder="8 位数字"
+                          placeholder={t('products.ncmPlaceholder')}
                           value={draft.ncm}
                           disabled={saving}
                           onChange={event => setDraft({ ...draft, ncm: event.target.value })}
                         />
                       ) : (row.ncm ? <code>{row.ncm}</code> : <span className="muted">—</span>)}
                     </td>
-                    <td data-label="可信状态">
+                    <td data-label={t('products.reviewStatus')}>
                       <span className={`deal-tag ${row.ncm_reviewed_at ? 'deal-won' : 'deal-none'}`}>
-                        {row.ncm_reviewed_at ? '已核验' : '待核验'}
+                        {row.ncm_reviewed_at ? t('products.reviewed') : t('products.pendingReview')}
                       </span>
                       {row.ncm_reviewed_at && (
                         <div className="muted product-review-time">{fmtTime(row.ncm_reviewed_at)}</div>
                       )}
                     </td>
-                    <td data-label="更新时间" className="muted text-sm">{fmtTime(row.updated_at)}</td>
-                    <td data-label="操作" className="actions-col">
+                    <td data-label={t('products.updatedAt')} className="muted text-sm">{fmtTime(row.updated_at)}</td>
+                    <td data-label={t('products.actions')} className="actions-col">
                       {editing ? (
                         <div className="row gap-sm">
                           <button className="btn btn-sm" type="button" disabled={saving} onClick={() => void save(row)}>
-                            {saving ? '保存中…' : '保存'}
+                            {saving ? t('common.saving') : t('common.save')}
                           </button>
-                          <button className="btn btn-sm btn-ghost" type="button" disabled={saving} onClick={cancelEdit}>取消</button>
+                          <button className="btn btn-sm btn-ghost" type="button" disabled={saving} onClick={cancelEdit}>{t('common.cancel')}</button>
                         </div>
                       ) : (
                         <button
@@ -379,7 +381,7 @@ export default function Products() {
                           disabled={savingId !== null || syncing}
                           onClick={() => startEdit(row)}
                         >
-                          编辑
+                          {t('common.edit')}
                         </button>
                       )}
                     </td>
@@ -393,14 +395,14 @@ export default function Products() {
 
       {items && total > 0 && (
         <div className="row gap-md pagination" style={{ justifyContent: 'flex-end', alignItems: 'center', marginTop: 12 }}>
-          <span className="muted text-sm">第 {page} / {pageCount} 页</span>
+          <span className="muted text-sm">{t('products.page', { page, pageCount })}</span>
           <button
             className="btn btn-sm btn-ghost"
             type="button"
             disabled={loading || page <= 1}
             onClick={() => setPage(current => current - 1)}
           >
-            上一页
+            {t('products.previous')}
           </button>
           <button
             className="btn btn-sm btn-ghost"
@@ -408,7 +410,7 @@ export default function Products() {
             disabled={loading || page >= pageCount}
             onClick={() => setPage(current => current + 1)}
           >
-            下一页
+            {t('products.next')}
           </button>
         </div>
       )}
@@ -424,7 +426,7 @@ export default function Products() {
           >
             <div className="row-between mb-8">
               <strong className="text-sm">{preview.name}</strong>
-              <button className="btn btn-sm btn-ghost" type="button" autoFocus onClick={() => setPreview(null)}>关闭 ✕</button>
+              <button className="btn btn-sm btn-ghost" type="button" autoFocus onClick={() => setPreview(null)}>{t('products.close')} ✕</button>
             </div>
             <img src={preview.url} alt={preview.name} />
           </div>

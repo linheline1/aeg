@@ -10,9 +10,9 @@ export default function Footer({ t }: { t: LandingContent }) {
       <div className="lp-container">
         <div className="lp-footer-grid">
           <div className="lp-footer-brand">
-            <a className="lp-brand" href="#top" aria-label="AEG">
+            <Link className="lp-brand" to="/" aria-label="AEG">
               <img className="lp-brand-mark" src={logo} alt="AEG" width={207} height={96} />
-            </a>
+            </Link>
             <p>{t.footer.brandDescription}</p>
           </div>
 
@@ -20,7 +20,7 @@ export default function Footer({ t }: { t: LandingContent }) {
             <div className="lp-footer-col" key={column.title}>
               <h4>{column.title}</h4>
               {column.links.map((link) =>
-                link.href.startsWith('/')
+                link.href.startsWith('/') && !link.href.includes('#')
                   ? <Link key={link.label} to={link.href}>{link.label}</Link>
                   : <a key={link.label} href={link.href}>{link.label}</a>
               )}

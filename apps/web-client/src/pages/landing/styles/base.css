@@ -2,7 +2,8 @@
 :where(.lp) img { display: block; max-width: 100%; }
 :where(.lp) picture { display: block; }
 :where(.lp) a { color: inherit; text-decoration: none; }
-:where(.lp) a:hover { text-decoration: none; }
+/* 提高优先级，压过全局 styles.css 的 a:hover { text-decoration: underline }（:where 优先级为 0 会被覆盖） */
+.lp a:hover { text-decoration: none; }
 
 .lp-container {
   width: min(1160px, 92%);

@@ -1,5 +1,6 @@
 import { useDeferredValue, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 import PriceReferenceNote from '../components/PriceReferenceNote';
@@ -39,22 +40,6 @@ interface QuoteOrder {
   updated_at?: string;
 }
 
-/** M7 物流节点阶段（清关环节细化为三节点） */
-const SHIP_STAGE_CN: Record<string, string> = {
-  booked: '已订舱', loaded: '已装柜', customs_cn: '中国报关', departed: '已开船',
-  on_water: '海运途中', arrived: '已到港', customs_br: '巴西清关中',
-  duty_paid: '关税已缴', cleared: '清关放行', delivered: '已签收'
-};
-
-const STATUS_CN: Record<string, string> = {
-  done: '参考价已生成',
-  computing: '计算中',
-  pending_fee: '待核算',
-  validating: '校验中',
-  uploaded: '已上传',
-  failed: '失败'
-};
-
 const fmtBRL = (n: number) =>
   'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtUSD = (n: number) =>
@@ -78,6 +63,7 @@ function useIsMobile() {
 }
 
 export default function Orders() {
+  const { t } = useTranslation();
   const [list, setList] = useState<QuoteOrder[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const isMobile = useIsMobile();
@@ -94,9 +80,9 @@ export default function Orders() {
       })
       .catch(e => {
         if (seq !== loadSeq.current) return;
-        setErr(getApiErrorMessage(e, '加载失败'));
+        setErr(getApiErrorMessage(e, t('orders.loadError')));
       });
-  }, []);
+  }, [t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -129,14 +115,14 @@ export default function Orders() {
   return (
     <>
       <div className="page-head">
-        <h1>我的报价</h1>
-        <p className="sub">运营核算完成后生成的 DDP 参考预估在此处查看，金额不构成最终报价</p>
+        <h1>{t('orders.title')}</h1>
+        <p className="sub">{t('orders.subtitle')}</p>
       </div>
 
       {err && (
         <div className="alert alert-err row" style={{ alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <span>加载失败：{err}</span>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={load}>重试</button>
+          <span>{t('orders.loadFailed')}：{err}</span>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={load}>{t('orders.retry')}</button>
         </div>
       )}
 
@@ -149,9 +135,9 @@ export default function Orders() {
       {list && list.length > 0 && (
         <>
           <div className="orders-stats">
-            <span className="stat-chip">共 {list.length} 份报价</span>
+            <span className="stat-chip">{t('orders.total', { count: list.length })}</span>
             {latest && (
-              <span className="stat-chip">最近更新 {fmtTime(latest.updated_at || latest.created_at)}</span>
+              <span className="stat-chip">{t('orders.lastUpdated', { time: fmtTime(latest.updated_at || latest.created_at) })}</span>
             )}
           </div>
 
@@ -168,9 +154,9 @@ export default function Orders() {
 
           {visible.length === 0 ? (
             <div className="card empty-state">
-              <p className="empty-title">没有符合当前筛选条件的报价</p>
-              <p className="muted">调整关键词或清除筛选条件后重新查看</p>
-              <button type="button" className="btn btn-ghost" onClick={() => applyFilters(DEFAULT_ORDER_FILTERS, true)}>清除筛选</button>
+              <p className="empty-title">{t('orders.noFiltered')}</p>
+              <p className="muted">{t('orders.noFilteredHint')}</p>
+              <button type="button" className="btn btn-ghost" onClick={() => applyFilters(DEFAULT_ORDER_FILTERS, true)}>{t('orders.clearFilters')}</button>
             </div>
           ) : isMobile ? (
             <div className="quote-grid">
@@ -178,27 +164,27 @@ export default function Orders() {
                 <Link className="quote-card" to={`/orders/${o.id}`} key={o.id}>
                   <div className="quote-head">
                     <strong>{o.quote_no}</strong>
-                    <span className={`status-tag status-${o.status}`}>{STATUS_CN[o.status] || o.status}</span>
+                    <span className={`status-tag status-${o.status}`}>{t(`status.${o.status}`, { defaultValue: o.status })}</span>
                   </div>
-                  <div className="quote-file" title={o.input_file_name || ''}>{o.input_file_name || '装箱清单'}</div>
+                  <div className="quote-file" title={o.input_file_name || ''}>{o.input_file_name || t('orders.packingList')}</div>
                   {o.converted_by_ai && (
-                    <span className="quote-ai-tag" title={o.ai_notes || '该清单由 AI 自动识别并转换格式'}>AI 已识别转换</span>
+                    <span className="quote-ai-tag" title={o.ai_notes || t('orders.aiTitle')}>{t('orders.aiConverted')}</span>
                   )}
                   {o.status === 'done' && o.total_amount_brl != null && (
                     <div className="quote-amt-block">
-                      <div className="quote-amt-label">参考DDP 巴西全程总价</div>
+                      <div className="quote-amt-label">{t('orders.ddpTotal')}</div>
                       <span className="quote-amt">{fmtBRL(o.total_amount_brl)}</span>
                     </div>
                   )}
                   {o.status === 'done' && o.total_amount_usd != null && (
                     <div className="quote-usd-row">
-                      <span className="quote-usd-label">参考海运费</span>
+                      <span className="quote-usd-label">{t('orders.freight')}</span>
                       <span className="quote-usd">{fmtUSD(o.total_amount_usd)}</span>
                     </div>
                   )}
                   <div className="quote-foot">
                     <span>{fmtTime(o.created_at)}</span>
-                    <span>{o.shipment_stage ? (SHIP_STAGE_CN[o.shipment_stage] || o.shipment_stage) : ''}</span>
+                    <span>{o.shipment_stage ? t(`shipment.${o.shipment_stage}`, { defaultValue: o.shipment_stage }) : ''}</span>
                   </div>
                 </Link>
               ))}
@@ -209,8 +195,8 @@ export default function Orders() {
                 <table className="table" style={{ minWidth: 1180, margin: 0 }}>
                   <thead>
                     <tr>
-                      <th>报价号 / 清单</th><th>上传时间</th><th>总件数</th><th>CBM</th><th>申报货值</th>
-                      <th>参考海运费</th><th>参考DDP 巴西全程总价</th><th>状态</th><th>物流节点</th><th className="actions-col">操作</th>
+                      <th>{t('orders.columns.quote')}</th><th>{t('orders.columns.uploadedAt')}</th><th>{t('orders.columns.pieces')}</th><th>CBM</th><th>{t('orders.columns.value')}</th>
+                      <th>{t('orders.freight')}</th><th>{t('orders.ddpTotal')}</th><th>{t('orders.columns.status')}</th><th>{t('orders.columns.shipping')}</th><th className="actions-col">{t('orders.columns.actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -218,9 +204,9 @@ export default function Orders() {
                       <tr key={o.id}>
                         <td>
                           <Link to={`/orders/${o.id}`}><strong>{o.quote_no}</strong></Link>
-                          <div className="muted text-sm" title={o.input_file_name || ''}>{o.input_file_name || '装箱清单'}</div>
+                          <div className="muted text-sm" title={o.input_file_name || ''}>{o.input_file_name || t('orders.packingList')}</div>
                           {o.converted_by_ai && (
-                            <span className="quote-ai-tag" title={o.ai_notes || '该清单由 AI 自动识别并转换格式'}>AI 已识别转换</span>
+                            <span className="quote-ai-tag" title={o.ai_notes || t('orders.aiTitle')}>{t('orders.aiConverted')}</span>
                           )}
                         </td>
                         <td>{fmtTime(o.created_at)}</td>
@@ -228,24 +214,24 @@ export default function Orders() {
                         <td>{o.total_cbm == null ? '—' : o.total_cbm.toFixed(4)}</td>
                         <td>
                           {o.total_amount_rmb == null ? '—' : `${o.total_amount_rmb.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} RMB`}
-                          {o.declared_currency === 'USD' && <div className="muted text-sm">USD 已折算</div>}
+                          {o.declared_currency === 'USD' && <div className="muted text-sm">{t('orders.usdConverted')}</div>}
                         </td>
                         <td>{o.status === 'done' && o.total_amount_usd != null ? fmtUSD(o.total_amount_usd) : '—'}</td>
                         <td>
                           {o.status === 'done' && o.total_amount_brl != null
-                            ? <><strong>{fmtBRL(o.total_amount_brl)}</strong><span className="ref-tag">参考</span></>
+                            ? <><strong>{fmtBRL(o.total_amount_brl)}</strong><span className="ref-tag">{t('common.reference')}</span></>
                             : '—'}
                         </td>
-                        <td><span className={`status-tag status-${o.status}`}>{STATUS_CN[o.status] || o.status}</span></td>
+                        <td><span className={`status-tag status-${o.status}`}>{t(`status.${o.status}`, { defaultValue: o.status })}</span></td>
                         <td>
                           {o.shipment_stage ? (
                             <>
-                              <span className="ship-stage-chip">{SHIP_STAGE_CN[o.shipment_stage] || o.shipment_stage}</span>
+                              <span className="ship-stage-chip">{t(`shipment.${o.shipment_stage}`, { defaultValue: o.shipment_stage })}</span>
                               {o.shipment_eta && <div className="muted text-sm">ETA {o.shipment_eta.slice(0, 10)}</div>}
                             </>
                           ) : '—'}
                         </td>
-                        <td className="actions-col"><Link className="btn btn-sm btn-ghost" to={`/orders/${o.id}`}>查看详情</Link></td>
+                        <td className="actions-col"><Link className="btn btn-sm btn-ghost" to={`/orders/${o.id}`}>{t('orders.viewDetails')}</Link></td>
                       </tr>
                     ))}
                   </tbody>
@@ -255,16 +241,16 @@ export default function Orders() {
           )}
 
           {filtering && visible.length > 0 && (
-            <p className="orders-filter-hint muted text-sm">筛选条件已保存在链接中，刷新或返回本页后仍然保留。</p>
+            <p className="orders-filter-hint muted text-sm">{t('orders.filterSaved')}</p>
           )}
         </>
       )}
 
       {list && list.length === 0 && !err && (
         <div className="card empty-state">
-          <p className="empty-title">暂无报价单</p>
-          <p className="muted">上传装箱清单并通过运营核算后，参考价会自动生成到这里</p>
-          <Link className="btn" to="/workbench">去工作台上传清单</Link>
+          <p className="empty-title">{t('orders.emptyTitle')}</p>
+          <p className="muted">{t('orders.emptyDescription')}</p>
+          <Link className="btn" to="/workbench">{t('orders.goUpload')}</Link>
         </div>
       )}
     </>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../store/auth';
 import type { OrderImage } from '../types';
 import { bytes } from '../utils/format';
@@ -7,6 +8,7 @@ import Icon from './Icon';
 import Modal from './Modal';
 
 export default function OrderImages({ images }: { images: OrderImage[] }) {
+  const { t } = useTranslation();
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [failed, setFailed] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,12 +30,12 @@ export default function OrderImages({ images }: { images: OrderImage[] }) {
     return () => { active = false; created.forEach((url) => URL.revokeObjectURL(url)); };
   }, [images]);
 
-  if (!images.length) return <Empty title="Nenhuma imagem enviada" description="Não há imagens de produtos vinculadas a este pedido." />;
+  if (!images.length) return <Empty title={t('images.emptyTitle')} description={t('images.emptyDescription')} />;
   return (
     <>
-      {failed.length > 0 && <p className="inline-warning" role="alert">Algumas imagens não puderam ser carregadas. Atualize o pedido para tentar novamente.</p>}
-      <div className="image-grid" aria-busy={loading}>{images.map((image) => <div className="image-card" key={image.id}>{urls[image.id] ? <button type="button" className="image-button" onClick={() => setSelected(image)} aria-label={`Ampliar imagem ${image.file_name}`}><img src={urls[image.id]} alt={`Produto: ${image.file_name}`} /><span><Icon name="image" size={17} />Ampliar</span></button> : <div className="image-placeholder">{failed.includes(image.id) ? <Icon name="alert" /> : <span className="spinner" />}</div>}<div className="image-meta"><strong title={image.file_name}>{image.file_name}</strong><span>Linha {image.row_no} · {bytes(image.size_bytes)}</span></div></div>)}</div>
-      {selected && urls[selected.id] && <Modal title={selected.file_name} onClose={() => setSelected(null)} wide><img className="image-full" src={urls[selected.id]} alt={`Visualização ampliada de ${selected.file_name}`} /><p className="muted">Linha {selected.row_no} · {bytes(selected.size_bytes)}</p></Modal>}
+      {failed.length > 0 && <p className="inline-warning" role="alert">{t('images.loadWarning')}</p>}
+      <div className="image-grid" aria-busy={loading}>{images.map((image) => <div className="image-card" key={image.id}>{urls[image.id] ? <button type="button" className="image-button" onClick={() => setSelected(image)} aria-label={t('images.enlargeAria', { name: image.file_name })}><img src={urls[image.id]} alt={t('images.productAlt', { name: image.file_name })} /><span><Icon name="image" size={17} />{t('images.enlarge')}</span></button> : <div className="image-placeholder">{failed.includes(image.id) ? <Icon name="alert" /> : <span className="spinner" />}</div>}<div className="image-meta"><strong title={image.file_name}>{image.file_name}</strong><span>{t('images.rowMeta', { row: image.row_no, size: bytes(image.size_bytes) })}</span></div></div>)}</div>
+      {selected && urls[selected.id] && <Modal title={selected.file_name} onClose={() => setSelected(null)} wide><img className="image-full" src={urls[selected.id]} alt={t('images.largeAlt', { name: selected.file_name })} /><p className="muted">{t('images.rowMeta', { row: selected.row_no, size: bytes(selected.size_bytes) })}</p></Modal>}
     </>
   );
 }

@@ -1,6 +1,5 @@
 /* Landing-only refinement layer. Preserve the existing brand and section behavior. */
 .lp-consult-link { display: flex; align-items: center; gap: 8px; width: fit-content; min-height: 44px; margin: 12px 0 20px; color: var(--green); font-size: 14px; font-weight: 600; }
-.lp-consult-link:hover { text-decoration: underline; }
 .lp-cta-actions { padding: 24px; border: 1px solid #d4e0eb; border-radius: 16px; background: #fff; }
 .lp-cta-actions .lp-btn { width: 100%; }
 .lp-cta-actions .lp-consult-link { width: 100%; justify-content: center; margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; text-align: center; }

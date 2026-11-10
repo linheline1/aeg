@@ -12,6 +12,7 @@ import CustomsCnpjs from './pages/CustomsCnpjs';
 import AuditLog from './pages/AuditLog';
 import HelpArticles from './pages/HelpArticles';
 import AiConfig from './pages/AiConfig';
+import PartnersAdmin from './pages/PartnersAdmin';
 import Profile from './pages/Profile';
 
 /** 无权访问提示页（顶层路由，避免守卫重定向死循环） */
@@ -56,6 +57,7 @@ export default function App() {
                 <Route path="help" element={<RequireAuth allowedRoles={['admin']}><HelpArticles /></RequireAuth>} />
                 <Route path="audit" element={<RequireAuth allowedRoles={['admin']}><AuditLog /></RequireAuth>} />
                 <Route path="ai-config" element={<RequireAuth allowedRoles={['admin']}><AiConfig /></RequireAuth>} />
+                <Route path="partners" element={<RequireAuth allowedRoles={['admin']}><PartnersAdmin /></RequireAuth>} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

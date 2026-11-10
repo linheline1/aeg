@@ -19,10 +19,11 @@ import { OrderFileEntity } from '../entities/order-file.entity';
 import { PaymentRecordEntity } from '../entities/payment-record.entity';
 import { HelpArticleEntity } from '../entities/help-article.entity';
 import { AiConfigEntity } from '../entities/ai-config.entity';
+import { PartnerEntity } from '../entities/partner.entity';
 import type {
   UserRow, ClientRow, TemplateRow, QuoteOrderRow, FeeRateRow,
   ClientImageRow, ClientCnpjRow, CustomsCnpjRow, ProductCatalogRow, OrderFileRow, AuditLogRow, PaymentRow, HelpArticleRow,
-  AiConfigRow, ResolvedAiConfig
+  AiConfigRow, ResolvedAiConfig, PartnerRow
 } from './mock-db';
 import { resolveAiConfig } from './mock-db';
 
@@ -348,6 +349,44 @@ export class PgImageRepo {
   async insertMany(rows: Omit<ClientImageRow, 'id' | 'created_at'>[]): Promise<ClientImageRow[]> {
     const saved = await this.repo.save(rows.map(r => this.repo.create(stripUndefined(r) as DeepPartial<ClientImageEntity>)));
     return saved.map(e => toRow(e) as ClientImageRow);
+  }
+}
+
+/** PostgreSQL 版合作伙伴仓储：方法签名与 mock-db.ts PartnerRepo 保持一致 */
+export class PgPartnerRepo {
+  private repo: Repository<PartnerEntity>;
+  constructor(ds: DataSource) { this.repo = ds.getRepository(PartnerEntity); }
+
+  async listAll(): Promise<PartnerRow[]> {
+    const rows = await this.repo.find({ order: { category: 'ASC', created_at: 'ASC' } });
+    return rows.map(e => toRow(e) as PartnerRow);
+  }
+  async findByCategory(category: 'carrier' | 'ecosystem'): Promise<PartnerRow[]> {
+    const rows = await this.repo.find({ where: { category }, order: { created_at: 'ASC' } });
+    return rows.map(e => toRow(e) as PartnerRow);
+  }
+  async findById(id: string): Promise<PartnerRow | null> {
+    const e = await this.repo.findOne({ where: { id } });
+    return e ? (toRow(e) as PartnerRow) : null;
+  }
+  async insert(row: Omit<PartnerRow, 'id' | 'created_at'>): Promise<PartnerRow> {
+    const e = this.repo.create({ ...row, id: crypto.randomUUID(), created_at: new Date() } as DeepPartial<PartnerEntity>);
+    const saved = await this.repo.save(e);
+    return toRow(saved) as PartnerRow;
+  }
+  /** 更新官网链接；找不到返回 null */
+  async updateWebsite(id: string, websiteUrl: string): Promise<PartnerRow | null> {
+    const e = await this.repo.findOne({ where: { id } });
+    if (!e) return null;
+    e.website_url = websiteUrl;
+    const saved = await this.repo.save(e);
+    return toRow(saved) as PartnerRow;
+  }
+  async remove(id: string): Promise<PartnerRow | null> {
+    const e = await this.repo.findOne({ where: { id } });
+    if (!e) return null;
+    await this.repo.remove(e);
+    return toRow(e) as PartnerRow;
   }
 }
 
