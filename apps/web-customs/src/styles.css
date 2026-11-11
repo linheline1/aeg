@@ -488,3 +488,88 @@ select.form-input { cursor: pointer; }
 @media (max-width: 720px) {
   .form-input { font-size: 16px; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Monument 同步层 · 与落地页风格对齐
+   ink 深蓝 + gold 金 · 硬角 · 硬阴影 · Karla/Fraunces
+   追加于文件末尾：删除本段即可整体回退
+   ═══════════════════════════════════════════════════════════ */
+:root {
+  --primary:       #102e53;
+  --primary-dark:   #0a2349;
+  --primary-soft:   #e9eff7;
+  --accent:         #102e53;
+  --bg:             #f7f9fc;
+  --border:         #dce5ee;
+  --border-strong:  #c3d2e2;
+  --muted:          #596b7e;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --shadow-sm: 2px 2px 0 rgba(16, 46, 83, .08);
+  --shadow-md: 4px 4px 0 rgba(16, 46, 83, .10);
+  --shadow-lg: 8px 8px 0 rgba(16, 46, 83, .12);
+  --gold:    #dfaf00;
+  --gold-hi: #f7cf1e;
+}
+body { font-family: 'Karla', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+h1, h2 { font-family: 'Fraunces', 'Noto Serif SC', 'Songti SC', Georgia, serif; letter-spacing: -.4px; }
+a { color: var(--primary); }
+code { border-radius: 0; }
+
+/* 硬角兜底（spinner 除外） */
+.layout *, .login-page * { border-radius: 0; }
+.layout .spinner, .login-page .spinner { border-radius: 50%; }
+
+/* 按钮 · 硬阴影 + 位移 */
+.btn { box-shadow: 3px 3px 0 rgba(16, 46, 83, .16); }
+.btn:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 rgba(16, 46, 83, .18); }
+.btn:active:not(:disabled) { transform: none; box-shadow: 2px 2px 0 rgba(16, 46, 83, .16); }
+
+/* 聚焦/选区 ink 化 */
+:focus-visible { outline-color: #102e53; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(16, 46, 83, .14); }
+::selection { background: #f7cf1e; color: #241b00; }
+
+/* 侧边栏 · 金色品牌线 + active 金底 */
+.brand { border-bottom-color: rgba(247, 207, 30, .28); }
+.nav a.active { background: var(--gold-hi); color: #241b00; font-weight: 700; box-shadow: 3px 3px 0 rgba(0, 0, 0, .30); }
+.nav a.active:hover { background: var(--gold-hi); color: #241b00; }
+.sidebar-foot { border-color: #29405f; }
+.sidebar-foot svg { color: var(--gold-hi); }
+
+/* 登录页（分屏） · ink 底 + 网格肌理 + 金色点缀与 CTA */
+.login-intro {
+  background:
+    linear-gradient(rgba(247, 207, 30, .05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(247, 207, 30, .05) 1px, transparent 1px),
+    linear-gradient(155deg, #0b2a56 0%, #102e53 58%, #0a2349 100%);
+  background-size: 84px 84px, 84px 84px, auto;
+}
+.login-intro .eyebrow { color: var(--gold-hi); }
+.login-feature svg { color: var(--gold-hi); }
+.login-card { border-left: 4px solid var(--gold-hi); }
+.login-card button.btn { background: var(--gold-hi); color: #241b00; font-weight: 700; box-shadow: 3px 3px 0 rgba(36, 27, 0, .28); }
+.login-card button.btn:hover:not(:disabled) { background: #102e53; color: var(--gold-hi); box-shadow: 3px 3px 0 rgba(16, 46, 83, .22); }
+.login-card button.btn:active:not(:disabled) { transform: none; }
+
+/* 移动端登录 · 同步 ink 底 + 金色 CTA */
+@media (max-width: 720px) {
+  .login-page {
+    border-top: 3px solid var(--gold-hi);
+    background:
+      linear-gradient(rgba(247, 207, 30, .05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(247, 207, 30, .05) 1px, transparent 1px),
+      linear-gradient(155deg, #0b2a56 0%, #102e53 58%, #0a2349 100%);
+    background-size: 84px 84px, 84px 84px, auto;
+  }
+  .login-card { border-top: 4px solid var(--gold-hi); border-left: 0; box-shadow: 8px 8px 0 rgba(223, 175, 0, .30); }
+}
+
+/* 残留蓝色字面量 → ink */
+.user-avatar { color: #102e53; }
+.readonly-note { color: #102e53; background: #e9eff7; }
+.timeline-dot { box-shadow: 0 0 0 2px var(--border); }
+.login-page .remember-password { display: flex; align-items: center; gap: 9px; margin: 2px 0 14px; font-size: 13px; cursor: pointer; }
+.login-page .remember-password input { width: 18px; height: 18px; margin: 0; accent-color: #2563eb; }
+.login-page .remember-password input:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }

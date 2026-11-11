@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 import { openOrShareFile } from '../lib/file-actions';
@@ -30,6 +31,7 @@ function fmtTime(s?: string | null) {
 }
 
 export default function Profile() {
+  const { t } = useTranslation();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -47,7 +49,7 @@ export default function Profile() {
       const r = await api.get('/api/client/profile');
       setProfile(r.data);
     } catch (e: any) {
-      setErr(getApiErrorMessage(e, '用户资料加载失败'));
+      setErr(getApiErrorMessage(e, t('profile.loadError')));
     } finally { setLoading(false); }
   };
 
@@ -57,7 +59,7 @@ export default function Profile() {
     e.preventDefault();
     setErr(null);
     setMsg(null);
-    if (passwords.new_password !== passwords.confirm_password) { setErr('两次输入的新密码不一致'); return; }
+    if (passwords.new_password !== passwords.confirm_password) { setErr(t('profile.passwordMismatch')); return; }
     setPasswordBusy(true);
     try {
       await api.patch('/api/client/profile/password', {
@@ -65,15 +67,15 @@ export default function Profile() {
         new_password: passwords.new_password
       });
       setPasswords({ current_password: '', new_password: '', confirm_password: '' });
-      setMsg('✅ 密码已修改，下次登录请使用新密码');
+      setMsg(t('profile.passwordSuccess'));
     } catch (e: any) {
-      setErr(getApiErrorMessage(e, '密码修改失败'));
+      setErr(getApiErrorMessage(e, t('profile.passwordError')));
     } finally { setPasswordBusy(false); }
   };
 
   const uploadLicense = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!license) { setErr('请选择要上传的营业执照'); return; }
+    if (!license) { setErr(t('profile.selectLicense')); return; }
     setLicenseBusy(true);
     setErr(null);
     setMsg(null);
@@ -84,9 +86,9 @@ export default function Profile() {
       setProfile(r.data);
       setLicense(null);
       setLicenseVersion(v => v + 1);
-      setMsg('✅ 营业执照已重新提交，企业认证状态已更新为待认证');
+      setMsg(t('profile.licenseSuccess'));
     } catch (e: any) {
-      setErr(getApiErrorMessage(e, '营业执照上传失败'));
+      setErr(getApiErrorMessage(e, t('profile.licenseError')));
     } finally { setLicenseBusy(false); }
   };
 
@@ -95,23 +97,23 @@ export default function Profile() {
     try {
       const r = await api.get('/api/client/profile/license', { responseType: 'blob' });
       const mimeType = profile?.client.license_mime_type || 'application/octet-stream';
-      const fileName = profile?.client.license_file_name || `营业执照.${mimeType === 'application/pdf' ? 'pdf' : 'png'}`;
+      const fileName = profile?.client.license_file_name || `${t('profile.license')}.${mimeType === 'application/pdf' ? 'pdf' : 'png'}`;
       await openOrShareFile(new Blob([r.data], { type: mimeType }), fileName);
-    } catch { setErr('营业执照加载失败，请稍后重试'); }
+    } catch { setErr(t('profile.licenseLoadError')); }
   };
 
-  if (loading) return <div className="card"><p className="muted">用户资料加载中…</p></div>;
-  if (!profile) return <div className="alert alert-err">❌ {err || '用户资料不存在'}</div>;
+  if (loading) return <div className="card"><p className="muted">{t('profile.loading')}</p></div>;
+  if (!profile) return <div className="alert alert-err">❌ {err || t('profile.notFound')}</div>;
   const client = profile.client;
   const statusClass = client.verification_status === 'approved' ? 'status-done' : client.verification_status === 'rejected' ? 'status-failed' : 'status-pending_fee';
-  const statusText = client.verification_status === 'approved' ? '已认证' : client.verification_status === 'rejected' ? '已驳回' : '待认证';
+  const statusText = t(`profile.verification.${client.verification_status}`);
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1>用户中心</h1>
-          <p className="muted">账户信息、企业认证与安全设置</p>
+          <h1>{t('profile.title')}</h1>
+          <p className="muted">{t('profile.subtitle')}</p>
         </div>
       </div>
       {err && <div className="alert alert-err">❌ {err}</div>}
@@ -119,79 +121,79 @@ export default function Profile() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
         <div className="card" style={{ margin: 0 }}>
-          <div className="card-title"><h3>👤 账户信息</h3></div>
-          <p><strong>登录账号：</strong>{profile.username}</p>
-          <p><strong>账户类型：</strong>企业客户账号</p>
-          <p><strong>账号状态：</strong>{profile.status === 'active' ? '正常' : '已禁用'}</p>
-          <p><strong>注册时间：</strong>{fmtTime(profile.created_at)}</p>
-          <p><strong>用户 ID：</strong></p>
+          <div className="card-title"><h3>👤 {t('profile.accountInfo')}</h3></div>
+          <p><strong>{t('profile.username')}：</strong>{profile.username}</p>
+          <p><strong>{t('profile.accountType')}：</strong>{t('profile.clientAccount')}</p>
+          <p><strong>{t('profile.accountStatus')}：</strong>{profile.status === 'active' ? t('profile.active') : t('profile.disabled')}</p>
+          <p><strong>{t('profile.registeredAt')}：</strong>{fmtTime(profile.created_at)}</p>
+          <p><strong>{t('profile.userId')}：</strong></p>
           <code style={{ wordBreak: 'break-all' }}>{profile.id}</code>
         </div>
 
         <div className="card" style={{ margin: 0 }}>
-          <div className="card-title"><h3>🏢 国内企业资料</h3></div>
-          <p><strong>公司全称：</strong>{client.china_company_name || '未登记'}</p>
-          <p><strong>统一社会信用代码：</strong></p>
+          <div className="card-title"><h3>🏢 {t('profile.chinaCompany')}</h3></div>
+          <p><strong>{t('profile.companyName')}：</strong>{client.china_company_name || t('profile.notRegistered')}</p>
+          <p><strong>{t('profile.uscc')}：</strong></p>
           <code>{client.china_uscc || '—'}</code>
-          <p className="muted text-sm" style={{ marginTop: 16 }}>企业名称与信用代码应与营业执照保持一致。如需更正，请联系我司工作人员。</p>
+          <p className="muted text-sm" style={{ marginTop: 16 }}>{t('profile.companyHint')}</p>
         </div>
       </div>
 
       <Link to="/cnpjs" className="card cnpj-profile-entry">
         <div>
-          <div className="card-title" style={{ margin: 0 }}><h3>🏢 巴西公司开票资料</h3></div>
-          <p className="muted text-sm">查询 CNPJ，维护 Razão Social、IE、登记状态和地址</p>
+          <div className="card-title" style={{ margin: 0 }}><h3>🏢 {t('profile.invoiceData')}</h3></div>
+          <p className="muted text-sm">{t('profile.invoiceHint')}</p>
         </div>
-        <span className="btn btn-ghost">管理开票资料</span>
+        <span className="btn btn-ghost">{t('profile.manageInvoice')}</span>
       </Link>
 
       <div className="card">
         <div className="card-title">
-          <h3>✅ 企业认证情况</h3>
+          <h3>✅ {t('profile.verificationTitle')}</h3>
           <span className={`status-tag ${statusClass}`}>{statusText}</span>
         </div>
-        {client.verification_status === 'pending' && <div className="alert alert-warn">企业资料已提交，我司人员正在核对营业执照，请耐心等待审核。</div>}
-        {client.verification_status === 'approved' && <div className="alert alert-ok">企业资料与营业执照已认证通过。</div>}
-        {client.verification_status === 'rejected' && <div className="alert alert-err">认证未通过，请根据审核意见更新营业执照后重新提交。</div>}
-        {client.verification_note && <p><strong>审核意见：</strong>{client.verification_note}</p>}
-        {client.verified_by && <p className="muted text-sm">审核人：{client.verified_by} · 审核时间：{fmtTime(client.verified_at)}</p>}
+        {client.verification_status === 'pending' && <div className="alert alert-warn">{t('profile.pendingMessage')}</div>}
+        {client.verification_status === 'approved' && <div className="alert alert-ok">{t('profile.approvedMessage')}</div>}
+        {client.verification_status === 'rejected' && <div className="alert alert-err">{t('profile.rejectedMessage')}</div>}
+        {client.verification_note && <p><strong>{t('profile.reviewNote')}：</strong>{client.verification_note}</p>}
+        {client.verified_by && <p className="muted text-sm">{t('profile.reviewMeta', { reviewer: client.verified_by, time: fmtTime(client.verified_at) })}</p>}
         <div className="row gap-md" style={{ flexWrap: 'wrap', margin: '14px 0' }}>
           {client.license_uploaded
-            ? <button className="btn btn-ghost" onClick={viewLicense}>查看营业执照{client.license_file_name ? `（${client.license_file_name}）` : ''}</button>
-            : <span className="muted">尚未上传营业执照</span>}
+            ? <button className="btn btn-ghost" onClick={viewLicense}>{t('profile.viewLicense')}{client.license_file_name ? `（${client.license_file_name}）` : ''}</button>
+            : <span className="muted">{t('profile.noLicense')}</span>}
         </div>
         <form onSubmit={uploadLicense}>
           <div className="form-row">
-            <label>{client.verification_status === 'rejected' ? '重新上传营业执照并提交审核' : '更新营业执照'}</label>
+            <label>{t(client.verification_status === 'rejected' ? 'profile.reuploadLicense' : 'profile.updateLicense')}</label>
             <input key={licenseVersion} className="form-input" required type="file" accept=".jpg,.jpeg,.png,.pdf"
               onChange={e => setLicense(e.target.files?.[0] || null)} />
-            <span className="muted text-sm">支持 JPG、PNG、PDF，不超过 10MB；提交后认证状态将变为“待认证”。</span>
+            <span className="muted text-sm">{t('profile.licenseHint')}</span>
           </div>
-          <button className="btn" disabled={licenseBusy || !license}>{licenseBusy ? '提交中…' : '上传并提交审核'}</button>
+          <button className="btn" disabled={licenseBusy || !license}>{licenseBusy ? t('profile.submitting') : t('profile.uploadSubmit')}</button>
         </form>
       </div>
 
       <div className="card">
-        <div className="card-title"><h3>🔒 修改密码</h3><span className="muted text-sm">为账户安全，请定期更新密码</span></div>
+        <div className="card-title"><h3>🔒 {t('profile.changePassword')}</h3><span className="muted text-sm">{t('profile.passwordHint')}</span></div>
         <form onSubmit={changePassword}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
             <div className="form-row">
-              <label>当前密码</label>
+              <label>{t('profile.currentPassword')}</label>
               <input className="form-input" required type="password" value={passwords.current_password}
                 onChange={e => setPasswords({ ...passwords, current_password: e.target.value })} autoComplete="current-password" />
             </div>
             <div className="form-row">
-              <label>新密码</label>
+              <label>{t('profile.newPassword')}</label>
               <input className="form-input" required minLength={6} type="password" value={passwords.new_password}
-                onChange={e => setPasswords({ ...passwords, new_password: e.target.value })} autoComplete="new-password" placeholder="6-72 位，不含首尾空格" />
+                onChange={e => setPasswords({ ...passwords, new_password: e.target.value })} autoComplete="new-password" placeholder={t('profile.newPasswordPlaceholder')} />
             </div>
             <div className="form-row">
-              <label>确认新密码</label>
+              <label>{t('profile.confirmPassword')}</label>
               <input className="form-input" required minLength={6} type="password" value={passwords.confirm_password}
                 onChange={e => setPasswords({ ...passwords, confirm_password: e.target.value })} autoComplete="new-password" />
             </div>
           </div>
-          <button className="btn" disabled={passwordBusy}>{passwordBusy ? '修改中…' : '确认修改密码'}</button>
+          <button className="btn" disabled={passwordBusy}>{passwordBusy ? t('profile.changing') : t('profile.confirmChange')}</button>
         </form>
       </div>
     </>

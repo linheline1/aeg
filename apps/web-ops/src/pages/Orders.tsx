@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { downloadOrShareFile } from '@aeg/web-shared/file-actions';
 import { api, useAuth } from '../store/auth';
@@ -74,6 +75,9 @@ const COMPUTABLE = new Set(['uploaded', 'pending_fee', 'failed', 'computing']);
 const brl = (n?: number | null) => (n == null ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
 
 export default function Orders() {
+  const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const clientFilter = searchParams.get('client_id') || '';
   const { user } = useAuth();
   const isSales = user?.role === 'sales';
 
@@ -99,6 +103,7 @@ export default function Orders() {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (status) params.set('status', status);
     if (q) params.set('q', q);
+    if (clientFilter) params.set('client_id', clientFilter);
     api.get(`/api/ops/orders?${params}`)
       .then(r => { setList(r.data.items); setTotal(r.data.total); })
       .catch(e => setErr(getApiErrorMessage(e, '加载失败')));
@@ -107,7 +112,7 @@ export default function Orders() {
   useEffect(() => {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSales, page, status, q]);
+  }, [isSales, page, status, q, clientFilter]);
 
   useEffect(() => {
     // 业务员分配下拉（operator/admin）
@@ -222,6 +227,11 @@ export default function Orders() {
         </p>
       </div>
 
+      {clientFilter && <div className="card" style={{ marginBottom: 12 }}>
+        <span>{clients.find(client => client.id === clientFilter)?.name || '—'}</span>{' · '}
+        <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setSearchParams({}); setPage(1); }}>{t('myClients.clearFilter')}</button>
+      </div>}
+
       {err && <p className="err">❌ {err}</p>}
 
       {isSales && (
@@ -309,8 +319,8 @@ export default function Orders() {
             <thead>
               <tr>
                 <th>报价号</th>
-                <th>客户</th>
-                <th>状态</th>
+                <th className="text-nowrap">客户</th>
+                <th className="text-nowrap">状态</th>
                 <th>报关审核</th>
                 <th>BRL 合计</th>
                 <th>成交状态</th>
@@ -355,8 +365,8 @@ export default function Orders() {
                         </a>
                       )}
                     </td>
-                    <td data-label="客户">{o.client_name}</td>
-                    <td data-label="状态"><span className={`status-${o.status}`}>{STATUS_CN[o.status] || o.status}</span></td>
+                    <td data-label="客户" className="text-nowrap">{o.client_name}</td>
+                    <td data-label="状态" className="text-nowrap"><span className={`status-${o.status}`}>{STATUS_CN[o.status] || o.status}</span></td>
                     <td data-label="报关审核">
                       {o.customs_review ? (
                         <div>
@@ -433,7 +443,7 @@ export default function Orders() {
                         <div className="row-actions">
                           <Link to={`/orders/${o.id}`}>查看</Link>
                           {COMPUTABLE.has(o.status) && (
-                            <a href="#compute" onClick={e => { e.preventDefault(); compute(o); }}>⚡ 核算</a>
+                            <a href="#compute" onClick={e => { e.preventDefault(); compute(o); }}>核算</a>
                           )}
                         </div>
                       </td>

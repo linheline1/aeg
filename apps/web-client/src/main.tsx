@@ -3,7 +3,9 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, HashRouter } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
+import './i18n';
 import App from './App';
+import { ToastHost } from './components/Toast';
 import './styles.css';
 
 const Router = Capacitor.isNativePlatform() ? HashRouter : BrowserRouter;
@@ -25,6 +27,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <Router>
       <AndroidBackHandler />
       <App />
+      <ToastHost />
     </Router>
   </React.StrictMode>
 );

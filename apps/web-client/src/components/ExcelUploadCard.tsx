@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
+import { showToast } from './Toast';
 
 type Row = { row_no: number; data: Record<string, any>; source_totals?: Record<string, number | null> };
 type RowError = { row: number; field_key: string; reason: string };
@@ -265,6 +266,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
         return;
       }
       setMessage(`报价 ${response.data.quote_no} 已创建，AI 正在计算 DI 并生成参考 DDP…`);
+      showToast(`报价 ${response.data.quote_no} 已创建，AI 正在计算 DI 并生成参考 DDP…`);
       onConfirmed?.();
       setTimeout(() => nav(`/orders/${response.data.quote_id}`), 800);
     } catch (e: any) {

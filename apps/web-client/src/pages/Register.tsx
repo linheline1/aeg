@@ -3,8 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api, useAuth } from '../store/auth';
 import logo from '../assets/logo.png';
+import { useTranslation } from 'react-i18next';
 
 export default function Register() {
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     china_company_name: '', china_uscc: '', username: '', password: '', confirm_password: ''
   });
@@ -18,8 +20,8 @@ export default function Register() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr('');
-    if (form.password !== form.confirm_password) { setErr('两次输入的密码不一致'); return; }
-    if (!license) { setErr('请上传营业执照'); return; }
+    if (form.password !== form.confirm_password) { setErr(t('register.passwordMismatch')); return; }
+    if (!license) { setErr(t('register.licenseRequired')); return; }
     setBusy(true);
     try {
       const data = new FormData();
@@ -32,7 +34,7 @@ export default function Register() {
       await login(form.username, form.password);
       nav('/home');
     } catch (res: any) {
-      setErr(getApiErrorMessage(res, '注册失败，请稍后重试'));
+      setErr(getApiErrorMessage(res, t('register.failed')));
     } finally { setBusy(false); }
   };
 
@@ -40,46 +42,46 @@ export default function Register() {
     <div className="login-page">
       <div className="login-card">
         <div className="logo"><img className="logo-dot-lg" src={logo} alt="AEG" /></div>
-        <h1>企业账号注册</h1>
-        <p className="sub">请填写中国境内公司信息，用于企业身份认证</p>
+        <h1>{t('register.title')}</h1>
+        <p className="sub">{t('register.subtitle')}</p>
         <form onSubmit={onSubmit}>
           <div className="form-row">
-            <label>国内公司名称</label>
+            <label>{t('register.companyName')}</label>
             <input className="form-input" required maxLength={128} value={form.china_company_name}
-              onChange={e => update('china_company_name', e.target.value)} placeholder="与营业执照一致的公司全称" />
+              onChange={e => update('china_company_name', e.target.value)} placeholder={t('register.companyPlaceholder')} />
           </div>
           <div className="form-row">
-            <label>统一社会信用代码</label>
+            <label>{t('register.uscc')}</label>
             <input className="form-input" required minLength={18} maxLength={18} value={form.china_uscc}
-              onChange={e => update('china_uscc', e.target.value.toUpperCase())} placeholder="18 位统一社会信用代码"
+              onChange={e => update('china_uscc', e.target.value.toUpperCase())} placeholder={t('register.usccPlaceholder')}
               autoCapitalize="characters" />
           </div>
           <div className="form-row">
-            <label>营业执照</label>
+            <label>{t('register.license')}</label>
             <input className="form-input" required type="file" accept=".jpg,.jpeg,.png,.pdf"
               onChange={e => setLicense(e.target.files?.[0] || null)} />
-            <span className="muted text-sm">上传与上述公司一致的营业执照，JPG、PNG 或 PDF，不超过 10MB。</span>
+            <span className="muted text-sm">{t('register.licenseHint')}</span>
           </div>
           <div className="form-row">
-            <label>登录账号</label>
+            <label>{t('register.username')}</label>
             <input className="form-input" required minLength={3} maxLength={32} value={form.username}
-              onChange={e => update('username', e.target.value)} placeholder="3-32 位字母、数字或 _ . -" autoComplete="username" />
+              onChange={e => update('username', e.target.value)} placeholder={t('register.usernamePlaceholder')} autoComplete="username" />
           </div>
           <div className="form-row">
-            <label>密码</label>
+            <label>{t('register.password')}</label>
             <input className="form-input" required minLength={6} type="password" value={form.password}
-              onChange={e => update('password', e.target.value)} placeholder="6-72 位，不含首尾空格" autoComplete="new-password" />
+              onChange={e => update('password', e.target.value)} placeholder={t('register.passwordPlaceholder')} autoComplete="new-password" />
           </div>
           <div className="form-row">
-            <label>确认密码</label>
+            <label>{t('register.confirmPassword')}</label>
             <input className="form-input" required minLength={6} type="password" value={form.confirm_password}
-              onChange={e => update('confirm_password', e.target.value)} placeholder="再次输入密码" autoComplete="new-password" />
+              onChange={e => update('confirm_password', e.target.value)} placeholder={t('register.confirmPlaceholder')} autoComplete="new-password" />
           </div>
           {err && <p className="err-msg" style={{ textAlign: 'center' }}>❌ {err}</p>}
-          <button type="submit" className="btn btn-lg" disabled={busy}>{busy ? '注册中…' : '注册企业账号'}</button>
+          <button type="submit" className="btn btn-lg" disabled={busy}>{busy ? t('register.submitting') : t('register.submit')}</button>
         </form>
-        <p className="tips">提交后由我司人员核对企业资料与营业执照，并完成认证审核。</p>
-        <p className="login-back">已有账号？<Link to="/login">直接登录</Link> · <Link to="/">返回首页</Link></p>
+        <p className="tips">{t('register.reviewHint')}</p>
+        <p className="login-back">{t('register.hasAccount')}<Link to="/login">{t('register.login')}</Link> · <Link to="/">{t('login.backHome')}</Link></p>
       </div>
     </div>
   );

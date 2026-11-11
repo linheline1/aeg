@@ -29,6 +29,9 @@ coverage/
 apps/api/uploads/
 apps/api/data/
 
+# Local pnpm store（开发者本地切换 store-dir 时生成的缓存目录）
+.pnpm-store/
+
 # Local postgres data
 deploy/pgdata/
 

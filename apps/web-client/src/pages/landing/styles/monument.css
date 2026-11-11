@@ -1,0 +1,113 @@
+/* ──────────────────────────────────────────────────────
+   Monument · camada global (inspirada em Monument.tv)
+   Cantos duros + cortes diagonais + numeração editorial
+   + CTA com seta grande + ticker de linhas duplas.
+   Importada por último: remover esta linha reverte tudo.
+   ────────────────────────────────────────────────────── */
+
+/* ── 1 · cantos duros em toda a página ── */
+.lp .lp-btn,
+.lp .lp-lang-select,
+.lp .lp-backtop,
+.lp .lp-consult-link,
+.lp .lp-steps,
+.lp .lp-included-card,
+.lp .lp-included-total,
+.lp .lp-included-icon,
+.lp .lp-adv,
+.lp .lp-adv-icon,
+.lp .lp-faq-list details,
+.lp .lp-cta-actions,
+.lp .lp-step-icon,
+.lp .lp-disclaimer-badge { border-radius: 0; }
+
+/* sombras macias → deslocamento duro */
+.lp .lp-btn-primary,
+.lp .lp-btn-accent,
+.lp .lp-btn-gold { box-shadow: 3px 3px 0 rgba(16, 46, 83, .16); }
+.lp .lp-adv:hover {
+  box-shadow: 8px 8px 0 rgba(16, 46, 83, .09);
+  transform: translate(-2px, -2px);
+}
+.lp .lp-backtop { box-shadow: 4px 4px 0 rgba(16, 46, 83, .14); }
+
+/* ── 2 · cortes diagonais entre blocos ── */
+.lp .lp-section-dark {
+  clip-path: polygon(0 3vw, 100% 0, 100% 100%, 0 100%);
+  padding-top: calc(var(--section-space) + 3vw);
+  border-bottom: 1px solid rgba(247, 207, 30, .35);
+}
+.lp .lp-cta-band {
+  clip-path: polygon(0 0, 100% 3vw, 100% 100%, 0 100%);
+  padding: calc(64px + 3vw) 0 64px;
+  background: linear-gradient(155deg, #0b2a56 0%, #102e53 58%, #0a2349 100%);
+  border-top: 0;
+}
+.lp .lp-cta-band::before { display: none; }
+.lp .lp-cta-inner h2 { color: var(--paper); }
+.lp .lp-cta-inner p { color: #c3d2e2; }
+.lp .lp-cta-actions {
+  border-color: rgba(247, 207, 30, .3);
+  background: rgba(255, 255, 255, .04);
+}
+.lp .lp-contact-note { color: #9db1c6; border-top-color: rgba(255, 255, 255, .14); }
+
+/* ── 3 · numeração editorial + grade fina ── */
+.lp .lp-sec-idx {
+  top: -14px;
+  font-family: var(--font-body);
+  font-style: normal;
+  font-weight: 800;
+  font-size: clamp(64px, 8vw, 118px);
+  line-height: .9;
+  color: transparent;
+  -webkit-text-stroke: 1.5px rgba(16, 46, 83, .22);
+}
+.lp .lp-sec-idx-dark { -webkit-text-stroke-color: rgba(247, 207, 30, .32); }
+
+.lp .lp-section[id='como-funciona'],
+.lp .lp-section[id='vantagens'] {
+  background:
+    linear-gradient(rgba(16, 46, 83, .05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 46, 83, .05) 1px, transparent 1px);
+  background-size: 84px 84px;
+}
+
+/* ── 4 · CTA com seta grande ── */
+.lp .lp-cta-band .lp-btn-gold {
+  background: var(--gold-hi);
+  color: #241b00;
+  border-color: var(--gold-hi);
+  font-weight: 700;
+  letter-spacing: .3px;
+}
+.lp .lp-cta-band .lp-btn-gold:hover { background: var(--paper); border-color: var(--paper); }
+.lp .lp-cta-band .lp-btn-arrow { width: 22px; height: 22px; }
+.lp .lp-cta-band .lp-btn:hover .lp-btn-arrow { transform: translateX(6px); }
+.lp .lp-cta-actions .lp-consult-link {
+  color: var(--gold-hi);
+  border-color: rgba(247, 207, 30, .35);
+  background: transparent;
+}
+.lp .lp-cta-actions .lp-consult-link:hover { background: rgba(247, 207, 30, .08); text-decoration: none; }
+
+/* ── 5 · ticker com linhas duplas + separador dourado ── */
+.lp .lp-ticker {
+  height: auto;
+  padding: 11px 0;
+  border-top: 2px solid var(--gold-hi);
+  border-bottom: 2px solid var(--gold-hi);
+  box-shadow: inset 0 1px 0 rgba(247, 207, 30, .55), inset 0 -1px 0 rgba(247, 207, 30, .55);
+}
+.lp .lp-ticker-item { color: var(--paper); }
+.lp .lp-ticker-item em { color: var(--gold-hi); font-size: 10px; }
+
+/* ── ajustes de contraste no escuro ── */
+.lp .lp-included-card:hover { border-color: rgba(247, 207, 30, .55); }
+.lp .lp-steps { box-shadow: none; }
+
+/* mobile: diagonal menor */
+@media (max-width: 720px) {
+  .lp .lp-section-dark { clip-path: polygon(0 22px, 100% 0, 100% 100%, 0 100%); padding-top: calc(52px + 22px); }
+  .lp .lp-cta-band { clip-path: polygon(0 0, 100% 22px, 100% 100%, 0 100%); padding: calc(48px + 22px) 0 48px; }
+}

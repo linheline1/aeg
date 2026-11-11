@@ -2,6 +2,9 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Landing from './pages/Landing';
+import Company from './pages/Company';
+import Partners from './pages/Partners';
+import LinePage from './pages/LinePage';
 import Layout from './components/Layout';
 import Workbench from './pages/Workbench';
 import Home from './pages/Home';
@@ -18,6 +21,11 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/company" element={<Company />} />
+      <Route path="/partners" element={<Partners />} />
+      <Route path="/lines/brazil" element={<LinePage lineKey="lineBrazil" />} />
+      <Route path="/lines/argentina" element={<LinePage lineKey="lineArgentina" />} />
+      <Route path="/lines/south-america" element={<LinePage lineKey="lineSouthAmerica" />} />
       <Route path="/login" element={user ? <Navigate to="/home" /> : <Login />} />
       <Route path="/register" element={user ? <Navigate to="/home" /> : <Register />} />
       <Route element={<RequireAuth allowedRole="client"><Layout /></RequireAuth>}>

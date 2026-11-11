@@ -1,0 +1,191 @@
+/* ── 海外专线：导航下拉 + 专线页面 ── */
+
+/* 导航下拉（桌面端 hover 展开） */
+.lp-nav-dropdown {
+  position: relative;
+  display: flex;
+}
+.lp-nav-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.lp-nav-caret {
+  transition: transform .18s ease;
+}
+.lp-nav-dropdown[data-open] .lp-nav-caret {
+  transform: rotate(180deg);
+}
+.lp-nav-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  transform: translateY(6px);
+  min-width: 148px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgba(6, 42, 110, .14);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .16s ease, transform .16s ease, visibility .16s;
+}
+/* 触发区与菜单之间补一条隐形桥，避免 hover 移入菜单时掉落 */
+.lp-nav-dropdown-menu::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: 0;
+  right: 0;
+  height: 12px;
+}
+.lp-nav-dropdown[data-open] .lp-nav-dropdown-menu {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.lp-nav-dropdown-menu a {
+  padding: 10px 14px !important;
+  border-bottom: none !important;
+  border-radius: 9px;
+  font-size: 14px;
+  color: var(--ink);
+  white-space: nowrap;
+  transition: background .12s, color .12s;
+}
+.lp-nav-dropdown-menu a:hover,
+.lp-nav-dropdown-menu a[aria-current='true'] {
+  background: var(--paper);
+  color: var(--accent, #2b6cb0);
+}
+
+/* 移动端菜单：下拉子项直接展开缩进显示 */
+.lp-mobile-nav .lp-nav-dropdown {
+  flex-direction: column;
+}
+.lp-mobile-nav .lp-nav-dropdown-trigger {
+  border-bottom: 1px dashed var(--line);
+}
+.lp-mobile-nav .lp-nav-caret { display: none; }
+.lp-mobile-nav .lp-nav-dropdown-menu {
+  position: static;
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0 0 0 18px;
+  border-radius: 0;
+}
+.lp-mobile-nav .lp-nav-dropdown-menu a {
+  font-size: 14.5px;
+  color: var(--muted);
+}
+.lp-mobile-nav .lp-nav-dropdown-menu::before { display: none; }
+
+/* ── 专线页面 ── */
+.lp-line-hero {
+  padding-top: 72px;
+  padding-bottom: 24px;
+}
+.lp-line-hero-inner h1 {
+  margin: 14px 0 16px;
+  font-size: clamp(30px, 4.2vw, 46px);
+  line-height: 1.16;
+  letter-spacing: -0.5px;
+  color: var(--ink);
+  max-width: 20em;
+}
+.lp-line-lead {
+  font-size: 16.5px;
+  line-height: 1.85;
+  color: var(--muted);
+  max-width: 46em;
+}
+
+.lp-line-section { padding-top: 40px; padding-bottom: 40px; }
+.lp-line-section-alt { background: #fff; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+
+.lp-line-heading {
+  margin: 0 0 16px;
+  font-size: 24px;
+  color: var(--ink);
+  letter-spacing: -0.3px;
+}
+.lp-line-intro {
+  font-size: 15px;
+  line-height: 1.9;
+  color: var(--muted);
+  max-width: 62em;
+  margin: 0 0 20px;
+}
+
+.lp-line-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.lp-line-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px 22px;
+  box-shadow: var(--shadow-card, 0 8px 24px rgba(6, 42, 110, .06));
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.lp-line-section-alt .lp-line-card { background: var(--paper); }
+.lp-line-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 32px rgba(6, 42, 110, .1);
+}
+.lp-line-card strong {
+  display: block;
+  font-size: 15.5px;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.lp-line-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+
+.lp-line-bullets {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 56em;
+}
+.lp-line-bullets li {
+  position: relative;
+  padding-left: 24px;
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+.lp-line-bullets li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: .72em;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold, #d4a53f);
+}
+
+@media (max-width: 560px) {
+  .lp-line-hero { padding-top: 52px; }
+  .lp-line-heading { font-size: 20px; }
+}

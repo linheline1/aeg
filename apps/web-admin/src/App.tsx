@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Layout from './components/Layout';
 import RequireAuth from './components/RequireAuth';
@@ -12,8 +12,8 @@ import CustomsCnpjs from './pages/CustomsCnpjs';
 import AuditLog from './pages/AuditLog';
 import HelpArticles from './pages/HelpArticles';
 import AiConfig from './pages/AiConfig';
+import PartnersAdmin from './pages/PartnersAdmin';
 import Profile from './pages/Profile';
-
 export default function App() {
   const { user } = useAuth();
   return (
@@ -34,6 +34,7 @@ export default function App() {
                 <Route path="help" element={<RequireAuth allowedRoles={['admin']}><HelpArticles /></RequireAuth>} />
                 <Route path="audit" element={<RequireAuth allowedRoles={['admin']}><AuditLog /></RequireAuth>} />
                 <Route path="ai-config" element={<RequireAuth allowedRoles={['admin']}><AiConfig /></RequireAuth>} />
+                <Route path="partners" element={<RequireAuth allowedRoles={['admin']}><PartnersAdmin /></RequireAuth>} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

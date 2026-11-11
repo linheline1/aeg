@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 
@@ -11,10 +12,12 @@ interface Profile {
   updated_at?: string;
 }
 
-const ROLE_CN: Record<string, string> = { admin: '管理员', operator: '运营人员' };
-const fmtTime = (s?: string) => (s ? s.slice(0, 19).replace('T', ' ') : '—');
+function fmtTime(s?: string) {
+  return s ? s.slice(0, 19).replace('T', ' ') : '—';
+}
 
 export default function Profile() {
+  const { t } = useTranslation();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loadErr, setLoadErr] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -27,26 +30,26 @@ export default function Profile() {
   useEffect(() => {
     api.get('/api/admin/profile')
       .then(r => setProfile(r.data))
-      .catch(e => setLoadErr(getApiErrorMessage(e, '账户信息加载失败')));
+      .catch(e => setLoadErr(getApiErrorMessage(e, t('profile.err.loadFail'))));
   }, []);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setErr(''); setOk('');
-    if (!currentPassword) { setErr('请输入当前密码'); return; }
-    if (newPassword !== newPassword.trim()) { setErr('新密码不能包含首尾空格'); return; }
-    if (newPassword.length < 6) { setErr('新密码至少 6 位'); return; }
-    if (newPassword !== confirmPassword) { setErr('两次输入的新密码不一致'); return; }
+    if (!currentPassword) { setErr(t('profile.pwd.errNeedCurrent')); return; }
+    if (newPassword !== newPassword.trim()) { setErr(t('profile.pwd.errNoSpaces')); return; }
+    if (newPassword.length < 6) { setErr(t('profile.pwd.errTooShort')); return; }
+    if (newPassword !== confirmPassword) { setErr(t('profile.pwd.errMismatch')); return; }
     setBusy(true);
     try {
       await api.patch('/api/admin/profile/password', {
         current_password: currentPassword,
         new_password: newPassword
       });
-      setOk('密码已更新，下次登录请使用新密码。当前会话保持登录状态。');
+      setOk(t('profile.pwd.okMsg'));
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
     } catch (e) {
-      setErr(getApiErrorMessage(e, '修改密码失败'));
+      setErr(getApiErrorMessage(e, t('profile.err.pwdFail')));
     } finally {
       setBusy(false);
     }
@@ -55,38 +58,38 @@ export default function Profile() {
   return (
     <>
       <div className="page-title">
-        <h1>用户中心</h1>
-        <span className="sub">查看账户信息、修改登录密码</span>
+        <h1>{t('profile.title')}</h1>
+        <span className="sub">{t('profile.subtitle')}</span>
       </div>
 
       {loadErr && <div className="alert alert-err">{loadErr}</div>}
 
       <div className="card">
-        <div className="card-title"><h3>👤 账户信息</h3></div>
+        <div className="card-title"><h3>{t('profile.info.title')}</h3></div>
         {profile ? (
           <div className="profile-grid">
-            <div><span className="profile-k">登录账号</span><strong>{profile.username}</strong></div>
-            <div><span className="profile-k">角色</span><strong>{ROLE_CN[profile.role] || profile.role}</strong></div>
-            <div><span className="profile-k">账号状态</span><strong>{profile.status === 'active' ? '正常' : profile.status}</strong></div>
-            <div><span className="profile-k">所属端口</span><strong>管理端</strong></div>
-            <div><span className="profile-k">创建时间</span><strong>{fmtTime(profile.created_at)}</strong></div>
-            <div><span className="profile-k">最近更新</span><strong>{fmtTime(profile.updated_at)}</strong></div>
+            <div><span className="profile-k">{t('profile.info.username')}</span><strong>{profile.username}</strong></div>
+            <div><span className="profile-k">{t('profile.info.role')}</span><strong>{t(`user.role.${profile.role}`, { defaultValue: profile.role })}</strong></div>
+            <div><span className="profile-k">{t('profile.info.status')}</span><strong>{profile.status === 'active' ? t('profile.info.statusNormal') : profile.status}</strong></div>
+            <div><span className="profile-k">{t('profile.info.port')}</span><strong>{t('profile.info.portAdmin')}</strong></div>
+            <div><span className="profile-k">{t('profile.info.createdAt')}</span><strong>{fmtTime(profile.created_at)}</strong></div>
+            <div><span className="profile-k">{t('profile.info.updatedAt')}</span><strong>{fmtTime(profile.updated_at)}</strong></div>
           </div>
         ) : (
-          !loadErr && <p className="muted">加载中…</p>
+          !loadErr && <p className="muted">{t('profile.info.loading')}</p>
         )}
       </div>
 
       <div className="card">
         <div className="card-title">
-          <h3>🔑 修改密码</h3>
-          <span className="muted text-sm">至少 6 位，不能包含首尾空格</span>
+          <h3>{t('profile.pwd.title')}</h3>
+          <span className="muted text-sm">{t('profile.pwd.hint')}</span>
         </div>
         {err && <div className="alert alert-err">{err}</div>}
         {ok && <div className="alert alert-ok">{ok}</div>}
         <form onSubmit={submit} className="profile-password-form">
           <div className="form-row">
-            <label htmlFor="current-password">当前密码</label>
+            <label htmlFor="current-password">{t('profile.pwd.currentLabel')}</label>
             <input
               id="current-password"
               className="form-input"
@@ -94,11 +97,11 @@ export default function Profile() {
               autoComplete="current-password"
               value={currentPassword}
               onChange={e => setCurrentPassword(e.target.value)}
-              placeholder="输入正在使用的密码"
+              placeholder={t('profile.pwd.currentPlaceholder')}
             />
           </div>
           <div className="form-row">
-            <label htmlFor="new-password">新密码</label>
+            <label htmlFor="new-password">{t('profile.pwd.newLabel')}</label>
             <input
               id="new-password"
               className="form-input"
@@ -106,11 +109,11 @@ export default function Profile() {
               autoComplete="new-password"
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
-              placeholder="至少 6 位，建议字母 + 数字"
+              placeholder={t('profile.pwd.newPlaceholder')}
             />
           </div>
           <div className="form-row">
-            <label htmlFor="confirm-password">确认新密码</label>
+            <label htmlFor="confirm-password">{t('profile.pwd.confirmLabel')}</label>
             <input
               id="confirm-password"
               className="form-input"
@@ -118,11 +121,11 @@ export default function Profile() {
               autoComplete="new-password"
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
-              placeholder="再输入一次新密码"
+              placeholder={t('profile.pwd.confirmPlaceholder')}
             />
           </div>
           <button className="btn" type="submit" disabled={busy}>
-            {busy ? '提交中…' : '保存新密码'}
+            {busy ? t('profile.pwd.submitting') : t('profile.pwd.submit')}
           </button>
         </form>
       </div>

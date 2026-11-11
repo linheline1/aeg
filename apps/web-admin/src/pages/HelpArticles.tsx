@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 
@@ -18,7 +19,7 @@ type Article = {
 };
 type ArticleForm = Omit<Article, 'id' | 'app' | 'updated_at'>;
 
-const CATEGORY_LABELS: Record<string, string> = { start: '新手入门', guide: '操作指南', invoice: '开票与交付', faq: '常见问题' };
+const CATEGORIES = ['start', 'guide', 'invoice', 'faq'] as const;
 const emptyForm = (): ArticleForm => ({ category: 'start', slug: '', title: '', summary: '', content: '', published: true, featured: false, sort_order: 0 });
 
 function fmtTime(s: string) {
@@ -26,6 +27,7 @@ function fmtTime(s: string) {
 }
 
 export default function HelpArticles() {
+  const { t } = useTranslation();
   const [app, setApp] = useState<HelpApp>('client');
   const [rows, setRows] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,7 +44,7 @@ export default function HelpArticles() {
       const r = await api.get('/api/admin/help/articles', { params: { app } });
       setRows(r.data || []);
     } catch (e: any) {
-      setErr(getApiErrorMessage(e, '帮助文档加载失败'));
+      setErr(getApiErrorMessage(e, t('help.err.loadFail')));
     } finally { setLoading(false); }
   };
 
@@ -69,11 +71,11 @@ export default function HelpArticles() {
     try {
       if (editingId) await api.patch(`/api/admin/help/articles/${editingId}`, form);
       else await api.post('/api/admin/help/articles', { ...form, app });
-      setMsg(editingId ? '✅ 文章已更新' : '✅ 文章已创建');
+      setMsg(editingId ? t('help.flash.updated') : t('help.flash.created'));
       cancel();
       await load();
     } catch (e: any) {
-      setErr(getApiErrorMessage(e, '保存失败'));
+      setErr(getApiErrorMessage(e, t('help.err.saveFail')));
     } finally { setSaving(false); }
   };
 
@@ -81,29 +83,31 @@ export default function HelpArticles() {
     setErr(null);
     try {
       await api.patch(`/api/admin/help/articles/${row.id}`, { published: !row.published });
-      setMsg(row.published ? '✅ 文章已下架' : '✅ 文章已发布');
+      setMsg(row.published ? t('help.flash.unpublished') : t('help.flash.published'));
       await load();
-    } catch (e: any) { setErr(getApiErrorMessage(e, '状态更新失败')); }
+    } catch (e: any) { setErr(getApiErrorMessage(e, t('help.err.toggleFail'))); }
   };
 
   const remove = async (row: Article) => {
-    if (!window.confirm(`确定删除「${row.title}」？删除后对应端将无法访问该文章，且不可恢复。`)) return;
+    if (!window.confirm(t('help.confirm.delete', { title: row.title }))) return;
     setErr(null);
     try {
       await api.delete(`/api/admin/help/articles/${row.id}`);
       if (editingId === row.id) cancel();
-      setMsg('✅ 文章已删除');
+      setMsg(t('help.flash.deleted'));
       await load();
-    } catch (e: any) { setErr(getApiErrorMessage(e, '删除失败')); }
+    } catch (e: any) { setErr(getApiErrorMessage(e, t('help.err.deleteFail'))); }
   };
+
+  const appLabel = app === 'client' ? t('help.editor.appClient') : t('help.editor.appOps');
 
   return (
     <>
       <div className="page-title">
-        <div><h1>帮助文档管理</h1><span className="muted text-sm">分别维护客户端与运营端帮助中心文章</span></div>
+        <div><h1>{t('help.title')}</h1><span className="muted text-sm">{t('help.subtitle')}</span></div>
         <div className="row gap-sm">
-          <button className={`btn btn-sm ${app === 'client' ? '' : 'btn-ghost'}`} onClick={() => setApp('client')}>客户端文档</button>
-          <button className={`btn btn-sm ${app === 'ops' ? '' : 'btn-ghost'}`} onClick={() => setApp('ops')}>运营端文档</button>
+          <button className={`btn btn-sm ${app === 'client' ? '' : 'btn-ghost'}`} onClick={() => setApp('client')}>{t('help.clientTab')}</button>
+          <button className={`btn btn-sm ${app === 'ops' ? '' : 'btn-ghost'}`} onClick={() => setApp('ops')}>{t('help.opsTab')}</button>
         </div>
       </div>
       {err && <div className="alert alert-err">❌ {err}</div>}
@@ -111,49 +115,96 @@ export default function HelpArticles() {
 
       <div className="card help-editor">
         <div className="card-title">
-          <h3>{editingId ? '编辑文章' : '新建文章'} · {app === 'client' ? '客户端' : '运营端'}</h3>
-          {editingId && <button className="btn btn-ghost btn-sm" onClick={cancel}>取消编辑</button>}
+          <h3>{editingId ? t('help.editor.editTitle', { app: appLabel }) : t('help.editor.newTitle', { app: appLabel })}</h3>
+          {editingId && <button className="btn btn-ghost btn-sm" onClick={cancel}>{t('help.editor.cancelEdit')}</button>}
         </div>
         <div className="grid-3">
-          <div className="form-row"><label>文章标题</label><input className="form-input" value={form.title} onChange={e => update('title', e.target.value)} placeholder="例如：企业注册与营业执照认证" /></div>
-          <div className="form-row"><label>URL 标识</label><input className="form-input" value={form.slug} onChange={e => update('slug', e.target.value.toLowerCase())} placeholder="enterprise-registration" /><span className="muted text-sm">小写字母、数字和连字符</span></div>
-          <div className="form-row"><label>分类</label><select className="form-input" value={form.category} onChange={e => update('category', e.target.value)}>{Object.entries(CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
-          <div className="form-row"><label>排序值</label><input className="form-input" type="number" min={0} max={100000} value={form.sort_order} onChange={e => update('sort_order', Number(e.target.value))} /><span className="muted text-sm">数值越小越靠前</span></div>
-          <div className="form-row"><label>发布状态</label><select className="form-input" value={String(form.published)} onChange={e => update('published', e.target.value === 'true')}><option value="true">发布</option><option value="false">下架</option></select></div>
-          <div className="form-row"><label>首页推荐</label><select className="form-input" value={String(form.featured)} onChange={e => update('featured', e.target.value === 'true')}><option value="false">普通文章</option><option value="true">推荐到新手指南</option></select></div>
+          <div className="form-row">
+            <label>{t('help.editor.titleLabel')}</label>
+            <input className="form-input" value={form.title} onChange={e => update('title', e.target.value)} placeholder={t('help.editor.titlePlaceholder')} />
+          </div>
+          <div className="form-row">
+            <label>{t('help.editor.slugLabel')}</label>
+            <input className="form-input" value={form.slug} onChange={e => update('slug', e.target.value.toLowerCase())} placeholder={t('help.editor.slugPlaceholder')} />
+            <span className="muted text-sm">{t('help.editor.slugHint')}</span>
+          </div>
+          <div className="form-row">
+            <label>{t('help.editor.categoryLabel')}</label>
+            <select className="form-input" value={form.category} onChange={e => update('category', e.target.value)}>
+              {CATEGORIES.map(value => <option key={value} value={value}>{t(`help.category.${value}`)}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>{t('help.editor.sortLabel')}</label>
+            <input className="form-input" type="number" min={0} max={100000} value={form.sort_order} onChange={e => update('sort_order', Number(e.target.value))} />
+            <span className="muted text-sm">{t('help.editor.sortHint')}</span>
+          </div>
+          <div className="form-row">
+            <label>{t('help.editor.publishLabel')}</label>
+            <select className="form-input" value={String(form.published)} onChange={e => update('published', e.target.value === 'true')}>
+              <option value="true">{t('help.editor.publish')}</option>
+              <option value="false">{t('help.editor.unpublish')}</option>
+            </select>
+          </div>
+          <div className="form-row">
+            <label>{t('help.editor.featuredLabel')}</label>
+            <select className="form-input" value={String(form.featured)} onChange={e => update('featured', e.target.value === 'true')}>
+              <option value="false">{t('help.editor.featured.normal')}</option>
+              <option value="true">{t('help.editor.featured.recommend')}</option>
+            </select>
+          </div>
         </div>
-        <div className="form-row"><label>文章摘要</label><input className="form-input" maxLength={500} value={form.summary} onChange={e => update('summary', e.target.value)} placeholder="用于首页列表和搜索结果的一句话说明" /></div>
         <div className="form-row">
-          <label>文章正文</label>
-          <textarea className="form-input" rows={14} value={form.content} onChange={e => update('content', e.target.value)} placeholder={'## 小标题\n普通段落文字\n1. 操作步骤\n- 列表内容\n> 重要提示'} />
+          <label>{t('help.editor.summaryLabel')}</label>
+          <input className="form-input" maxLength={500} value={form.summary} onChange={e => update('summary', e.target.value)} placeholder={t('help.editor.summaryPlaceholder')} />
+        </div>
+        <div className="form-row">
+          <label>{t('help.editor.contentLabel')}</label>
+          <textarea className="form-input" rows={14} value={form.content} onChange={e => update('content', e.target.value)} placeholder={t('help.editor.contentPlaceholder')} />
           <div className="muted text-sm" style={{ lineHeight: 1.8 }}>
-            格式：<code>## 小标题</code>　<code>1. 操作步骤</code>　<code>- 列表</code>　<code>&gt; 提示</code>；普通文字显示为段落，无需填写 HTML。
+            {t('help.editor.formatHint')}
           </div>
         </div>
         <div className="row-between">
-          <span className="muted text-sm">发布后仅显示在{app === 'client' ? '客户端' : '运营端'}帮助中心</span>
-          <button className="btn" disabled={saving || !form.title || !form.slug || !form.summary || !form.content} onClick={save}>{saving ? '保存中…' : editingId ? '保存修改' : '创建文章'}</button>
+          <span className="muted text-sm">{t('help.editor.publishTo', { app: appLabel })}</span>
+          <button className="btn" disabled={saving || !form.title || !form.slug || !form.summary || !form.content} onClick={save}>
+            {saving ? t('help.editor.saving') : editingId ? t('help.editor.saveEdit') : t('help.editor.saveNew')}
+          </button>
         </div>
       </div>
 
       <div className="card">
-        <div className="card-title"><h3>文章列表（{rows.length}）</h3><button className="btn btn-ghost btn-sm" onClick={load}>刷新</button></div>
-        {loading ? <p className="muted">加载中…</p> : rows.length === 0 ? <p className="muted">暂无文章，请在上方创建。</p> : (
+        <div className="card-title"><h3>{t('help.list.title', { count: rows.length })}</h3><button className="btn btn-ghost btn-sm" onClick={load}>{t('help.list.refresh')}</button></div>
+        {loading ? <p className="muted">{t('help.list.loading')}</p> : rows.length === 0 ? <p className="muted">{t('help.list.noData')}</p> : (
           <div className="table-wrap responsive-table"><table className="table">
-            <thead><tr><th>文章</th><th>分类</th><th>推荐</th><th>排序</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+            <thead><tr>
+              <th>{t('help.col.article')}</th>
+              <th>{t('help.col.category')}</th>
+              <th>{t('help.col.featured')}</th>
+              <th>{t('help.col.sort')}</th>
+              <th>{t('help.col.status')}</th>
+              <th>{t('help.col.updatedAt')}</th>
+              <th>{t('help.col.actions')}</th>
+            </tr></thead>
             <tbody>{rows.map(row => (
               <tr key={row.id}>
-                <td data-label="文章"><strong>{row.title}</strong><span className="sub">/help/{row.slug}</span></td>
-                <td data-label="分类">{CATEGORY_LABELS[row.category] || row.category}</td>
-                <td data-label="推荐">{row.featured ? '首页推荐' : '—'}</td>
-                <td data-label="排序">{row.sort_order}</td>
-                <td data-label="状态"><span className={`status-tag ${row.published ? 'status-active' : 'status-disabled'}`}>{row.published ? '已发布' : '已下架'}</span></td>
-                <td className="muted text-sm" data-label="更新时间">{fmtTime(row.updated_at)}</td>
-                <td className="table-action-cell" data-label="操作"><div className="row gap-sm table-actions">
-                  <button className="btn btn-ghost btn-sm" onClick={() => edit(row)}>编辑</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => togglePublished(row)}>{row.published ? '下架' : '发布'}</button>
-                  <button className="btn btn-danger btn-sm" onClick={() => remove(row)}>删除</button>
-                </div></td>
+                <td data-label={t('help.col.article')}><strong>{row.title}</strong><span className="sub">/help/{row.slug}</span></td>
+                <td data-label={t('help.col.category')}>{t(`help.category.${row.category}`, { defaultValue: row.category })}</td>
+                <td data-label={t('help.col.featured')}>{row.featured ? t('help.featured.home') : t('common.dash')}</td>
+                <td data-label={t('help.col.sort')}>{row.sort_order}</td>
+                <td data-label={t('help.col.status')}>
+                  <span className={`status-tag ${row.published ? 'status-active' : 'status-disabled'}`}>
+                    {row.published ? t('help.status.published') : t('help.status.unpublished')}
+                  </span>
+                </td>
+                <td className="muted text-sm" data-label={t('help.col.updatedAt')}>{fmtTime(row.updated_at)}</td>
+                <td className="table-action-cell" data-label={t('help.col.actions')}>
+                  <div className="row gap-sm table-actions">
+                    <button className="btn btn-ghost btn-sm" onClick={() => edit(row)}>{t('help.action.edit')}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => togglePublished(row)}>{row.published ? t('help.action.unpublish') : t('help.action.publish')}</button>
+                    <button className="btn btn-danger btn-sm" onClick={() => remove(row)}>{t('help.action.delete')}</button>
+                  </div>
+                </td>
               </tr>
             ))}</tbody>
           </table></div>

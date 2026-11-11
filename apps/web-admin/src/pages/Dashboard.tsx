@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getApiErrorMessage } from '@aeg/web-shared/errors';
+
 import { api } from '../store/auth';
 
 interface Stats {
@@ -10,34 +10,25 @@ interface Stats {
   deals: { won: number; won_amount_brl: number };
 }
 
-const STATUS_CN: Record<string, string> = {
-  uploaded: '已上传',
-  validating: '校验中',
-  pending_fee: '待补费用',
-  computing: '核算中',
-  done: '已发布',
-  failed: '失败'
-};
-
 export default function Dashboard() {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<Stats | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     api.get('/api/admin/stats')
       .then(r => setStats(r.data))
-      .catch(e => setErr(getApiErrorMessage(e, '加载失败')));
   }, []);
 
   if (err) {
     return (
       <div className="card">
-        <p style={{ color: 'var(--err)' }}>统计加载失败：{err}</p>
+        <p style={{ color: 'var(--err)' }}>{t('dashboard.failTitle', { msg: err })}</p>
       </div>
     );
   }
   if (!stats) {
-    return <div className="card"><p className="muted">统计加载中…</p></div>;
+    return <div className="card"><p className="muted">{t('dashboard.loading')}</p></div>;
   }
 
   const pending =
@@ -49,50 +40,50 @@ export default function Dashboard() {
   return (
     <>
       <div className="page-title">
-        <h1>工作台 · 管理端</h1>
-        <span className="muted text-sm">实时统计（/api/admin/stats）</span>
+        <h1>{t('dashboard.title')}</h1>
+        <span className="muted text-sm">{t('dashboard.subtitle')}</span>
       </div>
 
       <div className="stat-grid">
         <div className="stat-card">
-          <span className="label">活跃模板</span>
-          <span className="value">{stats.templates.active_version ?? '无'}</span>
-          <span className="delta">共 {stats.templates.total} 个版本</span>
+          <span className="label">{t('dashboard.label.activeTemplate')}</span>
+          <span className="value">{stats.templates.active_version ?? t('dashboard.label.none')}</span>
+          <span className="delta">{t('dashboard.label.templateTotal', { total: stats.templates.total })}</span>
         </div>
         <div className="stat-card">
-          <span className="label">客户数</span>
+          <span className="label">{t('dashboard.label.clients')}</span>
           <span className="value">{stats.clients.total}</span>
-          <span className="delta">启用 {stats.clients.active} · 禁用 {stats.clients.total - stats.clients.active}</span>
+          <span className="delta">{t('dashboard.label.clientsStatus', { active: stats.clients.active, disabled: stats.clients.total - stats.clients.active })}</span>
         </div>
         <div className="stat-card">
-          <span className="label">报价订单</span>
+          <span className="label">{t('dashboard.label.quotes')}</span>
           <span className="value" style={{ color: '#2563eb' }}>{stats.quotes.total}</span>
           <span className="delta">
-            待处理 {pending} · 已发布 {stats.quotes.by_status.done || 0} · 失败 {stats.quotes.by_status.failed || 0}
+            {t('dashboard.label.quotesStatus', { pending, done: stats.quotes.by_status.done || 0, failed: stats.quotes.by_status.failed || 0 })}
           </span>
         </div>
       </div>
 
       <div className="stat-grid">
         <div className="stat-card">
-          <span className="label">内部员工</span>
+          <span className="label">{t('dashboard.label.staff')}</span>
           <span className="value">{stats.staff.total}</span>
-          <span className="delta">启用 {stats.staff.active}（operator + sales + customs）</span>
+          <span className="delta">{t('dashboard.label.staffDetail', { active: stats.staff.active })}</span>
         </div>
         <div className="stat-card">
-          <span className="label">已成交（won）</span>
+          <span className="label">{t('dashboard.label.dealsWon')}</span>
           <span className="value" style={{ color: 'var(--ok)' }}>{stats.deals.won}</span>
           <span className="delta">
-            成交金额 R$ {stats.deals.won_amount_brl.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {t('dashboard.label.dealsAmount', { amount: stats.deals.won_amount_brl.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}
           </span>
         </div>
         <div className="stat-card">
-          <span className="label">订单状态分布</span>
+          <span className="label">{t('dashboard.label.quotesByStatus')}</span>
           <span className="value" style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.6 }}>
             {Object.entries(stats.quotes.by_status).length === 0
-              ? '暂无订单'
+              ? t('dashboard.label.noOrders')
               : Object.entries(stats.quotes.by_status)
-                  .map(([s, n]) => `${STATUS_CN[s] || s} ${n}`)
+                  .map(([s, n]) => `${t(`dashboard.status.${s}`, { defaultValue: s })} ${n}`)
                   .join(' · ')}
           </span>
         </div>

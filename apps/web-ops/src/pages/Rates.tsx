@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
+import { useTranslation } from 'react-i18next';
 
 interface FeeRateRow {
   id: string;
@@ -38,7 +39,6 @@ interface Fees {
 
 interface RateField {
   key: keyof Fees;
-  label: string;
   step: string;
   /** true = 界面按百分数展示，存储仍为小数 */
   percent?: boolean;
@@ -60,12 +60,12 @@ const feeOf = (row?: Partial<FeeRateRow> | null): Fees => ({
 const EMPTY_FEES: Fees = feeOf(null);
 
 const FIELDS: RateField[] = [
-  { key: 'ocean_freight_usd', label: '整柜海运费 (USD/柜)', step: '10' },
-  { key: 'port_fee_usd', label: '起运港杂费 (USD)', step: '5' },
-  { key: 'fx_rate', label: '汇率 USD→BRL', step: '0.1' },
-  { key: 'sales_markup_rate', label: '税基利润加成 (%)', step: '1', percent: true },
-  { key: 'sales_tax_rate', label: '销售税务 (%)', step: '0.1', percent: true },
-  { key: 'profit_brl', label: '每票利润 (BRL)', step: '1000' }
+  { key: 'ocean_freight_usd', step: '10' },
+  { key: 'port_fee_usd', step: '5' },
+  { key: 'fx_rate', step: '0.1' },
+  { key: 'sales_markup_rate', step: '1', percent: true },
+  { key: 'sales_tax_rate', step: '0.1', percent: true },
+  { key: 'profit_brl', step: '1000' }
 ];
 
 const fieldValue = (fees: Fees, f: RateField) =>
@@ -80,6 +80,7 @@ const fieldSet = (fees: Fees, f: RateField, raw: number): Fees => ({
 const ratePayload = (fees: Fees) => ({ ...fees, br_clearance_brl: 0 });
 
 export default function Rates() {
+  const { t } = useTranslation();
   const [data, setData] = useState<RatesData | null>(null);
   const [globalFees, setGlobalFees] = useState<Fees>(EMPTY_FEES);
   const [ovClient, setOvClient] = useState('');
@@ -109,9 +110,9 @@ export default function Rates() {
     setSaving(true);
     try {
       await api.put('/api/ops/rates/global', ratePayload(globalFees));
-      flash('ok', '全局默认费率已更新（已写审计日志）');
+      flash('ok', t('rates.globalSaved'));
       load();
-    } catch (e: any) { flash('err', getApiErrorMessage(e, '保存失败')); }
+    } catch (e: any) { flash('err', getApiErrorMessage(e, t('rates.saveError'))); }
     finally { setSaving(false); }
   };
 
@@ -122,25 +123,25 @@ export default function Rates() {
   };
 
   const saveOverride = async () => {
-    if (!ovClient) return flash('err', '请选择客户');
+    if (!ovClient) return flash('err', t('rates.selectClientError'));
     setSaving(true);
     try {
       await api.put(`/api/ops/rates/client/${ovClient}`, ratePayload(ovFees));
-      flash('ok', editingId ? '客户费率覆盖已更新' : '客户费率覆盖已创建');
+      flash('ok', t(editingId ? 'rates.overrideUpdated' : 'rates.overrideCreated'));
       setEditingId(null); setOvClient(''); setOvFees(EMPTY_FEES);
       load();
-    } catch (e: any) { flash('err', getApiErrorMessage(e, '保存失败')); }
+    } catch (e: any) { flash('err', getApiErrorMessage(e, t('rates.saveError'))); }
     finally { setSaving(false); }
   };
 
   const removeOverride = async (row: FeeRateRow) => {
-    if (!window.confirm(`确定移除「${row.client_name}」的费率覆盖？移除后该客户回退到全局默认费率。`)) return;
+    if (!window.confirm(t('rates.removeConfirm', { name: row.client_name }))) return;
     try {
       await api.delete(`/api/ops/rates/client/${row.client_id}`);
-      flash('ok', '已移除覆盖');
+      flash('ok', t('rates.removed'));
       if (editingId === row.id) { setEditingId(null); setOvClient(''); setOvFees(EMPTY_FEES); }
       load();
-    } catch (e: any) { flash('err', getApiErrorMessage(e, '删除失败')); }
+    } catch (e: any) { flash('err', getApiErrorMessage(e, t('rates.deleteError'))); }
   };
 
   const overriddenIds = new Set(data?.overrides.map(o => o.client_id) || []);
@@ -149,13 +150,11 @@ export default function Rates() {
   return (
     <>
       <div className="page-title">
-        <h1>费率表</h1>
-        <button onClick={load} className="btn btn-ghost btn-sm">🔄 刷新</button>
+        <h1>{t('rates.title')}</h1>
+        <button onClick={load} className="btn btn-ghost btn-sm">🔄 {t('common.refresh')}</button>
       </div>
       <p className="muted text-sm" style={{ margin: '0 0 16px' }}>
-        销售税基 =（DI + 申报货值）×（1 + 税基利润加成）+ 国际运费；税务 = 税基 × 销售税率。
-        参考 DDP = 税务 + DI + 国际运费 + 其他成本（起运港杂费）+ 每票利润。
-        费率按 <strong>客户覆盖 &gt; 全局默认</strong> 解析，税基加成、税率和利润可在订单详情页单票调整。
+        {t('rates.description')}
       </p>
 
       {msg && <div className={`alert ${msg.type === 'ok' ? 'alert-ok' : 'alert-err'}`}>{msg.type === 'ok' ? '✅' : '❌'} {msg.text}</div>}
@@ -163,13 +162,13 @@ export default function Rates() {
       {/* 全局默认 */}
       <div className="card">
         <div className="card-title">
-          <h3>🌍 全局默认费率</h3>
-          {data?.global && <span className="muted text-sm">更新人 {data.global.updated_by} · {data.global.updated_at?.slice(0, 19).replace('T', ' ')}</span>}
+          <h3>🌍 {t('rates.globalTitle')}</h3>
+          {data?.global && <span className="muted text-sm">{t('rates.updatedBy', { name: data.global.updated_by, time: data.global.updated_at?.slice(0, 19).replace('T', ' ') })}</span>}
         </div>
         <div className="grid-3">
           {FIELDS.map(f => (
             <div className="form-row" key={f.key}>
-              <label>{f.label}</label>
+              <label>{t(`rates.field.${f.key}`)}</label>
               <input
                 className="form-input" type="number" step={f.step} min="0"
                 value={fieldValue(globalFees, f)}
@@ -179,24 +178,24 @@ export default function Rates() {
           ))}
         </div>
         <div className="mt-12">
-          <button className="btn" disabled={saving} onClick={saveGlobal}>{saving ? '保存中…' : '💾 保存全局费率'}</button>
+          <button className="btn" disabled={saving} onClick={saveGlobal}>{saving ? t('common.saving') : `💾 ${t('rates.saveGlobal')}`}</button>
         </div>
       </div>
 
       {/* 客户覆盖：新增/编辑表单 */}
       <div className="card">
         <div className="card-title">
-          <h3>🎯 客户费率覆盖</h3>
-          <span className="muted text-sm">{editingId ? '正在编辑现有覆盖' : '为单个客户设定专属费率'}</span>
+          <h3>🎯 {t('rates.overrideTitle')}</h3>
+          <span className="muted text-sm">{t(editingId ? 'rates.editingOverride' : 'rates.overrideHint')}</span>
         </div>
         <div className="grid-4">
           <div className="form-row">
-            <label>客户</label>
+            <label>{t('rates.client')}</label>
             <select
               className="form-input" value={ovClient} disabled={!!editingId}
               onChange={e => setOvClient(e.target.value)}
             >
-              <option value="">选择客户…</option>
+              <option value="">{t('rates.selectClient')}</option>
               {(editingId
                 ? data?.clients.filter(c => c.id === ovClient)
                 : availableClients
@@ -205,7 +204,7 @@ export default function Rates() {
           </div>
           {FIELDS.map(f => (
             <div className="form-row" key={f.key}>
-              <label>{f.label}</label>
+              <label>{t(`rates.field.${f.key}`)}</label>
               <input
                 className="form-input" type="number" step={f.step} min="0"
                 value={fieldValue(ovFees, f)}
@@ -216,11 +215,11 @@ export default function Rates() {
         </div>
         <div className="row gap-md mt-12">
           <button className="btn" disabled={saving || !ovClient} onClick={saveOverride}>
-            {saving ? '保存中…' : editingId ? '💾 更新覆盖' : '➕ 创建覆盖'}
+            {saving ? t('common.saving') : editingId ? `💾 ${t('rates.updateOverride')}` : `➕ ${t('rates.createOverride')}`}
           </button>
           {editingId && (
             <button className="btn btn-ghost" onClick={() => { setEditingId(null); setOvClient(''); setOvFees(EMPTY_FEES); }}>
-              取消编辑
+              {t('rates.cancelEdit')}
             </button>
           )}
         </div>
@@ -229,24 +228,16 @@ export default function Rates() {
       {/* 覆盖列表 */}
       <div className="card">
         <div className="card-title">
-          <h3>📋 现有覆盖</h3>
-          <span className="muted text-sm">{data ? `${data.overrides.length} 条` : ''}</span>
+          <h3>📋 {t('rates.existing')}</h3>
+          <span className="muted text-sm">{data ? t('rates.count', { count: data.overrides.length }) : ''}</span>
         </div>
-        {data && data.overrides.length === 0 && <p className="muted">暂无客户覆盖，所有客户使用全局默认费率。</p>}
+        {data && data.overrides.length === 0 && <p className="muted">{t('rates.empty')}</p>}
         {data && data.overrides.length > 0 && (
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
-                  <th>客户</th>
-                  <th className="amt">海运费 USD/柜</th>
-                  <th className="amt">港杂费 USD</th>
-                  <th className="amt">汇率</th>
-                  <th className="amt">税基加成</th>
-                  <th className="amt">销售税务</th>
-                  <th className="amt">每票利润 BRL</th>
-                  <th>更新</th>
-                  <th>操作</th>
+                  <th>{t('rates.client')}</th><th className="amt">{t('rates.oceanShort')}</th><th className="amt">{t('rates.portShort')}</th><th className="amt">{t('rates.fxShort')}</th><th className="amt">{t('rates.markupShort')}</th><th className="amt">{t('rates.taxShort')}</th><th className="amt">{t('rates.profitShort')}</th><th>{t('rates.updated')}</th><th>{t('rates.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -262,8 +253,8 @@ export default function Rates() {
                     <td className="text-sm muted">{o.updated_by} · {o.updated_at?.slice(0, 16).replace('T', ' ')}</td>
                     <td>
                       <div className="row gap-sm">
-                        <button className="btn btn-sm btn-ghost" onClick={() => startEdit(o)}>编辑</button>
-                        <button className="btn btn-sm btn-danger" onClick={() => removeOverride(o)}>移除</button>
+                        <button className="btn btn-sm btn-ghost" onClick={() => startEdit(o)}>{t('common.edit')}</button>
+                        <button className="btn btn-sm btn-danger" onClick={() => removeOverride(o)}>{t('rates.remove')}</button>
                       </div>
                     </td>
                   </tr>

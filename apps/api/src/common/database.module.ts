@@ -2,11 +2,11 @@ import { Global, Module, Provider } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import {
   UserRepo, ClientRepo, TemplateRepo, AuditRepo, QuotesRepo,
-  FeeRatesRepo, ImageRepo, ClientCnpjsRepo, CustomsCnpjsRepo, ProductCatalogRepo, OrderFilesRepo, PaymentsRepo, HelpArticlesRepo, AiConfigRepo
+  FeeRatesRepo, ImageRepo, ClientCnpjsRepo, CustomsCnpjsRepo, ProductCatalogRepo, OrderFilesRepo, PaymentsRepo, HelpArticlesRepo, AiConfigRepo, PartnerRepo
 } from './mock-db';
 import {
   PgUserRepo, PgClientRepo, PgTemplateRepo, PgAuditRepo, PgQuotesRepo,
-  PgFeeRatesRepo, PgImageRepo, PgClientCnpjsRepo, PgCustomsCnpjsRepo, PgProductCatalogRepo, PgOrderFilesRepo, PgPaymentsRepo, PgHelpArticlesRepo, PgAiConfigRepo
+  PgFeeRatesRepo, PgImageRepo, PgClientCnpjsRepo, PgCustomsCnpjsRepo, PgProductCatalogRepo, PgOrderFilesRepo, PgPaymentsRepo, PgHelpArticlesRepo, PgAiConfigRepo, PgPartnerRepo
 } from './pg-repos';
 import { UploadDraftsRepo } from '../upload/upload-draft.repository';
 
@@ -27,7 +27,7 @@ function repoProvider(token: string, MockClass: new () => unknown, PgClass: new 
 
 export const REPO_TOKENS = [
   'UserRepo', 'ClientRepo', 'TemplateRepo', 'AuditRepo', 'QuotesRepo',
-  'FeeRatesRepo', 'ImageRepo', 'ClientCnpjsRepo', 'CustomsCnpjsRepo', 'ProductCatalogRepo', 'OrderFilesRepo', 'PaymentsRepo', 'HelpArticlesRepo', 'AiConfigRepo', 'UploadDraftsRepo'
+  'FeeRatesRepo', 'ImageRepo', 'ClientCnpjsRepo', 'CustomsCnpjsRepo', 'ProductCatalogRepo', 'OrderFilesRepo', 'PaymentsRepo', 'HelpArticlesRepo', 'AiConfigRepo', 'UploadDraftsRepo', 'PartnerRepo'
 ] as const;
 
 @Global()
@@ -47,6 +47,7 @@ export const REPO_TOKENS = [
     repoProvider('PaymentsRepo', PaymentsRepo, PgPaymentsRepo),
     repoProvider('HelpArticlesRepo', HelpArticlesRepo, PgHelpArticlesRepo),
     repoProvider('AiConfigRepo', AiConfigRepo, PgAiConfigRepo),
+    repoProvider('PartnerRepo', PartnerRepo, PgPartnerRepo),
     {
       provide: 'UploadDraftsRepo',
       useFactory: (ds?: DataSource) => new UploadDraftsRepo(MODE === 'postgres' ? ds : undefined),

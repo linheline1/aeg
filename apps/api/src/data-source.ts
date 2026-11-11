@@ -17,6 +17,7 @@ import { AiConfigEntity } from './entities/ai-config.entity';
 import { UploadDraftEntity } from './entities/upload-draft.entity';
 import { CustomsCnpjEntity } from './entities/customs-cnpj.entity';
 import { ProductCatalogEntity } from './entities/product-catalog.entity';
+import { PartnerEntity } from './entities/partner.entity';
 
 export const ALL_ENTITIES = [
   UserEntity,
@@ -34,7 +35,8 @@ export const ALL_ENTITIES = [
   PaymentRecordEntity,
   HelpArticleEntity,
   AiConfigEntity,
-  UploadDraftEntity
+  UploadDraftEntity,
+  PartnerEntity
 ];
 
 /** TypeORM CLI（migration:generate/run）与种子/导入脚本共用的 DataSource */

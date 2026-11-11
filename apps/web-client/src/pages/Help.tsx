@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 import PriceReferenceNote from '../components/PriceReferenceNote';
@@ -9,16 +10,16 @@ type Section = { title: string; paragraphs: string[]; steps: string[]; bullets: 
 type Article = { slug: string; title: string; summary: string; category: string; featured?: boolean; sections: Section[] };
 type ApiArticle = Omit<Article, 'sections'> & { content: string };
 
-const categories = [
-  { id: 'start', icon: '🚀', title: '新手入门', description: '企业注册、认证与账户设置' },
-  { id: 'guide', icon: '📦', title: '操作指南', description: '清单、报价、物流与交付' },
-  { id: 'invoice', icon: '🧾', title: '开票资料', description: 'CNPJ、IE 与 NF 抬头' },
-  { id: 'faq', icon: '❓', title: '常见问题', description: '认证、报价与资料问题' }
+const categoryDefs = [
+  { id: 'start', icon: '🚀' },
+  { id: 'guide', icon: '📦' },
+  { id: 'invoice', icon: '🧾' },
+  { id: 'faq', icon: '❓' }
 ];
 
-function parseContent(content: string): Section[] {
+function parseContent(content: string, defaultTitle: string): Section[] {
   const sections: Section[] = [];
-  let current: Section = { title: '帮助说明', paragraphs: [], steps: [], bullets: [] };
+  let current: Section = { title: defaultTitle, paragraphs: [], steps: [], bullets: [] };
   const push = () => {
     if (current.paragraphs.length || current.steps.length || current.bullets.length || current.note) sections.push(current);
   };
@@ -50,19 +51,25 @@ function ArticleLinks({ items }: { items: Article[] }) {
 }
 
 export default function Help() {
+  const { t } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
   const [query, setQuery] = useState('');
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const categories = categoryDefs.map(category => ({
+    ...category,
+    title: t(`help.category.${category.id}.title`),
+    description: t(`help.category.${category.id}.description`)
+  }));
 
   useEffect(() => {
     setLoading(true);
     api.get('/api/client/help/articles')
-      .then(r => setArticles((r.data || []).map((article: ApiArticle) => ({ ...article, sections: parseContent(article.content) }))))
-      .catch(e => setErr(getApiErrorMessage(e, '帮助文档加载失败')))
+      .then(r => setArticles((r.data || []).map((article: ApiArticle) => ({ ...article, sections: parseContent(article.content, t('help.defaultSection')) }))))
+      .catch(e => setErr(getApiErrorMessage(e, t('help.loadError'))))
       .finally(() => setLoading(false));
-  }, []);
+  }, [t]);
 
   const current = slug ? articles.find(article => article.slug === slug) : null;
   const results = useMemo(() => {
@@ -71,17 +78,17 @@ export default function Help() {
     return articles.filter(article => JSON.stringify(article).toLowerCase().includes(keyword));
   }, [query, articles]);
 
-  if (loading) return <div className="card"><p className="muted">帮助文档加载中…</p></div>;
+  if (loading) return <div className="card"><p className="muted">{t('help.loading')}</p></div>;
   if (err) return <div className="alert alert-err">❌ {err}</div>;
 
   if (slug) {
     if (!current) {
-      return <div className="help-not-found"><h1>未找到帮助文章</h1><p>该文章可能已下架、移动或删除。</p><Link className="btn" to="/help">返回帮助中心</Link></div>;
+      return <div className="help-not-found"><h1>{t('help.notFoundTitle')}</h1><p>{t('help.notFoundDescription')}</p><Link className="btn" to="/help">{t('help.back')}</Link></div>;
     }
     const related = articles.filter(article => article.category === current.category && article.slug !== current.slug).slice(0, 3);
     return (
       <div className="help-reader">
-        <nav className="help-breadcrumb"><Link to="/help">帮助中心</Link><span>›</span><span>{categories.find(c => c.id === current.category)?.title}</span></nav>
+        <nav className="help-breadcrumb"><Link to="/help">{t('help.center')}</Link><span>›</span><span>{categories.find(c => c.id === current.category)?.title}</span></nav>
         <article className="help-document">
           <header><span className="help-document-category">{categories.find(c => c.id === current.category)?.title}</span><h1>{current.title}</h1><p>{current.summary}</p></header>
           {current.sections.map((section, index) => (
@@ -94,9 +101,9 @@ export default function Help() {
             </section>
           ))}
         </article>
-        {related.length > 0 && <section className="help-related"><h2>相关文章</h2><ArticleLinks items={related} /></section>}
+        {related.length > 0 && <section className="help-related"><h2>{t('help.related')}</h2><ArticleLinks items={related} /></section>}
         <PriceReferenceNote compact className="price-ref-note-mb" />
-        <Link className="help-back" to="/help">← 返回帮助中心</Link>
+        <Link className="help-back" to="/help">← {t('help.back')}</Link>
       </div>
     );
   }
@@ -104,13 +111,13 @@ export default function Help() {
   return (
     <div className="help-home">
       <section className="help-hero">
-        <span className="help-eyebrow">AEG 客户端帮助中心</span>
-        <h1>你好，我们可以帮你什么？</h1>
-        <p>搜索企业认证、报价、开票或账户使用问题</p>
+        <span className="help-eyebrow">{t('help.eyebrow')}</span>
+        <h1>{t('help.heroTitle')}</h1>
+        <p>{t('help.heroDescription')}</p>
         <label className="help-search">
           <span>⌕</span>
-          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索问题或关键字，例如：营业执照、CNPJ、报价" aria-label="搜索帮助文章" />
-          {query && <button type="button" onClick={() => setQuery('')} aria-label="清空搜索">×</button>}
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder={t('help.searchPlaceholder')} aria-label={t('help.searchLabel')} />
+          {query && <button type="button" onClick={() => setQuery('')} aria-label={t('help.clearSearch')}>×</button>}
         </label>
       </section>
 
@@ -118,12 +125,12 @@ export default function Help() {
 
       {query.trim() ? (
         <section className="help-section">
-          <div className="help-section-heading"><h2>搜索结果</h2><span>找到 {results.length} 篇相关文章</span></div>
-          {results.length ? <ArticleLinks items={results} /> : <div className="help-empty"><h3>没有找到相关内容</h3><p>请尝试“认证”“IE”“密码”等更短的关键字。</p></div>}
+          <div className="help-section-heading"><h2>{t('help.searchResults')}</h2><span>{t('help.resultCount', { count: results.length })}</span></div>
+          {results.length ? <ArticleLinks items={results} /> : <div className="help-empty"><h3>{t('help.noResults')}</h3><p>{t('help.noResultsHint')}</p></div>}
         </section>
       ) : (
         <>
-          <section className="help-categories" aria-label="帮助分类">
+          <section className="help-categories" aria-label={t('help.categories')}>
             {categories.map(category => (
               <a key={category.id} href={`#${category.id}`} className="help-category-card">
                 <span className="help-category-icon">{category.icon}</span><strong>{category.title}</strong><small>{category.description}</small>
@@ -132,34 +139,34 @@ export default function Help() {
           </section>
 
           <section className="help-section" id="start">
-            <div className="help-section-heading"><h2>新手指南</h2><span>从注册认证开始</span></div>
+            <div className="help-section-heading"><h2>{t('help.gettingStarted')}</h2><span>{t('help.gettingStartedHint')}</span></div>
             <div className="help-featured-grid">
               {articles.filter(article => article.featured).map(article => (
                 <Link key={article.slug} to={`/help/${article.slug}`} className="help-featured-card">
                   <span className="help-featured-icon">{article.slug === 'enterprise-registration' ? '🏢' : '👤'}</span>
-                  <div><h3>{article.title}</h3><p>{article.summary}</p><span>阅读指南 →</span></div>
+                  <div><h3>{article.title}</h3><p>{article.summary}</p><span>{t('help.readGuide')} →</span></div>
                 </Link>
               ))}
             </div>
           </section>
 
           <section className="help-section" id="guide">
-            <div className="help-section-heading"><h2>知识库</h2><span>客户端操作指南</span></div>
+            <div className="help-section-heading"><h2>{t('help.knowledgeBase')}</h2><span>{t('help.knowledgeBaseHint')}</span></div>
             <ArticleLinks items={articles.filter(article => article.category !== 'faq' && article.category !== 'invoice')} />
           </section>
 
           <section className="help-section" id="invoice">
-            <div className="help-section-heading"><h2>开票资料</h2><span>CNPJ、IE 与 NF 抬头</span></div>
+            <div className="help-section-heading"><h2>{t('help.invoice')}</h2><span>{t('help.invoiceHint')}</span></div>
             <ArticleLinks items={articles.filter(article => article.category === 'invoice')} />
           </section>
 
           <section className="help-section" id="faq">
-            <div className="help-section-heading"><h2>常见问题</h2><span>快速找到答案</span></div>
+            <div className="help-section-heading"><h2>{t('help.faq')}</h2><span>{t('help.faqHint')}</span></div>
             <ArticleLinks items={articles.filter(article => article.category === 'faq')} />
           </section>
 
           <section className="help-contact">
-            <span>💬</span><div><h2>仍需帮助？</h2><p>请发送问题描述和相关报价号至 <a href="mailto:comercial@aeg-log.com.br">comercial@aeg-log.com.br</a>，请勿发送账号密码。</p></div>
+            <span>💬</span><div><h2>{t('help.stillNeedHelp')}</h2><p>{t('help.contactPrefix')} <a href="mailto:comercial@aeg-log.com.br">comercial@aeg-log.com.br</a>{t('help.contactSuffix')}</p></div>
           </section>
         </>
       )}

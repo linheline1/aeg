@@ -1,0 +1,60 @@
+/* ── parceiros: parede de logos por categoria (/partners) · tema claro ── */
+.lp-partner-cat { margin-top: 44px; }
+.lp-partner-cat:first-of-type { margin-top: 0; }
+.lp-partner-cat h3 {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.lp-partner-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+}
+.lp-partner-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #fff;
+  box-shadow: var(--shadow-card);
+  text-decoration: none;
+  color: inherit;
+  transition: transform .2s var(--ease-out), border-color .2s ease, background .2s ease;
+}
+.lp-partner-tile:hover {
+  transform: translateY(-3px);
+  border-color: rgba(223, 175, 0, .55);
+  background: var(--paper-2);
+}
+.lp-partner-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 86px;
+  height: 44px;
+  flex: 0 0 86px;
+}
+.lp-partner-logo img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.lp-partner-tile .lp-partner-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+@media (max-width: 560px) {
+  .lp-partner-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .lp-partner-tile { padding: 12px 14px; gap: 10px; }
+  .lp-partner-logo { width: 70px; height: 36px; flex-basis: 70px; }
+  .lp-partner-tile .lp-partner-name { font-size: 12px; }
+}

@@ -1,7 +1,9 @@
 import Icon from './Icon';
+import { useTranslation } from 'react-i18next';
 
-export function Loading({ label = 'Carregando informações…' }: { label?: string }) {
-  return <div className="state-card" role="status"><span className="spinner" aria-hidden="true" /><p>{label}</p></div>;
+export function Loading({ label }: { label?: string }) {
+  const { t } = useTranslation();
+  return <div className="state-card" role="status"><span className="spinner" aria-hidden="true" /><p>{label || t('feedback.loading')}</p></div>;
 }
 
 export function Empty({ title, description }: { title: string; description: string }) {
@@ -9,7 +11,8 @@ export function Empty({ title, description }: { title: string; description: stri
 }
 
 export function ErrorMessage({ message, onRetry }: { message: string; onRetry?: () => void }) {
-  return <div className="alert alert-error" role="alert"><Icon name="alert" /><div><strong>Não foi possível continuar</strong><p>{message}</p>{onRetry && <button className="btn btn-ghost btn-sm" onClick={onRetry}>Tentar novamente</button>}</div></div>;
+  const { t } = useTranslation();
+  return <div className="alert alert-error" role="alert"><Icon name="alert" /><div><strong>{t('feedback.errorTitle')}</strong><p>{message}</p>{onRetry && <button className="btn btn-ghost btn-sm" onClick={onRetry}>{t('feedback.retry')}</button>}</div></div>;
 }
 
 export function SuccessMessage({ children }: { children: React.ReactNode }) {

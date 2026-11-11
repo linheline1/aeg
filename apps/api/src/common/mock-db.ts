@@ -302,10 +302,14 @@ export interface HelpArticleRow {
 /** AI 模型 API 配置（单行，管理端运行时维护，环境变量兜底） */
 export interface AiConfigRow {
   id: string;
+  /** 配置名称（如「生产 Key」「备用线路」），供管理端多配置选择 */
+  name: string;
   base_url: string;
   api_key: string;
   model: string;
   timeout_ms: number;
+  /** 是否为当前启用的配置（同一时刻最多一条 active） */
+  active: boolean;
   updated_by: string;
   updated_at: string;
 }
@@ -340,6 +344,49 @@ export function resolveAiConfig(
   return { baseUrl, apiKey, model, timeoutMs, source };
 }
 
+/** 产品目录（按 SKU 归档 AI 识别结果与 NCM 复核） */
+export interface ProductCatalogRow {
+  id: string;
+  sku_key: string;
+  sku: string;
+  product_cn?: string | null;
+  product_en?: string | null;
+  description?: string | null;
+  material?: string | null;
+  base_unit_price_rmb?: number | null;
+  ncm?: string | null;
+  ncm_confidence?: number | null;
+  ncm_rationale?: string | null;
+  ncm_sources: string[];
+  tax_rates?: {
+    ii_rate?: number | null;
+    ipi_rate?: number | null;
+    pis_rate?: number | null;
+    cofins_rate?: number | null;
+  } | null;
+  image_ids: string[];
+  last_quote_id?: string | null;
+  last_client_id?: string | null;
+  ncm_reviewed_by?: string | null;
+  ncm_reviewed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PartnerRow {
+  id: string;
+  /** 分类：carrier=海运承运商；ecosystem=生态合作伙伴 */
+  category: 'carrier' | 'ecosystem';
+  name: string;
+  /** 相对仓库根的 logo 存储路径 apps/api/uploads/partners/xxx.svg */
+  logo_file_path: string;
+  logo_mime_type: string;
+  logo_size_bytes: number;
+  /** 官网链接（落地页点击 logo 跳转；空串表示未设置） */
+  website_url: string;
+  created_at: string;
+}
+
 interface DBSnapshot {
   users: UserRow[];
   clients: ClientRow[];
@@ -355,6 +402,8 @@ interface DBSnapshot {
   payments?: PaymentRow[];
   help_articles?: HelpArticleRow[];
   ai_config?: AiConfigRow[];
+  product_catalog?: ProductCatalogRow[];
+  partners?: PartnerRow[];
 }
 
 /** 仓库根目录（以 pnpm-workspace.yaml 为标记向上查找，不依赖 process.cwd()） */
@@ -387,7 +436,11 @@ function load(): DBSnapshot {
       product_catalogs: (raw as any).product_catalogs || [],
       order_files: (raw as any).order_files || [],
       payments: (raw as any).payments || [],
-      ai_config: (raw as any).ai_config || []
+      ai_config: ((raw as any).ai_config || []).map((row: any, i: number) => ({
+        ...row,
+        name: row.name || (i === 0 ? '默认配置' : `配置 ${i + 1}`),
+        active: row.active ?? i === 0
+      }))
     };
   } catch {
     return { users: [], clients: [], templates: [], quotes: [], fee_rates: [], audit_logs: [], client_images: [], client_cnpjs: [], customs_cnpjs: [], product_catalogs: [], order_files: [], payments: [], ai_config: [] };
@@ -404,7 +457,7 @@ function uid() {
 }
 
 // === seed ===
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { HELP_ARTICLE_SEED } from './help-seed';
 
 export async function seedIfEmpty() {
@@ -958,6 +1011,59 @@ export class ImageRepo {
     save(db);
     return Promise.resolve(full);
   }
+  /** 删除某订单全部图片（返回被删记录，便于清理物理文件） */
+  deleteByQuote(quoteId: string): Promise<ClientImageRow[]> {
+    const db = load();
+    const removed = (db.client_images || []).filter(i => i.quote_id === quoteId);
+    db.client_images = (db.client_images || []).filter(i => i.quote_id !== quoteId);
+    save(db);
+    return Promise.resolve(removed);
+  }
+}
+
+/** 合作伙伴（海运承运商 / 生态合作伙伴）：管理端增删，logo 必传 */
+export class PartnerRepo {
+  /** 全部合作伙伴（分类内按创建时间正序，新增的排在后面） */
+  listAll(): Promise<PartnerRow[]> {
+    const db = load();
+    const rows = (db.partners || []).slice();
+    rows.sort((a, b) => a.category.localeCompare(b.category) || a.created_at.localeCompare(b.created_at));
+    return Promise.resolve(rows);
+  }
+  findByCategory(category: 'carrier' | 'ecosystem'): Promise<PartnerRow[]> {
+    const db = load();
+    const rows = (db.partners || []).filter(p => p.category === category);
+    rows.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    return Promise.resolve(rows);
+  }
+  findById(id: string): Promise<PartnerRow | null> {
+    const db = load();
+    return Promise.resolve((db.partners || []).find(p => p.id === id) || null);
+  }
+  insert(row: Omit<PartnerRow, 'id' | 'created_at'>): Promise<PartnerRow> {
+    const db = load();
+    const full: PartnerRow = { ...row, id: crypto.randomUUID(), created_at: new Date().toISOString() };
+    db.partners = [...(db.partners || []), full];
+    save(db);
+    return Promise.resolve(full);
+  }
+  /** 更新官网链接；找不到返回 null */
+  updateWebsite(id: string, websiteUrl: string): Promise<PartnerRow | null> {
+    const db = load();
+    const target = (db.partners || []).find(p => p.id === id);
+    if (!target) return Promise.resolve(null);
+    target.website_url = websiteUrl;
+    save(db);
+    return Promise.resolve(target);
+  }
+  /** 删除（返回被删记录，便于清理物理文件） */
+  remove(id: string): Promise<PartnerRow | null> {
+    const db = load();
+    const removed = (db.partners || []).find(p => p.id === id) || null;
+    db.partners = (db.partners || []).filter(p => p.id !== id);
+    save(db);
+    return Promise.resolve(removed);
+  }
 }
 
 /** M9：客户开票 CNPJ 仓库 */
@@ -1178,18 +1284,35 @@ export class PaymentsRepo {
 }
 
 export class AiConfigRepo {
+  /** 当前启用的配置（active 行，兜底第一条） */
   get(): Promise<AiConfigRow | null> {
     const db = load();
-    return Promise.resolve(db.ai_config?.[0] || null);
+    const rows = db.ai_config || [];
+    return Promise.resolve(rows.find(r => r.active) || rows[0] || null);
   }
-  upsert(values: { base_url: string; api_key?: string; model: string; timeout_ms: number }, updatedBy: string): Promise<AiConfigRow> {
+  /** 全部配置（启用中的排最前，其余按更新时间倒序） */
+  listAll(): Promise<AiConfigRow[]> {
+    const db = load();
+    const rows = (db.ai_config || []).slice();
+    rows.sort((a, b) => Number(b.active) - Number(a.active) || b.updated_at.localeCompare(a.updated_at));
+    return Promise.resolve(rows);
+  }
+  findById(id: string): Promise<AiConfigRow | null> {
+    const db = load();
+    return Promise.resolve((db.ai_config || []).find(r => r.id === id) || null);
+  }
+  /** 新建或更新配置；首个配置自动启用 */
+  upsertProfile(values: { id?: string; name: string; base_url: string; api_key?: string; model: string; timeout_ms: number }, updatedBy: string): Promise<AiConfigRow> {
     const db = load();
     const now = new Date().toISOString();
-    const existing = db.ai_config?.[0];
+    db.ai_config = db.ai_config || [];
     let row: AiConfigRow;
-    if (existing) {
+    if (values.id) {
+      const existing = db.ai_config.find(r => r.id === values.id);
+      if (!existing) throw new Error('配置不存在');
       row = {
         ...existing,
+        name: values.name,
         base_url: values.base_url,
         api_key: values.api_key ? values.api_key : existing.api_key,
         model: values.model,
@@ -1197,21 +1320,45 @@ export class AiConfigRepo {
         updated_by: updatedBy,
         updated_at: now
       };
-      db.ai_config![0] = row;
+      db.ai_config[db.ai_config.indexOf(existing)] = row;
     } else {
       row = {
-        id: 'default',
+        id: uid(),
+        name: values.name,
         base_url: values.base_url,
         api_key: values.api_key || '',
         model: values.model,
         timeout_ms: values.timeout_ms,
+        active: db.ai_config.length === 0,
         updated_by: updatedBy,
         updated_at: now
       };
-      db.ai_config = [row];
+      db.ai_config.push(row);
     }
     save(db);
     return Promise.resolve(row);
+  }
+  /** 切换启用中的配置 */
+  async activate(id: string, updatedBy: string): Promise<AiConfigRow | null> {
+    const db = load();
+    const target = (db.ai_config || []).find(r => r.id === id);
+    if (!target) return null;
+    const now = new Date().toISOString();
+    db.ai_config!.forEach(r => { r.active = r.id === id; });
+    target.updated_by = updatedBy;
+    target.updated_at = now;
+    save(db);
+    return target;
+  }
+  /** 删除配置（返回 false 表示不存在） */
+  remove(id: string): Promise<boolean> {
+    const db = load();
+    const rows = db.ai_config || [];
+    const idx = rows.findIndex(r => r.id === id);
+    if (idx < 0) return Promise.resolve(false);
+    rows.splice(idx, 1);
+    save(db);
+    return Promise.resolve(true);
   }
   async resolve(defaultModel: string, defaultTimeoutMs: number): Promise<ResolvedAiConfig> {
     return resolveAiConfig(await this.get(), process.env, defaultModel, defaultTimeoutMs);
@@ -1263,4 +1410,77 @@ export class HelpArticlesRepo {
     save(db);
     return Promise.resolve(true);
   }
+}
+
+/** 产品目录仓库（mock：JSON 表，方法与 PgProductCatalogRepo 对齐） */
+export class ProductCatalogRepo {
+  findBySku(skuKey: string): Promise<ProductCatalogRow | null> {
+    const db = load();
+    return Promise.resolve((db.product_catalog || []).find(p => p.sku_key === skuKey) || null);
+  }
+  findById(id: string): Promise<ProductCatalogRow | null> {
+    const db = load();
+    return Promise.resolve((db.product_catalog || []).find(p => p.id === id) || null);
+  }
+  upsertBySku(skuKey: string, patch: Partial<ProductCatalogRow>): Promise<ProductCatalogRow> {
+    const db = load();
+    const now = new Date().toISOString();
+    let row = (db.product_catalog || []).find(p => p.sku_key === skuKey);
+    if (row) {
+      const { id, created_at } = row;
+      row = { ...row, ...stripUndefinedPatch(patch), id, sku_key: skuKey, created_at, updated_at: now };
+      const idx = db.product_catalog!.findIndex(p => p.sku_key === skuKey);
+      db.product_catalog![idx] = row;
+    } else {
+      row = {
+        ...patch,
+        id: uid(),
+        sku_key: skuKey,
+        sku: patch.sku ?? skuKey,
+        ncm_sources: patch.ncm_sources ?? [],
+        image_ids: patch.image_ids ?? [],
+        created_at: now,
+        updated_at: now
+      } as ProductCatalogRow;
+      db.product_catalog = [...(db.product_catalog || []), row];
+    }
+    save(db);
+    return Promise.resolve(row);
+  }
+  list(opts: { q?: string; page?: number; pageSize?: number } = {}): Promise<{
+    items: ProductCatalogRow[]; total: number; page: number; pageSize: number;
+  }> {
+    const db = load();
+    const page = Math.max(1, opts.page || 1);
+    const pageSize = Math.min(100, Math.max(1, opts.pageSize || 20));
+    const kw = opts.q?.trim().toLowerCase();
+    let rows = (db.product_catalog || []).slice();
+    if (kw) {
+      rows = rows.filter(p =>
+        `${p.sku} ${p.product_cn || ''} ${p.product_en || ''} ${p.ncm || ''}`.toLowerCase().includes(kw)
+      );
+    }
+    rows.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    return Promise.resolve({
+      items: rows.slice((page - 1) * pageSize, page * pageSize),
+      total: rows.length, page, pageSize
+    });
+  }
+  update(id: string, patch: Partial<ProductCatalogRow>): Promise<ProductCatalogRow | null> {
+    const db = load();
+    const idx = (db.product_catalog || []).findIndex(p => p.id === id);
+    if (idx < 0) return Promise.resolve(null);
+    db.product_catalog![idx] = { ...db.product_catalog![idx], ...stripUndefinedPatch(patch), updated_at: new Date().toISOString() };
+    save(db);
+    return Promise.resolve(db.product_catalog![idx]);
+  }
+}
+
+/** 同 pg 侧 stripUndefined：undefined 字段不覆盖已有值 */
+function stripUndefinedPatch<T extends object>(patch: T): Partial<T> {
+  const out: Partial<T> = {};
+  for (const k of Object.keys(patch) as (keyof T)[]) {
+    if (patch[k] !== undefined) out[k] = patch[k];
+  }
+  return out;
 }

@@ -128,6 +128,35 @@ export class OpsOrderController {
       .map((c: any) => ({ id: c.id, name: c.name, china_company_name: c.china_company_name || null }));
   }
 
+  /** 业务员名下客户与本人可跟进的报价概况，不返回其他业务员客户资料。 */
+  @Get('clients/mine')
+  @Roles('sales')
+  async myClients(@Req() req: Request & { user?: any }) {
+    const me = req.user.sub;
+    const clients = (await this.clientRepo.findAll()).filter((c: any) => c.salesperson_id === me);
+    const clientIds = new Set(clients.map((c: any) => c.id));
+    const [users, quotes] = await Promise.all([this.userRepo.findAll(), this.quotesRepo.find()]);
+    const accounts = new Map(users.filter((u: any) => u.role === 'client' && clientIds.has(u.client_id)).map((u: any) => [u.client_id, u]));
+    return clients.map((c: any) => {
+      const own = quotes.filter((q: any) => q.client_id === c.id && (q.salesperson_id || c.salesperson_id) === me);
+      const latest = own.reduce((date: string | null, q: any) => !date || q.created_at > date ? q.created_at : date, null);
+      const account: any = accounts.get(c.id);
+      return {
+        id: c.id,
+        name: c.name,
+        china_company_name: c.china_company_name || null,
+        status: c.status,
+        verification_status: c.verification_status || 'pending',
+        username: account?.username || null,
+        user_status: account?.status || null,
+        quote_count: own.length,
+        open_count: own.filter((q: any) => q.status === 'done' && !['won', 'lost'].includes(q.deal_status)).length,
+        last_quote_at: latest,
+        created_at: c.created_at
+      };
+    }).sort((a: any, b: any) => a.name.localeCompare(b.name));
+  }
+
   /** 订单详情（含 line_items + pricing_breakdown）—— 报价员/管理员专用 */
   @Get(':id')
   @Roles('operator', 'admin')
@@ -149,6 +178,7 @@ export class OpsOrderController {
       template_version: q.template_version,
       status: q.status,
       input_file_name: q.input_file_name,
+      has_file: !!q.input_file_path && fs.existsSync(path.join(repoRoot(), q.input_file_path)),
       converted_by_ai: q.converted_by_ai || false,
       declared_currency: q.declared_currency || 'RMB',
       ai_notes: q.ai_notes || null,
@@ -439,6 +469,13 @@ export class OpsOrderController {
       detail: { quote_no: order.quote_no, stage: target.stage, happened_at: target.happened_at }
     });
     return { ok: true, id, shipment: ship };
+  }
+
+  /** 重新提取订单 Excel 内嵌产品图片（含 WPS 嵌入单元格图片），替换旧记录 */
+  @Post(':id/images/reextract')
+  @Roles('operator', 'admin')
+  async reExtractImages(@Param('id') id: string, @Req() req: Request & { user?: any }) {
+    return this.quoteService.reExtractImages(id, this.actor(req));
   }
 
   /** 下载客户上传的原 Excel */

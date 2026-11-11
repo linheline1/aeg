@@ -6,6 +6,11 @@
   background: rgba(246, 249, 252, .88);
   backdrop-filter: blur(12px) saturate(1.15);
   border-bottom: 1px solid var(--line);
+  transition: box-shadow .2s ease, border-color .2s ease;
+}
+.lp-header[data-scrolled] {
+  box-shadow: 0 10px 30px rgba(6, 42, 110, .08);
+  border-bottom-color: rgba(6, 42, 110, .12);
 }
 .lp-header-inner {
   display: flex;

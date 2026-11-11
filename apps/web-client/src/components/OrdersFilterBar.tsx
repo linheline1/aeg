@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   INVOICE_FILTER_OPTIONS,
   ORDER_PERIOD_OPTIONS,
   ORDER_SORT_OPTIONS,
-  ORDER_STATUS_OPTIONS,
   SHIPMENT_FILTER_OPTIONS,
   hasActiveOrderFilters,
   type InvoiceFilter,
@@ -24,15 +24,6 @@ interface OrdersFilterBarProps {
   onClear: () => void;
 }
 
-const statusLabel = (value: OrderStatusFilter) =>
-  ORDER_STATUS_OPTIONS.find(o => o.value === value)?.label || value;
-const periodLabel = (value: OrderPeriod) =>
-  ORDER_PERIOD_OPTIONS.find(o => o.value === value)?.label || value;
-const shipmentLabel = (value: ShipmentFilter) =>
-  SHIPMENT_FILTER_OPTIONS.find(o => o.value === value)?.label || value;
-const invoiceLabel = (value: InvoiceFilter) =>
-  INVOICE_FILTER_OPTIONS.find(o => o.value === value)?.label || value;
-
 function SearchIcon() {
   return (
     <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" focusable="false">
@@ -42,11 +33,11 @@ function SearchIcon() {
   );
 }
 
-const STATUS_CHIPS: { value: OrderStatusFilter; label: string; countKey: keyof OrderStatusCounts }[] = [
-  { value: 'all', label: '全部', countKey: 'all' },
-  { value: 'processing', label: '核算中', countKey: 'processing' },
-  { value: 'done', label: '参考价已生成', countKey: 'done' },
-  { value: 'failed', label: '失败', countKey: 'failed' }
+const STATUS_CHIPS: { value: OrderStatusFilter; countKey: keyof OrderStatusCounts }[] = [
+  { value: 'all', countKey: 'all' },
+  { value: 'processing', countKey: 'processing' },
+  { value: 'done', countKey: 'done' },
+  { value: 'failed', countKey: 'failed' }
 ];
 
 export default function OrdersFilterBar({
@@ -57,6 +48,7 @@ export default function OrdersFilterBar({
   onChange,
   onClear
 }: OrdersFilterBarProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState(filters.q);
   const [sheetOpen, setSheetOpen] = useState(false);
   const queryRef = useRef(filters.q);
@@ -77,7 +69,8 @@ export default function OrdersFilterBar({
     return () => window.removeEventListener('keydown', onKey);
   }, [sheetOpen]);
 
-  const patch = (next: Partial<OrderFilterState>, replace = false) =>
+  // 筛选状态本来就体现在 URL 中（刷新可恢复），统一 replace，避免浏览器返回键逐条回退
+  const patch = (next: Partial<OrderFilterState>, replace = true) =>
     onChange({ ...filters, ...next }, replace);
 
   const onQueryChange = (value: string) => {
@@ -88,12 +81,12 @@ export default function OrdersFilterBar({
 
   const active = hasActiveOrderFilters(filters);
   const activeChips: { key: keyof OrderFilterState; label: string; reset: Partial<OrderFilterState> }[] = [];
-  if (filters.q.trim()) activeChips.push({ key: 'q', label: `关键词「${filters.q.trim()}」`, reset: { q: '' } });
-  if (filters.status !== 'all') activeChips.push({ key: 'status', label: statusLabel(filters.status), reset: { status: 'all' } });
-  if (filters.period !== 'all') activeChips.push({ key: 'period', label: periodLabel(filters.period), reset: { period: 'all' } });
-  if (filters.shipment !== 'all') activeChips.push({ key: 'shipment', label: shipmentLabel(filters.shipment), reset: { shipment: 'all' } });
-  if (filters.invoice !== 'all') activeChips.push({ key: 'invoice', label: invoiceLabel(filters.invoice), reset: { invoice: 'all' } });
-  if (filters.sort !== 'created_desc') activeChips.push({ key: 'sort', label: ORDER_SORT_OPTIONS.find(o => o.value === filters.sort)?.label || filters.sort, reset: { sort: 'created_desc' } });
+  if (filters.q.trim()) activeChips.push({ key: 'q', label: t('filters.keyword', { value: filters.q.trim() }), reset: { q: '' } });
+  if (filters.status !== 'all') activeChips.push({ key: 'status', label: t(`filters.status.${filters.status}`), reset: { status: 'all' } });
+  if (filters.period !== 'all') activeChips.push({ key: 'period', label: t(`filters.period.${filters.period}`), reset: { period: 'all' } });
+  if (filters.shipment !== 'all') activeChips.push({ key: 'shipment', label: t(`filters.shipment.${filters.shipment}`), reset: { shipment: 'all' } });
+  if (filters.invoice !== 'all') activeChips.push({ key: 'invoice', label: t(`filters.invoice.${filters.invoice}`), reset: { invoice: 'all' } });
+  if (filters.sort !== 'created_desc') activeChips.push({ key: 'sort', label: t(`filters.sort.${filters.sort}`), reset: { sort: 'created_desc' } });
 
   const resetAll = () => {
     setQuery('');
@@ -111,15 +104,15 @@ export default function OrdersFilterBar({
               className="form-input"
               type="search"
               value={query}
-              placeholder="搜索报价号或清单文件名"
-              aria-label="搜索报价号或清单文件名"
+              placeholder={t('filters.searchPlaceholder')}
+              aria-label={t('filters.searchPlaceholder')}
               onChange={e => onQueryChange(e.target.value)}
             />
             {query && (
               <button
                 type="button"
                 className="orders-search-clear"
-                aria-label="清除搜索"
+                aria-label={t('filters.clearSearch')}
                 onClick={() => onQueryChange('')}
               >
                 ×
@@ -133,62 +126,62 @@ export default function OrdersFilterBar({
             aria-expanded={sheetOpen}
             onClick={() => setSheetOpen(true)}
           >
-            筛选{active ? ' · 已选' : ''}
+            {t('filters.filter')}{active ? ` · ${t('filters.selected')}` : ''}
           </button>
 
           <div className="orders-filter-fields">
             <label className="filter-field">
-              <span>时间</span>
+              <span>{t('filters.time')}</span>
               <select
                 className="form-input"
                 value={filters.period}
                 onChange={e => patch({ period: e.target.value as OrderPeriod })}
               >
                 {ORDER_PERIOD_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>{t(`filters.period.${o.value}`)}</option>
                 ))}
               </select>
             </label>
             <label className="filter-field">
-              <span>物流</span>
+              <span>{t('filters.shipping')}</span>
               <select
                 className="form-input"
                 value={filters.shipment}
                 onChange={e => patch({ shipment: e.target.value as ShipmentFilter })}
               >
                 {SHIPMENT_FILTER_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>{t(`filters.shipment.${o.value}`)}</option>
                 ))}
               </select>
             </label>
             <label className="filter-field">
-              <span>开票</span>
+              <span>{t('filters.invoiceLabel')}</span>
               <select
                 className="form-input"
                 value={filters.invoice}
                 onChange={e => patch({ invoice: e.target.value as InvoiceFilter })}
               >
                 {INVOICE_FILTER_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>{t(`filters.invoice.${o.value}`)}</option>
                 ))}
               </select>
             </label>
             <label className="filter-field">
-              <span>排序</span>
+              <span>{t('filters.sortLabel')}</span>
               <select
                 className="form-input"
                 value={filters.sort}
                 onChange={e => patch({ sort: e.target.value as OrderSort })}
               >
                 {ORDER_SORT_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>{t(`filters.sort.${o.value}`)}</option>
                 ))}
               </select>
             </label>
           </div>
         </div>
 
-        <div className="orders-status-tabs" role="group" aria-label="按状态筛选">
+        <div className="orders-status-tabs" role="group" aria-label={t('filters.statusAria')}>
           {STATUS_CHIPS.map(chip => {
             const selected = filters.status === chip.value;
             return (
@@ -199,7 +192,7 @@ export default function OrdersFilterBar({
                 aria-pressed={selected}
                 onClick={() => patch({ status: chip.value })}
               >
-                {chip.label}
+                {t(`filters.status.${chip.value}`)}
                 <span className="orders-filter-chip-count">{counts[chip.countKey]}</span>
               </button>
             );
@@ -208,7 +201,7 @@ export default function OrdersFilterBar({
 
         <div className="orders-filter-foot">
           <span className="orders-result-text">
-            {active ? `显示 ${filteredCount} / ${total} 条报价` : `共 ${total} 条报价`}
+            {active ? t('filters.resultFiltered', { filtered: filteredCount, total }) : t('filters.resultTotal', { total })}
           </span>
           {active && (
             <div className="orders-filter-active">
@@ -227,10 +220,10 @@ export default function OrdersFilterBar({
                 >
                   {chip.label}
                   <span aria-hidden="true">×</span>
-                  <span className="sr-only">移除该条件</span>
+                  <span className="sr-only">{t('filters.removeCondition')}</span>
                 </button>
               ))}
-              <button type="button" className="btn-link" onClick={resetAll}>清除全部</button>
+              <button type="button" className="btn-link" onClick={resetAll}>{t('filters.clearAll')}</button>
             </div>
           )}
         </div>
@@ -242,59 +235,59 @@ export default function OrdersFilterBar({
             className="filter-sheet"
             role="dialog"
             aria-modal="true"
-            aria-label="筛选报价"
+            aria-label={t('filters.dialogTitle')}
             onClick={e => e.stopPropagation()}
           >
             <div className="filter-sheet-head">
-              <strong>筛选报价</strong>
-              <button type="button" className="btn-link" onClick={() => setSheetOpen(false)}>关闭</button>
+              <strong>{t('filters.dialogTitle')}</strong>
+              <button type="button" className="btn-link" onClick={() => setSheetOpen(false)}>{t('filters.close')}</button>
             </div>
 
             <label className="filter-field filter-field-block">
-              <span>时间</span>
+              <span>{t('filters.time')}</span>
               <select
                 className="form-input"
                 value={filters.period}
                 onChange={e => patch({ period: e.target.value as OrderPeriod })}
               >
                 {ORDER_PERIOD_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>{t(`filters.period.${o.value}`)}</option>
                 ))}
               </select>
             </label>
             <label className="filter-field filter-field-block">
-              <span>物流</span>
+              <span>{t('filters.shipping')}</span>
               <select
                 className="form-input"
                 value={filters.shipment}
                 onChange={e => patch({ shipment: e.target.value as ShipmentFilter })}
               >
                 {SHIPMENT_FILTER_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>{t(`filters.shipment.${o.value}`)}</option>
                 ))}
               </select>
             </label>
             <label className="filter-field filter-field-block">
-              <span>开票</span>
+              <span>{t('filters.invoiceLabel')}</span>
               <select
                 className="form-input"
                 value={filters.invoice}
                 onChange={e => patch({ invoice: e.target.value as InvoiceFilter })}
               >
                 {INVOICE_FILTER_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>{t(`filters.invoice.${o.value}`)}</option>
                 ))}
               </select>
             </label>
             <label className="filter-field filter-field-block">
-              <span>排序</span>
+              <span>{t('filters.sortLabel')}</span>
               <select
                 className="form-input"
                 value={filters.sort}
                 onChange={e => patch({ sort: e.target.value as OrderSort })}
               >
                 {ORDER_SORT_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>{t(`filters.sort.${o.value}`)}</option>
                 ))}
               </select>
             </label>
@@ -308,10 +301,10 @@ export default function OrdersFilterBar({
                   setSheetOpen(false);
                 }}
               >
-                重置
+                {t('filters.reset')}
               </button>
               <button type="button" className="btn" onClick={() => setSheetOpen(false)}>
-                查看 {filteredCount} 条结果
+                {t('filters.viewResults', { count: filteredCount })}
               </button>
             </div>
           </div>

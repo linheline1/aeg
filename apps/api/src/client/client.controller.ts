@@ -3,7 +3,7 @@ import {
   BadRequestException, NotFoundException, ConflictException
 } from '@nestjs/common';
 import { Response } from 'express';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';

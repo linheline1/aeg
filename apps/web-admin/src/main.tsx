@@ -1,8 +1,5 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, HashRouter } from 'react-router-dom';
-import { Capacitor } from '@capacitor/core';
-import { App as CapacitorApp } from '@capacitor/app';
 import App from './App';
 import './styles.css';
 

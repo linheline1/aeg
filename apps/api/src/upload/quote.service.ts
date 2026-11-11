@@ -21,6 +21,23 @@ type DdpFees = {
 };
 type DdpPricing = ReturnType<typeof calculateDdpPricing>;
 
+/**
+ * 修复 multer/busboy 按 latin1 误解码的 UTF-8 中文文件名（mojibake），并清理文件系统非法字符。
+ * "吉亚….xlsx" 被 latin1 解码成 "åäº…." 时还原为原文；正常 ASCII 名不受影响。
+ */
+function normalizeUploadFileName(raw: string): string {
+  let name = String(raw || '');
+  // 仅当只含 latin1 单字节高位字符（U+0080–U+00FF）时才可能是被误解码的 mojibake；
+  // 已正确解码的中文含多字节 Unicode 字符（> U+00FF），不能二次转换
+  if (/[\u0080-\u00FF]/.test(name) && !/[\u0100-\uFFFF]/.test(name)) {
+    try {
+      const decoded = Buffer.from(name, 'latin1').toString('utf8');
+      if (!decoded.includes('\uFFFD')) name = decoded;
+    } catch { /* ignore */ }
+  }
+  return name.replace(/[\\/:*?"<>|]/g, '_').trim();
+}
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const sharedTypes = require('../../../../packages/shared-types/dist/index.js');
 const FIELD_DICTIONARY = sharedTypes.FIELD_DICTIONARY as any[];
@@ -532,6 +549,7 @@ export class QuoteService {
     templateVersion: string,
     screenshots: any[] = []
   ): Promise<UploadResult> {
+    fileName = normalizeUploadFileName(fileName);
     const parsed = await this.parseWorkbook(filePath, templateVersion);
     if (!parsed.ok) {
       for (const file of [filePath, ...screenshots.map(item => path.join(repoRoot(), item.file_path))]) {
@@ -543,7 +561,7 @@ export class QuoteService {
     const draftId = crypto.randomUUID();
     const draftsDir = path.join(repoRoot(), 'apps/api/uploads/drafts');
     fs.mkdirSync(draftsDir, { recursive: true });
-    const storedName = `${draftId}_${fileName.replace(/[^\w.-]/g, '_')}`;
+    const storedName = `${draftId}_${fileName}`;
     const storedPath = path.join(draftsDir, storedName);
     fs.copyFileSync(filePath, storedPath);
     try { fs.unlinkSync(filePath); } catch { /* ignore */ }
@@ -692,7 +710,7 @@ export class QuoteService {
     if (!parsed.ok) return parsed;
     return this.finalizeUpload(parsed.rows, parsed.warehouseCode || '', {
       filePath,
-      fileName,
+      fileName: normalizeUploadFileName(fileName),
       clientId,
       templateVersion,
       actor,
@@ -760,7 +778,7 @@ export class QuoteService {
     const quotesDir = path.join(repoRoot(), 'apps/api/uploads/orders');
     fs.mkdirSync(quotesDir, { recursive: true });
     const quoteNo = this.genQuoteNo();
-    const destName = `${quoteNo}_${ctx.fileName.replace(/[^\w.-]/g, '_')}`;
+    const destName = `${quoteNo}_${ctx.fileName}`;
     const destPath = path.join(quotesDir, destName);
     try { fs.copyFileSync(ctx.filePath, destPath); } catch { /* ignore */ }
 
@@ -843,6 +861,27 @@ export class QuoteService {
 
   // ============= helpers =============
 
+  /** 重新提取订单 Excel 内嵌图片（含 WPS 嵌入单元格图片）：删除旧记录与文件后全量重建 */
+  async reExtractImages(quoteId: string, actor: { username: string; role: string }) {
+    const order: any = await this.quotesRepo.findById(quoteId);
+    if (!order) throw new NotFoundException('订单不存在');
+    const excelPath = order.input_file_path ? path.join(repoRoot(), order.input_file_path) : null;
+    if (!excelPath || !fs.existsSync(excelPath)) {
+      throw new BadRequestException('原 Excel 文件不存在，无法重新提取图片');
+    }
+    const removed = await this.imageRepo.deleteByQuote(quoteId);
+    for (const img of removed) {
+      try { fs.unlinkSync(path.join(repoRoot(), img.file_path)); } catch { /* ignore */ }
+    }
+    const images = await this.storeEmbeddedImages(excelPath, quoteId, order.client_id);
+    await this.auditRepo.entry({
+      actor_username: actor.username, actor_role: actor.role,
+      action: 'order.images.reextract', target_type: 'quote', target_id: quoteId,
+      detail: { quote_no: order.quote_no, removed: removed.length, images }
+    });
+    return { ok: true, removed: removed.length, images };
+  }
+
   private async storeEmbeddedImages(excelPath: string, quoteId: string, clientId: string): Promise<number> {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(excelPath);
@@ -850,16 +889,74 @@ export class QuoteService {
     fs.mkdirSync(imageDir, { recursive: true });
     const rows: any[] = [];
 
+    // 有效产品行号集合：浮动图片锚定在标题/logo 等非产品行时丢弃
+    const order: any = await this.quotesRepo.findById(quoteId);
+    const validRowNos = new Set<number>((order?.line_items || []).map((it: any) => Number(it.row_no)));
+
+    // 先收集：drawing 锚点占用的 media 下标 + WPS DISPIMG（嵌入单元格图片）所在行
+    const drawingImageIds = new Set<number>();
+    const dispimgRows: number[] = [];
+    for (const worksheet of workbook.worksheets) {
+      for (const placement of worksheet.getImages()) drawingImageIds.add(Number(placement.imageId));
+      worksheet.eachRow(row => {
+        row.eachCell({ includeEmpty: false }, cell => {
+          const v: any = cell.value;
+          const formula = v && typeof v === 'object'
+            ? String(v.formula || v.sharedFormula?.formula || '')
+            : '';
+          if (/DISPIMG\s*\(/i.test(formula)) dispimgRows.push(Number(cell.row));
+        });
+      });
+    }
+    dispimgRows.sort((a, b) => a - b);
+
+    // WPS DISPIMG 图片存于 media 但无 drawing 锚点（cellimages 映射常被重存丢失）：
+    // 排除 drawing 占用后，剩余 media 按顺序与 DISPIMG 行号顺序一一对应
+    if (dispimgRows.length > 0) {
+      const mediaList: any[] = (workbook as any).media || [];
+      const dispimgMedia = mediaList
+        .map((media: any, index: number) => ({ media, index }))
+        .filter(({ media, index }: { media: any; index: number }) =>
+          !drawingImageIds.has(index) && media?.type === 'image' && media.buffer && media.buffer.length > 0);
+      const pairs = Math.min(dispimgRows.length, dispimgMedia.length);
+      for (let i = 0; i < pairs; i++) {
+        const { media } = dispimgMedia[i];
+        const rowNo = dispimgRows[i];
+        if (validRowNos.size > 0 && !validRowNos.has(rowNo)) continue; // 非产品行的 DISPIMG 跳过
+        const extension = String(media.extension || 'png').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'png';
+        const buffer = Buffer.from(media.buffer as any);
+        const fileName = `excel-dispimg-row${rowNo}-${crypto.randomUUID()}.${extension}`;
+        const absolutePath = path.join(imageDir, fileName);
+        fs.writeFileSync(absolutePath, buffer);
+        rows.push({
+          client_id: clientId,
+          quote_id: quoteId,
+          row_no: rowNo,
+          file_name: `excel-row-${rowNo}-cellimage.${extension}`,
+          file_path: path.relative(repoRoot(), absolutePath).replace(/\\/g, '/'),
+          mime_type: extension === 'jpg' ? 'image/jpeg' : `image/${extension}`,
+          size_bytes: buffer.length
+        });
+      }
+    }
+
+    // 普通 drawing 浮动图片（按锚点行号归属；同一 imageId 多锚点时只取首个，避免重复副本）
+    // 仅保留锚定在产品行的浮动图片；锚定在标题/logo 等非产品行的丢弃
+    const placedImageIds = new Set<number>();
     for (const worksheet of workbook.worksheets) {
       const placements = worksheet.getImages();
       for (let index = 0; index < placements.length; index++) {
         const placement = placements[index];
+        const imageId = Number(placement.imageId);
+        if (placedImageIds.has(imageId)) continue;
+        placedImageIds.add(imageId);
+        const nativeRow = Number((placement.range as any)?.tl?.nativeRow);
+        const rowNo = Number.isInteger(nativeRow) && nativeRow >= 0 ? nativeRow + 1 : null;
+        if (validRowNos.size > 0 && rowNo !== null && !validRowNos.has(rowNo)) continue; // 非产品行的浮动图跳过
         const media = workbook.getImage(Number(placement.imageId));
         const extension = String(media.extension || 'png').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'png';
         const buffer = Buffer.from(media.buffer as any);
         if (!buffer || buffer.length === 0) continue;
-        const nativeRow = Number((placement.range as any)?.tl?.nativeRow);
-        const rowNo = Number.isInteger(nativeRow) && nativeRow >= 0 ? nativeRow + 1 : null;
         const fileName = `excel-embedded-${crypto.randomUUID()}.${extension}`;
         const absolutePath = path.join(imageDir, fileName);
         fs.writeFileSync(absolutePath, buffer);

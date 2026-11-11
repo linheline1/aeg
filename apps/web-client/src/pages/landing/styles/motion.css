@@ -1,0 +1,62 @@
+/* Small, local interactions. Never animate layout or hide content on reduced motion. */
+@keyframes lp-detail-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes lp-step-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lp-mobile-menu { animation: lp-detail-in .2s var(--ease-out) both; }
+  .lp-faq-list details { transition: border-color .22s ease, background-color .22s ease, box-shadow .22s ease; }
+  .lp-faq-list details[open] p { animation: lp-detail-in .25s var(--ease-out) both; }
+  .lp-faq-arrow { transition: transform .25s var(--ease-out); }
+  .lp-steps.is-visible .lp-step { animation: lp-step-in .45s var(--ease-out) both; }
+  .lp-steps.is-visible .lp-step:nth-child(2) { animation-delay: .08s; }
+  .lp-steps.is-visible .lp-step:nth-child(3) { animation-delay: .16s; }
+  .lp-steps.is-visible .lp-step:nth-child(4) { animation-delay: .24s; }
+  .lp-hero-visual picture { overflow: hidden; border-radius: 20px; }
+  .lp-hero-visual img { transition: transform .65s var(--ease-out); }
+  .lp-adv-icon, .lp-included-icon, .lp-step-icon {
+    transition: transform .25s var(--ease-out), background-color .25s ease, color .25s ease;
+  }
+  .lp-consult-link { transition: color .2s ease, background-color .2s ease, border-color .2s ease; }
+  .lp-consult-link svg { transition: transform .2s var(--ease-out); }
+  .lp-btn:active { transform: translateY(0) scale(.98); }
+
+  /* Browsers without intrinsic-size transitions retain native details behavior. */
+  @supports (interpolate-size: allow-keywords) and (transition-behavior: allow-discrete) {
+    .lp-faq-list details { interpolate-size: allow-keywords; }
+    .lp-faq-list details::details-content {
+      block-size: 0;
+      overflow: hidden;
+      transition: block-size .28s var(--ease-out), content-visibility .28s allow-discrete;
+    }
+    .lp-faq-list details[open]::details-content { block-size: auto; }
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .lp-hero-visual:hover img { transform: scale(1.025); }
+    .lp-adv:hover .lp-adv-icon, .lp-included-card:hover .lp-included-icon,
+    .lp-step:hover .lp-step-icon { transform: translateY(-3px); }
+    .lp-consult-link:hover svg { transform: translateX(3px); }
+    .lp-faq-list details:hover { box-shadow: 0 4px 16px rgba(16, 46, 83, .055); }
+    .lp-btn-primary:hover, .lp-btn-accent:hover, .lp-btn-gold:hover {
+      box-shadow: 0 8px 20px rgba(16, 46, 83, .18);
+    }
+  }
+  @media (max-width: 720px) {
+    .lp-hero-visual picture { border-radius: 14px 14px 0 0; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp *, .lp *::before, .lp *::after, .lp-faq-list details::details-content {
+    animation: none !important;
+    transition: none !important;
+  }
+  .lp-reveal, .lp-hero-copy > *, .lp-hero-visual, .lp-route-card { opacity: 1; transform: none; }
+  .lp-adv:hover, .lp-included-card:hover, .lp-backtop:hover { transform: none; }
+}

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../store/auth';
 
 export default function TemplateList() {
+  const { t } = useTranslation();
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -12,30 +14,30 @@ export default function TemplateList() {
     }).catch(() => setLoading(false));
   }, []);
 
-  if (loading) return <p>加载中…</p>;
+  if (loading) return <p>{t('template.loading')}</p>;
 
   return (
     <div>
-      <h1>模板版本</h1>
+      <h1>{t('template.title')}</h1>
       <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
-              <th>版本</th>
-              <th>编码</th>
-              <th>状态</th>
-              <th>激活时间</th>
-              <th>创建时间</th>
+              <th>{t('template.col.version')}</th>
+              <th>{t('template.col.code')}</th>
+              <th>{t('template.col.status')}</th>
+              <th>{t('template.col.activatedAt')}</th>
+              <th>{t('template.col.createdAt')}</th>
             </tr>
           </thead>
           <tbody>
-            {list.map((t) => (
-              <tr key={t.id}>
-                <td>v{t.version_no}</td>
-                <td>{t.template_code}</td>
-                <td>{t.status === 'active' ? '✅ 启用' : '停用'}</td>
-                <td>{t.activated_at || '—'}</td>
-                <td>{t.created_at}</td>
+            {list.map((tpl) => (
+              <tr key={tpl.id}>
+                <td>v{tpl.version_no}</td>
+                <td>{tpl.template_code}</td>
+                <td>{tpl.status === 'active' ? t('template.status.active') : t('template.status.inactive')}</td>
+                <td>{tpl.activated_at || t('common.dash')}</td>
+                <td>{tpl.created_at}</td>
               </tr>
             ))}
           </tbody>

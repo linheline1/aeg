@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ClientOrderController } from './client-order.controller';
 import { OpsOrderController } from './ops-order.controller';
+import { OpsProductController } from './ops-product.controller';
 import { DealsController } from './deals.controller';
 import { OpsOrderFilesController, ClientOrderFilesController } from './order-files.controller';
 import { ClientCnpjController } from './cnpj.controller';
@@ -12,7 +13,7 @@ import { AiNcmService } from './ai-ncm.service';
 
 @Module({
   imports: [AuthModule, UploadModule],
-  controllers: [ClientOrderController, OpsOrderController, DealsController, OpsOrderFilesController, ClientOrderFilesController, ClientCnpjController, DiController],
+  controllers: [ClientOrderController, OpsOrderController, OpsProductController, DealsController, OpsOrderFilesController, ClientOrderFilesController, ClientCnpjController, DiController],
   providers: [DiService, AiNcmService],
   exports: [DiService, AiNcmService]
 })

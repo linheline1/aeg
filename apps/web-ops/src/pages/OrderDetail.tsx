@@ -41,7 +41,7 @@ interface CustomsReview {
 
 interface OrderDetail {
   id: string; quote_no: string; client_id: string; template_version: string; status: string;
-  input_file_name: string | null; total_rows?: number; valid_rows?: number;
+  input_file_name: string | null; has_file?: boolean; total_rows?: number; valid_rows?: number;
   total_cbm?: number; total_gw_kg?: number; total_amount_rmb?: number | null;
   total_amount_brl?: number | null; total_amount_usd?: number | null;
   client_name?: string;
@@ -651,7 +651,7 @@ export default function OrderDetail() {
         </h1>
         <div className="row gap-md">
           <span className={`status-tag status-${d.status}`}>{STATUS_CN[d.status] || d.status}</span>
-          {d.input_file_name && <button onClick={handleDownload} className="btn">📥 原 Excel</button>}
+          {d.has_file && <button onClick={handleDownload} className="btn">📥 原 Excel</button>}
         </div>
       </div>
 
@@ -770,7 +770,7 @@ export default function OrderDetail() {
           </p>
 
           <div className="table-wrap mt-12">
-            <table className="table">
+            <table className="table ddp-edit-table">
               <thead>
                 <tr>
                   <th>费用项</th>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage as errorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 
@@ -54,6 +55,7 @@ function formatAddress(address?: Partial<CnpjAddress> | null) {
 }
 
 export default function CnpjManager() {
+  const { t } = useTranslation();
   const [cnpjs, setCnpjs] = useState<CnpjRow[]>([]);
   const [cnpjForm, setCnpjForm] = useState<CnpjForm>(emptyForm);
   const [cnpjBusy, setCnpjBusy] = useState(false);
@@ -66,7 +68,7 @@ export default function CnpjManager() {
       const r = await api.get('/api/client/cnpjs');
       setCnpjs(r.data || []);
     } catch (e: any) {
-      setCnpjErr(errorMessage(e, '开票资料加载失败'));
+      setCnpjErr(errorMessage(e, t('cnpj.loadError')));
     }
   };
 
@@ -85,7 +87,7 @@ export default function CnpjManager() {
   const doCnpjLookup = async () => {
     const digits = cnpjForm.cnpj.replace(/\D/g, '');
     if (digits.length !== 14) {
-      setCnpjErr('请输入 14 位有效 CNPJ 后再查询');
+      setCnpjErr(t('cnpj.invalid'));
       return;
     }
     setLookupBusy(true);
@@ -107,9 +109,9 @@ export default function CnpjManager() {
         registry_snapshot: data.registry_snapshot || null,
         queried_at: data.queried_at || null
       }));
-      setCnpjMsg('已回填 OpenCNPJ 企业资料，请核对并补充 IE 后保存');
+      setCnpjMsg(t('cnpj.lookupSuccess'));
     } catch (e: any) {
-      setCnpjErr(`${errorMessage(e, 'CNPJ 查询失败')}；可继续手动填写`);
+      setCnpjErr(`${errorMessage(e, t('cnpj.lookupError'))}${t('cnpj.manualSuffix')}`);
     } finally {
       setLookupBusy(false);
     }
@@ -123,11 +125,11 @@ export default function CnpjManager() {
     setCnpjMsg(null);
     try {
       await api.post('/api/client/cnpjs', cnpjForm);
-      setCnpjMsg('已保存开票资料');
+      setCnpjMsg(t('cnpj.saveSuccess'));
       setCnpjForm(emptyForm());
       await loadCnpjs();
     } catch (e: any) {
-      setCnpjErr(errorMessage(e, '开票资料保存失败'));
+      setCnpjErr(errorMessage(e, t('cnpj.saveError')));
     } finally {
       setCnpjBusy(false);
     }
@@ -140,22 +142,22 @@ export default function CnpjManager() {
       await api.patch(`/api/client/cnpjs/${id}/default`, {});
       await loadCnpjs();
     } catch (e: any) {
-      setCnpjErr(errorMessage(e, '默认开票资料设置失败'));
+      setCnpjErr(errorMessage(e, t('cnpj.defaultError')));
     } finally {
       setCnpjBusy(false);
     }
   };
 
   const doCnpjDel = async (id: string) => {
-    if (!window.confirm('确定删除该开票资料？已绑定订单的开票快照不受影响。')) return;
+    if (!window.confirm(t('cnpj.deleteConfirm'))) return;
     setCnpjBusy(true);
     setCnpjErr(null);
     try {
       await api.delete(`/api/client/cnpjs/${id}`);
-      setCnpjMsg('已删除');
+      setCnpjMsg(t('cnpj.deleted'));
       await loadCnpjs();
     } catch (e: any) {
-      setCnpjErr(errorMessage(e, '开票资料删除失败'));
+      setCnpjErr(errorMessage(e, t('cnpj.deleteError')));
     } finally {
       setCnpjBusy(false);
     }
@@ -166,11 +168,11 @@ export default function CnpjManager() {
   return (
     <div className="card">
       <div className="card-title">
-        <h3>🏢 巴西公司开票资料 · CNPJ / IE</h3>
-        <span className="muted text-sm">供运营端向您的巴西公司开具发票（NF）</span>
+        <h3>🏢 {t('cnpj.cardTitle')}</h3>
+        <span className="muted text-sm">{t('cnpj.cardSubtitle')}</span>
       </div>
       <p className="muted text-sm" style={{ margin: '0 0 16px', lineHeight: 1.7 }}>
-        输入有效 CNPJ 后可自动回填 Razão Social、Nome Fantasia、登记状态和地址。IE 不通过公共接口查询，请手动填写；免 IE 企业请填写 <strong>ISENTO</strong>。查询失败时也可手动填写全部资料。
+        {t('cnpj.instructionsBefore')} <strong>ISENTO</strong>{t('cnpj.instructionsAfter')}
       </p>
 
       <form onSubmit={doCnpjAdd}>
@@ -178,23 +180,23 @@ export default function CnpjManager() {
           <div className="form-row cnpj-field-wide">
             <label>CNPJ</label>
             <div className="row gap-sm cnpj-lookup-row">
-              <input className="form-input" placeholder="14 位数字或 XX.XXX.XXX/XXXX-XX"
+              <input className="form-input" placeholder={t('cnpj.cnpjPlaceholder')}
                 value={cnpjForm.cnpj} disabled={busy} maxLength={18}
                 onChange={e => onCnpjChange(e.target.value)} />
               <button type="button" className="btn btn-ghost" disabled={busy || !cnpjForm.cnpj} onClick={doCnpjLookup}>
-                {lookupBusy ? '查询中…' : '自动查询'}
+                {lookupBusy ? t('cnpj.lookingUp') : t('cnpj.lookup')}
               </button>
             </div>
           </div>
           <div className="form-row">
-            <label>IE 州税登记号 / ISENTO</label>
-            <input className="form-input" required placeholder="手动填写；免税填 ISENTO"
+            <label>{t('cnpj.ieLabel')}</label>
+            <input className="form-input" required placeholder={t('cnpj.iePlaceholder')}
               value={cnpjForm.ie} disabled={busy} maxLength={30}
               onChange={e => setCnpjForm({ ...cnpjForm, ie: e.target.value.toUpperCase() })} />
           </div>
           <div className="form-row">
-            <label>Razão Social 法定公司名称</label>
-            <input className="form-input" required placeholder="发票抬头"
+            <label>{t('cnpj.companyLabel')}</label>
+            <input className="form-input" required placeholder={t('cnpj.companyPlaceholder')}
               value={cnpjForm.company_name} disabled={busy} maxLength={120}
               onChange={e => setCnpjForm({ ...cnpjForm, company_name: e.target.value })} />
           </div>
@@ -204,16 +206,16 @@ export default function CnpjManager() {
               onChange={e => setCnpjForm({ ...cnpjForm, nome_fantasia: e.target.value })} />
           </div>
           <div className="form-row">
-            <label>Situação Cadastral 登记状态</label>
+            <label>{t('cnpj.statusLabel')}</label>
             <input className="form-input" value={cnpjForm.situacao_cadastral} disabled={busy} maxLength={80}
               onChange={e => setCnpjForm({ ...cnpjForm, situacao_cadastral: e.target.value })} />
           </div>
           <div className="form-row cnpj-field-wide">
             <label>Logradouro / Número</label>
             <div className="cnpj-address-pair">
-              <input className="form-input" placeholder="街道" value={cnpjForm.endereco.logradouro} disabled={busy}
+              <input className="form-input" placeholder={t('cnpj.street')} value={cnpjForm.endereco.logradouro} disabled={busy}
                 onChange={e => updateAddress('logradouro', e.target.value)} />
-              <input className="form-input" placeholder="门牌号" value={cnpjForm.endereco.numero} disabled={busy}
+              <input className="form-input" placeholder={t('cnpj.number')} value={cnpjForm.endereco.numero} disabled={busy}
                 onChange={e => updateAddress('numero', e.target.value)} />
             </div>
           </div>
@@ -243,7 +245,7 @@ export default function CnpjManager() {
           </div>
         </div>
         <button className="btn" disabled={busy || !cnpjForm.cnpj || !cnpjForm.ie || !cnpjForm.company_name}>
-          {cnpjBusy ? '保存中…' : '保存开票资料'}
+          {cnpjBusy ? t('cnpj.saving') : t('cnpj.save')}
         </button>
       </form>
 
@@ -256,20 +258,20 @@ export default function CnpjManager() {
             <div className="cnpj-row" key={c.id}>
               <div className="cnpj-row-main">
                 <div className="text-sm" style={{ fontWeight: 600 }}>{c.company_name}</div>
-                <div className="muted text-sm cnpj-mono">CNPJ: {c.cnpj} · IE: {c.ie || '未登记'}</div>
+                <div className="muted text-sm cnpj-mono">CNPJ: {c.cnpj} · IE: {c.ie || t('cnpj.notRegistered')}</div>
                 {c.nome_fantasia && <div className="muted text-sm">Nome Fantasia: {c.nome_fantasia}</div>}
-                {c.situacao_cadastral && <div className="muted text-sm">登记状态: {c.situacao_cadastral}</div>}
-                {formatAddress(c.endereco) && <div className="muted text-sm">地址: {formatAddress(c.endereco)}</div>}
-                {c.queried_at && <div className="muted text-sm">OpenCNPJ 查询时间: {c.queried_at.slice(0, 19).replace('T', ' ')}</div>}
+                {c.situacao_cadastral && <div className="muted text-sm">{t('cnpj.registryStatus')}: {c.situacao_cadastral}</div>}
+                {formatAddress(c.endereco) && <div className="muted text-sm">{t('cnpj.address')}: {formatAddress(c.endereco)}</div>}
+                {c.queried_at && <div className="muted text-sm">{t('cnpj.queriedAt')}: {c.queried_at.slice(0, 19).replace('T', ' ')}</div>}
               </div>
               <div className="cnpj-row-actions">
                 {c.is_default
-                  ? <span className="deal-tag deal-default">默认</span>
-                  : <span className="deal-tag deal-open">备用</span>}
+                  ? <span className="deal-tag deal-default">{t('cnpj.default')}</span>
+                  : <span className="deal-tag deal-open">{t('cnpj.alternative')}</span>}
                 {!c.is_default && (
-                  <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => doCnpjDefault(c.id)}>设为默认</button>
+                  <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => doCnpjDefault(c.id)}>{t('cnpj.setDefault')}</button>
                 )}
-                <button className="btn btn-sm btn-ghost" disabled={busy} title="删除" onClick={() => doCnpjDel(c.id)}>✕</button>
+                <button className="btn btn-sm btn-ghost" disabled={busy} title={t('cnpj.delete')} onClick={() => doCnpjDel(c.id)}>✕</button>
               </div>
             </div>
           ))}
@@ -277,7 +279,7 @@ export default function CnpjManager() {
       )}
       {cnpjs.length === 0 && (
         <p className="muted text-sm" style={{ margin: '16px 0 0' }}>
-          暂无开票资料。保存后可在已生成参考价的订单中选择开票抬头，删除资料不会影响已绑定订单的快照。
+          {t('cnpj.empty')}
         </p>
       )}
     </div>

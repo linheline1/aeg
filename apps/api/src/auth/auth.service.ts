@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import * as path from 'path';
 import { assertValidPassword } from '../common/password-policy';
 import { AuditRepo, ClientRepo, repoRoot } from '../common/mock-db';

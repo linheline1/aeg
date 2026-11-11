@@ -5,7 +5,7 @@
  */
 import 'reflect-metadata';
 import '../common/load-env';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';

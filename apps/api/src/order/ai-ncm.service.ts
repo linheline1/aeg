@@ -55,7 +55,12 @@ export class AiNcmService {
       const detail = (await response.text()).slice(0, 500);
       throw new BadGatewayException(`A IA de NCM retornou HTTP ${response.status}: ${detail}`);
     }
-    const payload: any = await response.json();
+    let payload: any;
+    try {
+      payload = await response.json();
+    } catch (e: any) {
+      throw new BadGatewayException(`A resposta da IA de NCM não pôde ser lida (tempo limite de ${Math.round(timeoutMs / 1000)}s?): ${e?.message || e}`);
+    }
     const content = payload.choices?.[0]?.message?.content;
     if (!content) throw new BadGatewayException('A IA não retornou uma análise de NCM');
     let parsed: any;
@@ -122,7 +127,12 @@ export class AiNcmService {
       const detail = (await response.text()).slice(0, 500);
       throw new BadGatewayException(`A IA de tradução retornou HTTP ${response.status}: ${detail}`);
     }
-    const payload: any = await response.json();
+    let payload: any;
+    try {
+      payload = await response.json();
+    } catch (e: any) {
+      throw new BadGatewayException(`A resposta da IA de tradução não pôde ser lida (tempo limite de ${Math.round(timeoutMs / 1000)}s?): ${e?.message || e}`);
+    }
     const content = payload.choices?.[0]?.message?.content;
     if (!content) throw new BadGatewayException('A IA não retornou as traduções dos produtos');
     let parsed: any;
