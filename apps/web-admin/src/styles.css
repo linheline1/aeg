@@ -675,3 +675,6 @@ code { border-radius: 0; }
 .login-card button.btn { background: var(--gold-hi); color: #241b00; font-weight: 700; box-shadow: 3px 3px 0 rgba(36, 27, 0, .28); }
 .login-card button.btn:hover:not(:disabled) { background: #102e53; color: var(--gold-hi); box-shadow: 3px 3px 0 rgba(16, 46, 83, .22); }
 .login-card button.btn:active:not(:disabled) { transform: none; }
+.login-page .remember-password { display: flex; align-items: center; gap: 9px; margin: 2px 0 14px; font-size: 13px; cursor: pointer; }
+.login-page .remember-password input { width: 18px; height: 18px; margin: 0; accent-color: #2563eb; }
+.login-page .remember-password input:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }

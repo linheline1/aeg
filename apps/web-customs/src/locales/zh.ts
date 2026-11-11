@@ -21,6 +21,7 @@ export default {
   'login.feature': '集中数据与历史版本',
   'login.username': '账号',
   'login.password': '密码',
+  'login.rememberPassword': '记住密码（由浏览器保存）',
   'login.busy': '登录中…',
   'login.submit': '进入门户',
   'login.invalid': '请输入账号和密码',

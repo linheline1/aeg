@@ -19,6 +19,7 @@ export default {
   'login.feature': 'Dados centralizados e histórico de revisões',
   'login.username': 'Usuário',
   'login.password': 'Senha',
+  'login.rememberPassword': 'Lembrar senha (salva pelo navegador)',
   'login.busy': 'Entrando…',
   'login.submit': 'Acessar portal',
   'login.invalid': 'Informe o usuário e a senha para continuar.',

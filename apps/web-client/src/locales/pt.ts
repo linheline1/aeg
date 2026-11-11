@@ -8,6 +8,7 @@ export default {
   'login.username': 'Usuário',
   'login.usernamePlaceholder': 'Digite seu usuário',
   'login.password': 'Senha',
+  'login.rememberPassword': 'Lembrar senha (salva pelo navegador)',
   'login.passwordPlaceholder': 'Digite sua senha',
   'login.submit': 'ENTRAR',
   'login.failed': 'Falha no login',

@@ -570,3 +570,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .user-avatar { color: #102e53; }
 .readonly-note { color: #102e53; background: #e9eff7; }
 .timeline-dot { box-shadow: 0 0 0 2px var(--border); }
+.login-page .remember-password { display: flex; align-items: center; gap: 9px; margin: 2px 0 14px; font-size: 13px; cursor: pointer; }
+.login-page .remember-password input { width: 18px; height: 18px; margin: 0; accent-color: #2563eb; }
+.login-page .remember-password input:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }

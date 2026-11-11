@@ -10,6 +10,7 @@ export default {
   'login.username': '账号',
   'login.usernamePlaceholder': '请输入账号',
   'login.password': '密码',
+  'login.rememberPassword': '记住密码（由浏览器保存）',
   'login.passwordPlaceholder': '请输入密码',
   'login.submit': '登 录',
   'login.failed': '登录失败',
