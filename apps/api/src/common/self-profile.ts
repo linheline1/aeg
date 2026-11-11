@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { assertValidPassword } from './password-policy';
 import { AuditRepo, UserRepo } from './mock-db';
 

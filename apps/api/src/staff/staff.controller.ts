@@ -2,7 +2,7 @@ import {
   Body, Controller, Get, Post, Patch, Param, Inject, UseGuards, Req, HttpCode,
   BadRequestException, NotFoundException, ConflictException
 } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { assertValidPassword } from '../common/password-policy';
 import { QuotesRepo, ClientRepo, AuditRepo } from '../common/mock-db';

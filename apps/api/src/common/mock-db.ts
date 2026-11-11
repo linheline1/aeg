@@ -427,7 +427,7 @@ function uid() {
 }
 
 // === seed ===
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { HELP_ARTICLE_SEED } from './help-seed';
 
 export async function seedIfEmpty() {
