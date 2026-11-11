@@ -11,6 +11,7 @@ import Finance from './pages/Finance';
 import Help from './pages/Help';
 import Products from './pages/Products';
 import Profile from './pages/Profile';
+import MyClients from './pages/MyClients';
 import { useAuth } from './store/auth';
 
 /** 无权访问提示页（顶层路由，避免守卫重定向死循环） */
@@ -62,6 +63,7 @@ export default function App() {
           }
         />
         <Route path="deals" element={<Deals />} />
+        <Route path="clients" element={<RequireAuth allowedRole={['sales']}><MyClients /></RequireAuth>} />
         <Route
           path="rates"
           element={

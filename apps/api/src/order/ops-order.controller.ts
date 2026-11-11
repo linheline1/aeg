@@ -128,6 +128,35 @@ export class OpsOrderController {
       .map((c: any) => ({ id: c.id, name: c.name, china_company_name: c.china_company_name || null }));
   }
 
+  /** 业务员名下客户与本人可跟进的报价概况，不返回其他业务员客户资料。 */
+  @Get('clients/mine')
+  @Roles('sales')
+  async myClients(@Req() req: Request & { user?: any }) {
+    const me = req.user.sub;
+    const clients = (await this.clientRepo.findAll()).filter((c: any) => c.salesperson_id === me);
+    const clientIds = new Set(clients.map((c: any) => c.id));
+    const [users, quotes] = await Promise.all([this.userRepo.findAll(), this.quotesRepo.find()]);
+    const accounts = new Map(users.filter((u: any) => u.role === 'client' && clientIds.has(u.client_id)).map((u: any) => [u.client_id, u]));
+    return clients.map((c: any) => {
+      const own = quotes.filter((q: any) => q.client_id === c.id && (q.salesperson_id || c.salesperson_id) === me);
+      const latest = own.reduce((date: string | null, q: any) => !date || q.created_at > date ? q.created_at : date, null);
+      const account: any = accounts.get(c.id);
+      return {
+        id: c.id,
+        name: c.name,
+        china_company_name: c.china_company_name || null,
+        status: c.status,
+        verification_status: c.verification_status || 'pending',
+        username: account?.username || null,
+        user_status: account?.status || null,
+        quote_count: own.length,
+        open_count: own.filter((q: any) => q.status === 'done' && !['won', 'lost'].includes(q.deal_status)).length,
+        last_quote_at: latest,
+        created_at: c.created_at
+      };
+    }).sort((a: any, b: any) => a.name.localeCompare(b.name));
+  }
+
   /** 订单详情（含 line_items + pricing_breakdown）—— 报价员/管理员专用 */
   @Get(':id')
   @Roles('operator', 'admin')

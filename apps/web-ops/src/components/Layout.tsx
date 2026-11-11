@@ -118,6 +118,7 @@ export default function Layout() {
         <nav className="nav" aria-label={t('sidebar.opsNav')}>
           <NavLink to="/orders">{isSales ? t('nav.ordersSales') : t('nav.orders')}</NavLink>
           <NavLink to="/deals">{t('nav.deals')}</NavLink>
+          {isSales && <NavLink to="/clients">{t('nav.myClients')}</NavLink>}
           {!isSales && <NavLink to="/products">{t('nav.products')}</NavLink>}
           {!isSales && <NavLink to="/rates">{t('nav.rates')}</NavLink>}
           <NavLink to="/finance">{t('nav.finance')}</NavLink>
