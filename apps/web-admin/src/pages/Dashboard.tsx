@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+
 import { api } from '../store/auth';
 
 interface Stats {
@@ -18,7 +18,6 @@ export default function Dashboard() {
   useEffect(() => {
     api.get('/api/admin/stats')
       .then(r => setStats(r.data))
-      .catch(e => setErr(e?.response?.data?.message || e?.message || t('dashboard.fail')));
   }, []);
 
   if (err) {

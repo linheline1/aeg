@@ -1,8 +1,9 @@
+import { useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../store/auth';
 import type { Role } from '@aeg/shared-types';
 
-/** 路由守卫：未登录去登录页；已登录但角色不符去 /403（避免重定向死循环） */
+/** 路由守卫：未登录回登录页；角色不符则退出本端会话后回登录页（避免 403 死循环） */
 export default function RequireAuth({
   children,
   allowedRole
@@ -10,15 +11,17 @@ export default function RequireAuth({
   children: React.ReactNode;
   allowedRole: Role | Role[];
 }) {
-  const { token, user } = useAuth();
+  const { token, user, logout } = useAuth();
   const loc = useLocation();
-
-  if (!token || !user) {
-    return <Navigate to="/login" state={{ from: loc }} replace />;
-  }
   const roles: Role[] = Array.isArray(allowedRole) ? allowedRole : [allowedRole];
-  if (!roles.includes(user.role)) {
-    return <Navigate to="/403" replace />;
+  const roleMismatch = Boolean(token && user && !roles.includes(user.role));
+
+  useEffect(() => {
+    if (roleMismatch) logout();
+  }, [roleMismatch, logout]);
+
+  if (!token || !user || roleMismatch) {
+    return <Navigate to="/login" state={{ from: loc }} replace />;
   }
   return <>{children}</>;
 }

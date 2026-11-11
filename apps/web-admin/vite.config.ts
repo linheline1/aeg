@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath, URL } from 'node:url';
 
 // 子域名部署与本地开发均使用根路径；如需路径托管再设置 BASE_PATH
 const basePath = process.env.BASE_PATH || '/';

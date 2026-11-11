@@ -9,6 +9,17 @@ import { UploadDraftsRepo } from './upload-draft.repository';
 import { AiNcmService } from '../order/ai-ncm.service';
 import { calculateDi } from '../order/di-calculation';
 import { calculateDdpPricing } from './ddp-pricing';
+import { pendingCustomsReview } from '../order/customs-review';
+
+type DdpFees = {
+  ocean_freight_usd: number;
+  port_fee_usd: number;
+  fx_rate: number;
+  sales_tax_rate: number;
+  sales_markup_rate: number;
+  profit_brl: number;
+};
+type DdpPricing = ReturnType<typeof calculateDdpPricing>;
 
 /**
  * 修复 multer/busboy 按 latin1 误解码的 UTF-8 中文文件名（mojibake），并清理文件系统非法字符。
@@ -132,6 +143,71 @@ export class QuoteService {
     return this.feeRatesRepo.resolve(clientId);
   }
 
+  private buildDdpPricing(di: any, fees: DdpFees, diReviewVersion?: number | null): DdpPricing {
+    const merchandiseBrl = Number(di.totals.merchandise_brl)
+      || (di.items || []).reduce((sum: number, item: any) => sum + (Number(item.merchandise_brl) || 0), 0);
+    return calculateDdpPricing({
+      oceanFreightUsd: fees.ocean_freight_usd,
+      portFeeUsd: fees.port_fee_usd,
+      fxRate: fees.fx_rate,
+      merchandiseBrl,
+      diBrl: Number(di.totals.di_brl),
+      salesMarkupRate: fees.sales_markup_rate,
+      salesTaxRate: fees.sales_tax_rate,
+      profitBrl: fees.profit_brl,
+      diReviewVersion: diReviewVersion === undefined
+        ? (di.status === 'reviewed' ? di.review_version : null)
+        : diReviewVersion
+    });
+  }
+
+  private resolveDdpFees(rates: DdpFees, previous: any, overrides: Partial<DdpFees> = {}): DdpFees {
+    const previousFx = Number(previous?.fx_rate);
+    const fxRate = overrides.fx_rate ?? (previousFx > 0 ? previousFx : rates.fx_rate);
+    const savedAmount = (value: any) => Number.isFinite(Number(value)) ? Number(value) : null;
+    const savedFx = previousFx > 0 ? previousFx : fxRate;
+    const previousOcean = savedAmount(previous?.ocean_freight_brl);
+    const previousPort = savedAmount(previous?.port_fee_brl);
+    return {
+      ocean_freight_usd: overrides.ocean_freight_usd ?? (previousOcean != null ? previousOcean / savedFx : rates.ocean_freight_usd),
+      port_fee_usd: overrides.port_fee_usd ?? (previousPort != null ? previousPort / savedFx : rates.port_fee_usd),
+      fx_rate: fxRate,
+      sales_tax_rate: overrides.sales_tax_rate ?? savedAmount(previous?.sales_tax_rate) ?? rates.sales_tax_rate,
+      sales_markup_rate: overrides.sales_markup_rate ?? savedAmount(previous?.sales_markup_rate) ?? rates.sales_markup_rate,
+      profit_brl: overrides.profit_brl ?? savedAmount(previous?.profit_brl) ?? rates.profit_brl
+    };
+  }
+
+  private async persistDdpPricing(quoteId: string, pricing: DdpPricing) {
+    const updated = await this.quotesRepo.update(quoteId, {
+      pricing_breakdown: pricing.breakdown,
+      total_amount_brl: pricing.brl,
+      total_amount_usd: pricing.usd,
+      status: 'done',
+      error_message: null
+    });
+    return {
+      ok: true,
+      quote_no: updated?.quote_no,
+      total_amount_brl: updated?.total_amount_brl,
+      total_amount_usd: updated?.total_amount_usd,
+      pricing_breakdown: pricing.breakdown,
+      price_is_reference: true
+    };
+  }
+
+  private ddpAuditValues(pricing: DdpPricing) {
+    return {
+      merchandise_brl: pricing.breakdown.merchandise_brl,
+      di_brl: pricing.breakdown.di_brl,
+      sales_markup_brl: pricing.breakdown.sales_markup_brl,
+      tax_base_brl: pricing.breakdown.tax_base_brl,
+      sales_tax_brl: pricing.breakdown.sales_tax_brl,
+      profit_brl: pricing.breakdown.profit_brl,
+      total_brl: pricing.brl
+    };
+  }
+
   /**
    * 运营端参考 DDP 计算。已有 DI 即可生成参考价，报关行批准仅限制最终成交。
    * 费率来源：客户覆盖 > 全局默认，overrides 仅作单次微调。
@@ -155,60 +231,23 @@ export class QuoteService {
     if (!Number.isFinite(Number(di?.totals?.di_brl))) {
       throw new BadRequestException('请先完成 AI NCM / DI 核算，再生成参考 DDP');
     }
-    const merchandiseBrl = Number(di.totals.merchandise_brl)
-      || (di.items || []).reduce((sum: number, item: any) => sum + (Number(item.merchandise_brl) || 0), 0);
-
     const resolved = await this.resolveRates(order.client_id);
-    const fees = {
-      ocean_freight_usd: overrides?.ocean_freight_usd ?? resolved.rates.ocean_freight_usd,
-      port_fee_usd: overrides?.port_fee_usd ?? resolved.rates.port_fee_usd,
-      fx_rate: overrides?.fx_rate ?? resolved.rates.fx_rate,
-      sales_tax_rate: overrides?.sales_tax_rate ?? resolved.rates.sales_tax_rate,
-      sales_markup_rate: overrides?.sales_markup_rate ?? resolved.rates.sales_markup_rate,
-      profit_brl: overrides?.profit_brl ?? resolved.rates.profit_brl
-    };
-    const pricing = calculateDdpPricing({
-      oceanFreightUsd: fees.ocean_freight_usd,
-      portFeeUsd: fees.port_fee_usd,
-      fxRate: fees.fx_rate,
-      merchandiseBrl,
-      diBrl: Number(di.totals.di_brl),
-      salesMarkupRate: fees.sales_markup_rate,
-      salesTaxRate: fees.sales_tax_rate,
-      profitBrl: fees.profit_brl,
-      diReviewVersion: di.status === 'reviewed' ? di.review_version : null
-    });
+    const fees = this.resolveDdpFees(resolved.rates, null, overrides);
+    const pricing = this.buildDdpPricing(di, fees);
 
     await this.quotesRepo.update(quoteId, { status: 'computing', error_message: null });
     try {
-      const updated = await this.quotesRepo.update(quoteId, {
-        pricing_breakdown: pricing.breakdown,
-        total_amount_brl: pricing.brl,
-        total_amount_usd: pricing.usd,
-        status: 'done',
-        error_message: null
-      });
+      const result = await this.persistDdpPricing(quoteId, pricing);
       await this.auditRepo.entry({
         actor_username: actor.username, actor_role: actor.role,
         action: 'order.compute', target_type: 'quote', target_id: quoteId,
         detail: {
           quote_no: order.quote_no, rate_source: resolved.source, fees,
-          merchandise_brl: pricing.breakdown.merchandise_brl,
-          di_brl: pricing.breakdown.di_brl,
-          sales_markup_brl: pricing.breakdown.sales_markup_brl,
-          tax_base_brl: pricing.breakdown.tax_base_brl,
-          sales_tax_brl: pricing.breakdown.sales_tax_brl,
-          profit_brl: pricing.breakdown.profit_brl, total_brl: pricing.brl,
+          ...this.ddpAuditValues(pricing),
           di_review_version: pricing.breakdown.di_review_version, is_reference: true
         }
       });
-      return {
-        ok: true, quote_no: updated?.quote_no,
-        total_amount_brl: updated?.total_amount_brl,
-        total_amount_usd: updated?.total_amount_usd,
-        pricing_breakdown: pricing.breakdown,
-        price_is_reference: true
-      };
+      return result;
     } catch (e: any) {
       await this.quotesRepo.update(quoteId, { status: 'failed', error_message: e?.message || '计算失败' });
       await this.auditRepo.entry({
@@ -227,10 +266,7 @@ export class QuoteService {
       if (!order) throw new NotFoundException('订单不存在');
       await this.quotesRepo.update(quoteId, {
         di_analysis: { status: 'analyzing', stage: 'ncm', progress: 15, auto: true, started_at: startedAt },
-        customs_review: {
-          status: 'pending', di_review_version: null, total_di_brl: null,
-          note: null, reviewed_by: null, reviewed_at: null
-        }
+        customs_review: pendingCustomsReview()
       } as any);
       const suggestions = await this.aiNcm.suggest(order);
       await this.quotesRepo.update(quoteId, {
@@ -278,47 +314,18 @@ export class QuoteService {
     }
     if (di.status !== 'reviewed') throw new BadRequestException('请先复核 DI 再生成参考 DDP');
     const resolved = await this.resolveRates(order.client_id);
-    const merchandiseBrl = Number(di.totals.merchandise_brl)
-      || (di.items || []).reduce((sum: number, item: any) => sum + (Number(item.merchandise_brl) || 0), 0);
-    const pricing = calculateDdpPricing({
-      oceanFreightUsd: resolved.rates.ocean_freight_usd,
-      portFeeUsd: resolved.rates.port_fee_usd,
-      fxRate: resolved.rates.fx_rate,
-      merchandiseBrl,
-      diBrl: Number(di.totals.di_brl),
-      salesMarkupRate: resolved.rates.sales_markup_rate,
-      salesTaxRate: resolved.rates.sales_tax_rate,
-      profitBrl: resolved.rates.profit_brl,
-      diReviewVersion: di.review_version
-    });
-    const updated = await this.quotesRepo.update(quoteId, {
-      pricing_breakdown: pricing.breakdown,
-      total_amount_brl: pricing.brl,
-      total_amount_usd: pricing.usd,
-      status: 'done',
-      error_message: null
-    });
+    const pricing = this.buildDdpPricing(di, resolved.rates, di.review_version);
+    const result = await this.persistDdpPricing(quoteId, pricing);
     await this.auditRepo.entry({
       actor_username: actor.username, actor_role: actor.role,
       action: 'order.compute', target_type: 'quote', target_id: quoteId,
       detail: {
         quote_no: order.quote_no, rate_source: resolved.source,
-        merchandise_brl: pricing.breakdown.merchandise_brl,
-        di_brl: pricing.breakdown.di_brl,
-        sales_markup_brl: pricing.breakdown.sales_markup_brl,
-        tax_base_brl: pricing.breakdown.tax_base_brl,
-        sales_tax_brl: pricing.breakdown.sales_tax_brl,
-        profit_brl: pricing.breakdown.profit_brl, total_brl: pricing.brl,
+        ...this.ddpAuditValues(pricing),
         di_review_version: pricing.breakdown.di_review_version, is_reference: true, mode: 'ai-di'
       }
     });
-    return {
-      ok: true, quote_no: updated?.quote_no,
-      total_amount_brl: updated?.total_amount_brl,
-      total_amount_usd: updated?.total_amount_usd,
-      pricing_breakdown: pricing.breakdown,
-      price_is_reference: true
-    };
+    return result;
   }
 
   async adjustLineItemPrice(
@@ -340,7 +347,7 @@ export class QuoteService {
     const beforePrice = Number(item.unit_price);
     const totalPcs = Number(item.total_pcs);
     if (!Number.isFinite(beforePrice) || beforePrice <= 0) {
-      throw new BadRequestException('该行尚无有效单价，不能按百分比调整');
+      throw new BadRequestException('该行尚无有效单价，不能按百分比计价');
     }
     if (!Number.isFinite(totalPcs) || totalPcs <= 0) {
       throw new BadRequestException('该行数量无效，不能计算总价');
@@ -349,8 +356,6 @@ export class QuoteService {
       throw new BadRequestException('请先补齐所有产品的有效单价，再计算 DI 和参考 DDP');
     }
 
-    // 按百分比计价：新单价 = 原始单价 × percent%（始终基于首次记录的原价，便于反复调整比例）
-    // 例：原价 ¥35 按 30% 计价 → ¥10.5，行总价 = ¥10.5 × 总件数
     const basePrice = Number(item.base_unit_price) > 0 ? Number(item.base_unit_price) : beforePrice;
     const nextPrice = Math.round(basePrice * percent / 100 * 1_000_000) / 1_000_000;
     if (!Number.isFinite(nextPrice) || nextPrice <= 0) {
@@ -361,23 +366,36 @@ export class QuoteService {
     item.total_price = Math.round(nextPrice * totalPcs * 100) / 100;
     const totalAmountRmb = Math.round(lineItems.reduce((sum: number, row: any) => sum + (Number(row.total_price) || 0), 0) * 100) / 100;
     const updatedOrder = { ...order, line_items: lineItems, total_amount_rmb: totalAmountRmb };
-    const hasDi = order.di_analysis?.parameters && Array.isArray(order.di_analysis?.items) && order.di_analysis.items.length > 0;
+    const hasDi = Number.isFinite(Number(order.di_analysis?.totals?.di_brl))
+      && order.di_analysis?.parameters
+      && Array.isArray(order.di_analysis?.items)
+      && order.di_analysis.items.length > 0;
     const diAnalysis = hasDi
       ? calculateDi(updatedOrder, order.di_analysis.items, order.di_analysis.parameters, order.di_analysis.additional_fees || [])
       : null;
+    let pricing: DdpPricing | null = null;
+    if (diAnalysis) {
+      const resolved = await this.resolveRates(order.client_id);
+      const fees = this.resolveDdpFees(resolved.rates, order.pricing_breakdown);
+      pricing = this.buildDdpPricing(diAnalysis, fees);
+    }
 
     await this.quotesRepo.update(quoteId, {
       line_items: lineItems,
       total_amount_rmb: totalAmountRmb,
       di_analysis: diAnalysis,
-      customs_review: {
-        status: 'pending', di_review_version: null,
-        total_di_brl: diAnalysis?.totals?.di_brl ?? null,
-        note: null, reviewed_by: null, reviewed_at: null
-      },
-      ...(hasDi ? {} : { status: 'uploaded', pricing_breakdown: null, total_amount_brl: null, total_amount_usd: null })
+      customs_review: pendingCustomsReview(diAnalysis?.totals?.di_brl ?? null),
+      ...(pricing ? {
+        pricing_breakdown: pricing.breakdown,
+        total_amount_brl: pricing.brl,
+        total_amount_usd: pricing.usd,
+        status: 'done',
+        error_message: null
+      } : {
+        status: 'uploaded', pricing_breakdown: null,
+        total_amount_brl: null, total_amount_usd: null
+      })
     } as any);
-    const result = hasDi ? await this.recomputeBreakdown(quoteId, actor, {}) : { ok: true };
     await this.auditRepo.entry({
       actor_username: actor.username, actor_role: actor.role,
       action: 'order.line_item.price', target_type: 'quote', target_id: quoteId,
@@ -386,10 +404,23 @@ export class QuoteService {
         base_unit_price: basePrice, before_unit_price: beforePrice, after_unit_price: nextPrice,
         total_amount_rmb: totalAmountRmb,
         di_brl: diAnalysis?.totals?.di_brl ?? null,
-        total_ddp_brl: (result as any).total_amount_brl ?? null
+        total_ddp_brl: pricing?.brl ?? null
       }
     });
-    return { ...result, row_no: rowNo, percent, unit_price: nextPrice, total_price: item.total_price };
+    return {
+      ok: true,
+      quote_no: order.quote_no,
+      total_amount_rmb: totalAmountRmb,
+      total_amount_brl: pricing?.brl ?? null,
+      total_amount_usd: pricing?.usd ?? null,
+      pricing_breakdown: pricing?.breakdown ?? null,
+      price_is_reference: true,
+      row_no: rowNo,
+      percent,
+      base_unit_price: basePrice,
+      unit_price: nextPrice,
+      total_price: item.total_price
+    };
   }
 
   /**
@@ -433,42 +464,9 @@ export class QuoteService {
       fx: previous.fx_rate,
       total: previous.total
     } : null;
-
-    const salesTaxRate = overrides.sales_tax_rate
-      ?? (Number.isFinite(Number(previous.sales_tax_rate)) ? Number(previous.sales_tax_rate) : resolved.rates.sales_tax_rate);
-    const profitBrl = overrides.profit_brl
-      ?? (Number.isFinite(Number(previous.profit_brl)) ? Number(previous.profit_brl) : resolved.rates.profit_brl);
-    const salesMarkupRate = overrides.sales_markup_rate
-      ?? (Number.isFinite(Number(previous.sales_markup_rate)) ? Number(previous.sales_markup_rate) : resolved.rates.sales_markup_rate);
-    const merchandiseBrl = Number(di.totals.merchandise_brl)
-      || (di.items || []).reduce((sum: number, item: any) => sum + (Number(item.merchandise_brl) || 0), 0);
-    const fees = {
-      ocean_freight_usd: overrides.ocean_freight_usd ?? resolved.rates.ocean_freight_usd,
-      port_fee_usd: overrides.port_fee_usd ?? resolved.rates.port_fee_usd,
-      fx_rate: overrides.fx_rate ?? resolved.rates.fx_rate,
-      sales_tax_rate: salesTaxRate,
-      sales_markup_rate: salesMarkupRate,
-      profit_brl: profitBrl
-    };
-    const pricing = calculateDdpPricing({
-      oceanFreightUsd: fees.ocean_freight_usd,
-      portFeeUsd: fees.port_fee_usd,
-      fxRate: fees.fx_rate,
-      merchandiseBrl,
-      diBrl: Number(di.totals.di_brl),
-      salesMarkupRate: fees.sales_markup_rate,
-      salesTaxRate: fees.sales_tax_rate,
-      profitBrl: fees.profit_brl,
-      diReviewVersion: previous.di_review_version ?? (di.status === 'reviewed' ? di.review_version : null)
-    });
-
-    const updated = await this.quotesRepo.update(quoteId, {
-      pricing_breakdown: pricing.breakdown,
-      total_amount_brl: pricing.brl,
-      total_amount_usd: pricing.usd,
-      status: 'done',
-      error_message: null
-    });
+    const fees = this.resolveDdpFees(resolved.rates, previous, overrides);
+    const pricing = this.buildDdpPricing(di, fees);
+    const result = await this.persistDdpPricing(quoteId, pricing);
 
     await this.auditRepo.entry({
       actor_username: actor.username, actor_role: actor.role,
@@ -476,25 +474,11 @@ export class QuoteService {
       detail: {
         quote_no: order.quote_no, before,
         after: {
-          fees, merchandise_brl: pricing.breakdown.merchandise_brl,
-          di_brl: pricing.breakdown.di_brl,
-          sales_markup_brl: pricing.breakdown.sales_markup_brl,
-          tax_base_brl: pricing.breakdown.tax_base_brl,
-          sales_tax_brl: pricing.breakdown.sales_tax_brl,
-          profit_brl: pricing.breakdown.profit_brl,
-          total: pricing.brl, is_reference: true
+          fees, ...this.ddpAuditValues(pricing), total: pricing.brl, is_reference: true
         }
       }
     });
-
-    return {
-      ok: true,
-      quote_no: updated?.quote_no,
-      total_amount_brl: updated?.total_amount_brl,
-      total_amount_usd: updated?.total_amount_usd,
-      pricing_breakdown: pricing.breakdown,
-      price_is_reference: true
-    };
+    return result;
   }
 
   private async parseWorkbook(filePath: string, templateVersion: string): Promise<any> {
