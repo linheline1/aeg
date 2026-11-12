@@ -10,6 +10,9 @@ import * as crypto from 'crypto';
 export interface UserRow {
   id: string;
   username: string;
+  avatar_data?: string | null;
+  sales_phone?: string | null;
+  sales_wechat?: string | null;
   password_hash: string;
   role: 'admin' | 'operator' | 'sales' | 'customs' | 'client';
   client_id?: string;

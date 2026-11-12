@@ -10,6 +10,9 @@ export async function getSelfProfile(userRepo: UserRepo, userId?: string) {
   return {
     id: user.id,
     username: user.username,
+    avatar_data: user.role === 'sales' ? user.avatar_data || null : null,
+    sales_phone: user.role === 'sales' ? user.sales_phone || null : null,
+    sales_wechat: user.role === 'sales' ? user.sales_wechat || null : null,
     role: user.role,
     status: user.status,
     created_at: user.created_at,

@@ -17,6 +17,15 @@ export class UserEntity {
   @Column({ type: 'varchar', length: 50 })
   username!: string;
 
+  @Column({ type: 'text', nullable: true })
+  avatar_data?: string | null;
+
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  sales_phone?: string | null;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  sales_wechat?: string | null;
+
   @Column({ type: 'varchar', length: 255 })
   password_hash!: string;
 
