@@ -1014,6 +1014,18 @@ export class ImageRepo {
     save(db);
     return Promise.resolve(full);
   }
+  /** 变更某订单明细截图的归属客户（报价转客户时调用），返回受影响张数 */
+  reassignClient(quoteId: string, clientId: string): Promise<number> {
+    const db = load();
+    let changed = 0;
+    db.client_images = (db.client_images || []).map(i => {
+      if (i.quote_id !== quoteId || i.client_id === clientId) return i;
+      changed += 1;
+      return { ...i, client_id: clientId };
+    });
+    if (changed) save(db);
+    return Promise.resolve(changed);
+  }
   /** 删除某订单全部图片（返回被删记录，便于清理物理文件） */
   deleteByQuote(quoteId: string): Promise<ClientImageRow[]> {
     const db = load();

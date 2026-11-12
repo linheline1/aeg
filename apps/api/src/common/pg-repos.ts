@@ -350,6 +350,11 @@ export class PgImageRepo {
     const saved = await this.repo.save(rows.map(r => this.repo.create(stripUndefined(r) as DeepPartial<ClientImageEntity>)));
     return saved.map(e => toRow(e) as ClientImageRow);
   }
+  /** 变更某订单明细截图的归属客户（报价转客户时调用），返回受影响张数 */
+  async reassignClient(quoteId: string, clientId: string): Promise<number> {
+    const res = await this.repo.update({ quote_id: quoteId }, { client_id: clientId });
+    return res.affected || 0;
+  }
 }
 
 /** PostgreSQL 版合作伙伴仓储：方法签名与 mock-db.ts PartnerRepo 保持一致 */

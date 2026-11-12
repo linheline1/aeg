@@ -123,11 +123,15 @@ export default function Orders() {
     }
   }, [isSales]);
 
+  // 客户下拉：运营/管理员用于转客户，业务员用于上传报价
   useEffect(() => {
-    if (!isSales) return;
     api.get('/api/ops/orders/clients/options')
       .then(r => setClients(r.data || []))
       .catch(e => setErr(getApiErrorMessage(e, t('orders.clientsLoadError'))));
+  }, []);
+
+  useEffect(() => {
+    if (!isSales) return;
     api.get('/api/client/template/current')
       .then(r => setTemplateUrl(r.data.download_url || ''))
       .catch(() => setTemplateUrl(''));
@@ -198,6 +202,26 @@ export default function Orders() {
       reload();
     } catch (e: any) {
       alert(getApiErrorMessage(e, t('orders.assignFailed')));
+      reload();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  /** 转客户：把该报价号转给另一个客户（归属业务员回到新客户默认业务员） */
+  const changeClient = async (o: OrderRow, nextClientId: string) => {
+    if (!nextClientId || nextClientId === o.client_id) return;
+    const target = clients.find(c => c.id === nextClientId);
+    if (!window.confirm(t('orders.clientChangeConfirm', {
+      quote: o.quote_no,
+      client: target?.name || nextClientId
+    }))) return;
+    setBusyId(o.id);
+    try {
+      await api.patch(`/api/ops/orders/${o.id}/client`, { client_id: nextClientId });
+      reload();
+    } catch (e: any) {
+      alert(getApiErrorMessage(e, t('orders.clientChangeFailed')));
       reload();
     } finally {
       setBusyId(null);
@@ -325,7 +349,6 @@ export default function Orders() {
                 <th>{t('orders.amountBrl')}</th>
                 <th>{t('orders.dealStatus')}</th>
                 {!isSales && <th>{t('orders.salesperson')}</th>}
-                <th>{t('orders.createdAt')}</th>
                 {!isSales && <th className="actions-col">{t('orders.actions')}</th>}
               </tr>
             </thead>
@@ -341,7 +364,7 @@ export default function Orders() {
                 return (
                   <tr key={o.id} className={busyId === o.id ? 'row-editing' : ''}>
                     <td data-label={t('orders.quoteNo')}>
-                      <div>
+                      <div className="text-nowrap">
                         {isSales ? (
                           <strong>{o.quote_no}</strong>
                         ) : (
@@ -366,8 +389,25 @@ export default function Orders() {
                           📎 {o.input_file_name || t('orders.originalFile')}
                         </a>
                       )}
+                      <div className="muted text-nowrap" style={{ fontSize: 11 }}>{o.created_at.slice(0, 16).replace('T', ' ')}</div>
                     </td>
-                    <td data-label={t('orders.client')} className="text-nowrap">{o.client_name}</td>
+                    <td data-label={t('orders.client')} className="text-nowrap">
+                      {isSales ? o.client_name : (
+                        <select
+                          className="form-input form-input-sm"
+                          style={{ width: 150 }}
+                          value={o.client_id}
+                          disabled={busyId === o.id}
+                          onChange={e => changeClient(o, e.target.value)}
+                          title={t('orders.clientChangeHint')}
+                        >
+                          {!clients.some(c => c.id === o.client_id) && (
+                            <option value={o.client_id}>{o.client_name}</option>
+                          )}
+                          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      )}
+                    </td>
                     <td data-label={t('orders.status')} className="text-nowrap"><span className={`status-${o.status}`}>{STATUS_KEYS[o.status] ? t(STATUS_KEYS[o.status]) : o.status}</span></td>
                     <td data-label={t('orders.customsReview')}>
                       {o.customs_review ? (
@@ -439,7 +479,6 @@ export default function Orders() {
                         </select>
                       </td>
                     )}
-                    <td data-label={t('orders.createdAt')} className="muted" style={{ fontSize: 12 }}>{o.created_at.slice(0, 16).replace('T', ' ')}</td>
                     {!isSales && (
                       <td data-label={t('orders.actions')} className="actions-col">
                         <div className="row-actions">

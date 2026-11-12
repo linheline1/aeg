@@ -19,7 +19,7 @@ const ACTION_TAG: Record<string, string> = {
   'rates.global.update': 'warn-bg', 'rates.client.set': 'warn-bg', 'rates.client.update': 'warn-bg', 'rates.client.remove': 'warn-bg',
   'order.compute': 'ok-bg', 'order.upload': '',
   'order.status': '', 'order.fees': '', 'order.compute_failed': 'err-bg',
-  'order.deal': 'ok-bg'
+  'order.deal': 'ok-bg', 'order.client': 'warn-bg'
 };
 
 function fmtDetail(a: string, detail: any, t: TFunction): string {
@@ -69,6 +69,12 @@ function fmtDetail(a: string, detail: any, t: TFunction): string {
       }
       case 'order.assign':
         return t('audit.detail.assignSales', { quote: detail.quote_no, name: detail.to_name || detail.to_salesperson_id || t('client.salesperson.unassigned') });
+      case 'order.client':
+        return t('audit.detail.clientTransfer', {
+          quote: detail.quote_no,
+          from: detail.from_client_name || detail.from_client_id || '—',
+          to: detail.to_client_name || detail.to_client_id || '—'
+        });
       case 'client.salesperson':
         return t('audit.detail.assignSales', { quote: detail.client_name, name: detail.to_name || detail.to_salesperson_id || t('client.salesperson.unassigned') });
       case 'image.upload': {

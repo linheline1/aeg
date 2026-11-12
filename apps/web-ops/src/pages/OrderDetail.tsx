@@ -127,6 +127,7 @@ export default function OrderDetail() {
   const [flash, setFlash] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [salespeople, setSalespeople] = useState<{ id: string; username: string; status: string }[]>([]);
+  const [clients, setClients] = useState<{ id: string; name: string; china_company_name: string | null }[]>([]);
   // M6：订单明细截图（客户上传的 Excel 截图）
   const [shots, setShots] = useState<any[]>([]);
   const [shotThumbs, setShotThumbs] = useState<Record<string, string>>({});
@@ -254,6 +255,7 @@ export default function OrderDetail() {
   }, [id]);
   useEffect(() => {
     api.get('/api/ops/salespeople').then(r => setSalespeople(r.data)).catch(() => {});
+    api.get('/api/ops/orders/clients/options').then(r => setClients(r.data || [])).catch(() => {});
   }, []);
 
   const flashMsg = (text: string) => { setFlash(text); setTimeout(() => setFlash(null), 3500); };
@@ -469,6 +471,25 @@ export default function OrderDetail() {
     try {
       await api.patch(`/api/ops/orders/${id}/assign`, { salesperson_id: salespersonId || null });
       flashMsg(t('orderDetail.salesUpdated'));
+      load();
+    } catch (e: any) {
+      setErr(getApiErrorMessage(e));
+      load();
+    } finally { setBusy(false); }
+  };
+
+  /** 转客户：把报价号转给另一个客户（归属业务员回到新客户默认，开票抬头快照清空） */
+  const handleChangeClient = async (clientId: string) => {
+    if (!d || !clientId || clientId === d.client_id) return;
+    const target = clients.find(c => c.id === clientId);
+    if (!window.confirm(t('orderDetail.clientChangeConfirm', {
+      quote: d.quote_no,
+      client: target?.name || clientId
+    }))) return;
+    setBusy(true); setErr(null);
+    try {
+      await api.patch(`/api/ops/orders/${id}/client`, { client_id: clientId });
+      flashMsg(t('orderDetail.clientChanged'));
       load();
     } catch (e: any) {
       setErr(getApiErrorMessage(e));
@@ -980,7 +1001,25 @@ export default function OrderDetail() {
           </div>
           <table className="table">
             <tbody>
-              <tr><th style={{ width: 140, textAlign: 'left' }}>{t('orderDetail.summary.client')}</th><td>{d.client_name || '—'} <code style={{ fontSize: 11 }}>{d.client_id}</code></td></tr>
+              <tr>
+                <th style={{ width: 140, textAlign: 'left' }}>{t('orderDetail.summary.client')}</th>
+                <td>
+                  <select
+                    className="form-input form-input-sm"
+                    style={{ width: 200 }}
+                    value={d.client_id}
+                    disabled={busy}
+                    onChange={e => handleChangeClient(e.target.value)}
+                    title={t('orderDetail.summary.clientChangeHint')}
+                  >
+                    {!clients.some(c => c.id === d.client_id) && (
+                      <option value={d.client_id}>{d.client_name || d.client_id}</option>
+                    )}
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <div className="muted" style={{ fontSize: 11, marginTop: 2 }}><code>{d.client_id}</code></div>
+                </td>
+              </tr>
               <tr>
                 <th style={{ textAlign: 'left' }}>{t('orderDetail.summary.salesperson')}</th>
                 <td>

@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
-import { AuditRepo, QuotesRepo, ClientRepo, UserRepo, repoRoot } from '../common/mock-db';
+import { AuditRepo, QuotesRepo, ClientRepo, UserRepo, ImageRepo, repoRoot } from '../common/mock-db';
 import { QuoteService } from '../upload/quote.service';
 import { assertCurrentCustomsApproval } from './customs-review';
 import * as crypto from 'crypto';
@@ -39,7 +39,8 @@ export class OpsOrderController {
     @Inject('QuotesRepo') private readonly quotesRepo: QuotesRepo,
     @Inject('AuditRepo') private readonly auditRepo: AuditRepo,
     @Inject('ClientRepo') private readonly clientRepo: ClientRepo,
-    @Inject('UserRepo') private readonly userRepo: UserRepo
+    @Inject('UserRepo') private readonly userRepo: UserRepo,
+    @Inject('ImageRepo') private readonly imageRepo: ImageRepo
   ) {}
 
   private actor(req: Request & { user?: any }) {
@@ -345,6 +346,60 @@ export class OpsOrderController {
       detail: { quote_no: order.quote_no, from_salesperson_id: fromOwner, to_salesperson_id: target, to_name: toName }
     });
     return { ok: true, id, salesperson_id: target, salesperson_name: toName };
+  }
+
+  /** 转客户：把该报价号转给另一个客户（归属业务员回到新客户默认，旧客户的开票抬头快照清空） */
+  @Patch(':id/client')
+  @Roles('operator', 'admin')
+  async changeClient(
+    @Param('id') id: string,
+    @Body() body: { client_id?: string },
+    @Req() req: Request & { user?: any }
+  ) {
+    const order: any = await this.quotesRepo.findById(id);
+    if (!order) throw new NotFoundException('订单不存在');
+    const targetId = String(body.client_id || '').trim();
+    if (!targetId) throw new BadRequestException('请选择要转给的客户');
+    if (targetId === order.client_id) {
+      return { ok: true, unchanged: true, id, client_id: targetId };
+    }
+    const target: any = await this.clientRepo.findOne({ where: { id: targetId } });
+    if (!target) throw new BadRequestException('指定的客户不存在');
+    if (target.status !== 'active') throw new BadRequestException('该客户已停用，不能承接报价');
+
+    const fromClient: any = await this.clientRepo.findOne({ where: { id: order.client_id } });
+    const fromOwner = order.salesperson_id || fromClient?.salesperson_id || null;
+
+    await this.quotesRepo.update(id, {
+      client_id: targetId,
+      salesperson_id: null, // 改派后回到新客户的默认业务员
+      invoice_cnpj: null // 旧客户的开票抬头不再适用
+    } as any);
+    await this.imageRepo.reassignClient(id, targetId);
+
+    const owner = target.salesperson_id || null;
+    let ownerName: string | null = null;
+    if (owner) {
+      const u: any = await this.userRepo.findOne({ where: { id: owner } });
+      ownerName = u?.username || null;
+    }
+
+    await this.auditRepo.entry({
+      actor_username: req.user?.username || 'system', actor_role: req.user?.role || 'system',
+      action: 'order.client', target_type: 'quote', target_id: id,
+      detail: {
+        quote_no: order.quote_no,
+        from_client_id: order.client_id, from_client_name: fromClient?.name || null,
+        to_client_id: targetId, to_client_name: target.name,
+        from_salesperson_id: fromOwner, to_salesperson_id: owner
+      }
+    });
+    return {
+      ok: true, id,
+      client_id: targetId, client_name: target.name,
+      salesperson_id: owner, salesperson_name: ownerName,
+      invoice_cnpj: null
+    };
   }
 
   /** M7：保存国际物流基本信息（仅 done 订单；首次创建 events 骨架），写审计日志 */
