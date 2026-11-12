@@ -14,22 +14,31 @@ export class AiNcmService {
   ) {}
 
   async suggest(order: any): Promise<any[]> {
+    if (Array.isArray(order.line_items) && order.line_items.length > 10) {
+      const images = Array.isArray(order.images) ? order.images : order.id ? await this.imageRepo.findAll({ quote_id: order.id }) : [];
+      const batches: any[][] = [];
+      for (let index = 0; index < order.line_items.length; index += 10) batches.push(order.line_items.slice(index, index + 10));
+      const results: any[] = [];
+      for (const batch of batches) results.push(...await this.suggest({ line_items: batch, images }));
+      return results;
+    }
     const cfg = await this.aiConfig.resolve('deepseek-flash', 60000);
     if (!cfg.apiKey) {
       throw new ServiceUnavailableException('IA de NCM não configurada. Configure a API do modelo em 管理端 → 模型 API.');
     }
     const { baseUrl, apiKey, model, timeoutMs } = cfg;
-    const orderImages = order.id ? await this.imageRepo.findAll({ quote_id: order.id }) : [];
+    const orderImages: any[] = Array.isArray(order.images) ? order.images : order.id ? await this.imageRepo.findAll({ quote_id: order.id }) : [];
     const products = await Promise.all(order.line_items.map(async (row: any) => {
       const images = orderImages.filter(image => Number(image.row_no) === Number(row.row_no)).slice(0, 2);
-      const visualDescription = images.length ? await this.describeProductImages(images, cfg) : '';
+      const existingNcm = String(row.hs_code || '').trim();
+      const visualDescription = images.length && !/^\d{8}$/.test(existingNcm) ? await this.describeProductImages(images, cfg) : '';
       return {
         row_no: row.row_no, sku: row.sku, product_cn: row.product_cn, product_en: row.product_en,
         description: row.description, material: row.material, current_hs_code: row.hs_code,
         visual_description: visualDescription
       };
     }));
-    const prompt = `Classifique os produtos importados da China ao Brasil. Pesquise na internet, priorizando Receita Federal, CLASSIF, TEC/NCM, TIPI e legislação oficial. Não invente fontes nem alíquotas. Quando visual_description estiver presente, use-a como evidência complementar do nome do produto, sem substituir a legislação oficial.\n` +
+    const prompt = `Classifique os produtos importados da China ao Brasil. Quando current_hs_code tiver exatamente 8 dígitos, preserve esse NCM e determine somente as alíquotas; não reclassifique nem analise imagens dessa linha. Pesquise na internet, priorizando Receita Federal, CLASSIF, TEC/NCM, TIPI e legislação oficial. Não invente fontes nem alíquotas. Quando visual_description estiver presente, use-a como evidência complementar do nome do produto, sem substituir a legislação oficial.\n` +
       `Retorne APENAS um objeto JSON {"items":[...]}, um item por row_no, com: row_no (número), ncm (8 dígitos), confidence (0 a 1), rationale (justificativa curta), ii_rate, ipi_rate, pis_rate, cofins_rate (FRAÇÕES decimais, ex.: 0.14 para 14%), sources (array de URLs oficiais .gov.br que comprovem NCM/alíquota).\n` +
       `Nunca deixe ncm vazio. Sempre retorne o melhor candidato com exatamente 8 dígitos, mesmo quando incerto; nesse caso use confidence baixa (máximo 0.3) e explique a dúvida. Produtos:\n${JSON.stringify(products)}`;
     let response: Response;
@@ -74,6 +83,8 @@ export class AiNcmService {
     return parsed.items.map((item: any) => ({
       row_no: Number(item.row_no),
       ncm: (() => {
+        const original = order.line_items.find((row: any) => Number(row.row_no) === Number(item.row_no));
+        if (/^\d{8}$/.test(String(original?.hs_code || '').trim())) return String(original.hs_code).trim();
         const digits = String(item.ncm || '').replace(/\D/g, '');
         return /^\d{10,12}$/.test(digits) ? digits.slice(0, 8) : digits;
       })(),

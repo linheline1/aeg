@@ -114,6 +114,15 @@ export interface UploadResult {
   embedded_image_count?: number;
 }
 
+export interface AiUploadCheckResult {
+  ok: boolean;
+  rows: ParsedRow[];
+  issues: RowError[];
+  ncm_count: number;
+  low_confidence_count: number;
+  suggestions?: { row_no: number; ncm: string; confidence: number; rationale: string; used_image: boolean }[];
+}
+
 /**
  * M2/M3 报价服务：
  *   1. 校验模板 schema_hash（TEMPLATE_META）
@@ -641,7 +650,7 @@ export class QuoteService {
     if (currency !== 'RMB' && currency !== 'USD') throw new BadRequestException('申报币种无效');
 
     const originalRows = new Map(draft.rows.map(row => [Number(row.row_no), row]));
-    if (submittedRows.length !== originalRows.size) throw new BadRequestException('确认明细不能删除原识别产品行，请重新上传完整清单');
+    // 允许预览时移除误识别行，仍禁止新增或重复行。
     const seen = new Set<number>();
     const rows: ParsedRow[] = submittedRows.map(row => {
       const rowNo = Number(row?.row_no);
@@ -683,6 +692,53 @@ export class QuoteService {
     const draft = await this.uploadDraftsRepo.findById(draftId);
     if (!draft || draft.client_id !== clientId) throw new NotFoundException('识别草稿不存在');
     return draft;
+  }
+
+  /** 提交前复用系统 AI 配置检查产品信息，并为每行建议巴西 NCM。 */
+  async aiCheckUpload(draftId: string, clientId: string, submittedRows: ParsedRow[]): Promise<AiUploadCheckResult> {
+    const draft = await this.getUploadDraft(draftId, clientId);
+    if (draft.status !== 'preview') throw new BadRequestException('该草稿已取消或不可检查');
+    if (!Array.isArray(submittedRows) || submittedRows.length === 0 || submittedRows.length > TEMPLATE_MAX_ROWS) {
+      throw new BadRequestException('待检查明细为空或超过最大行数');
+    }
+    const originalRows = new Set((draft.rows || []).map((row: ParsedRow) => Number(row.row_no)));
+    const seen = new Set<number>();
+    const rows: ParsedRow[] = submittedRows.map(row => {
+      const rowNo = Number(row?.row_no);
+      if (!originalRows.has(rowNo) || seen.has(rowNo) || !row?.data || typeof row.data !== 'object') {
+        throw new BadRequestException('待检查明细包含无效行');
+      }
+      seen.add(rowNo);
+      return { row_no: rowNo, data: { ...row.data }, source_totals: row.source_totals };
+    });
+    const issues = rows.flatMap(row => this.validateAndComputeRow(row, draft.warehouse_code || ''));
+    if (issues.length) return { ok: false, rows, issues, ncm_count: 0, low_confidence_count: 0 };
+
+    const missingNcm = rows.filter(row => !String(row.data.hs_code || '').trim());
+    const images = (draft.screenshots || []).filter((image: any) => missingNcm.some(row => Number(row.row_no) === Number(image.row_no)))
+      .map((image: any) => ({ row_no: image.row_no, file_path: image.file_path, mime_type: image.mimetype, size_bytes: image.size }));
+    const suggestions = missingNcm.length ? await this.aiNcm.suggest({
+      line_items: missingNcm.map(row => ({ row_no: row.row_no, ...row.data })), images
+    }) : [];
+    const byRow = new Map(suggestions.map(item => [Number(item.row_no), item]));
+    let ncmCount = 0;
+    let lowConfidenceCount = 0;
+    for (const row of missingNcm) {
+      const suggestion = byRow.get(Number(row.row_no));
+      const ncm = String(suggestion?.ncm || '').replace(/\D/g, '').slice(0, 8);
+      if (/^\d{8}$/.test(ncm)) {
+        row.data.hs_code = ncm;
+        ncmCount += 1;
+      } else {
+        issues.push({ row: row.row_no, col_letter: '', field_key: 'hs_code', reason: 'AI 未能识别有效的 8 位 NCM' });
+      }
+      if (Number(suggestion?.confidence) < 0.5) {
+        lowConfidenceCount += 1;
+      }
+    }
+    return { ok: issues.length === 0, rows, issues, ncm_count: ncmCount, low_confidence_count: lowConfidenceCount,
+      suggestions: suggestions.map(item => ({ row_no: Number(item.row_no), ncm: String(item.ncm || ''), confidence: Number(item.confidence) || 0,
+        rationale: String(item.rationale || ''), used_image: images.some((image: any) => Number(image.row_no) === Number(item.row_no)) })) };
   }
 
   async cancelUpload(draftId: string, clientId: string): Promise<{ ok: true }> {
@@ -893,6 +949,52 @@ export class QuoteService {
     const order: any = await this.quotesRepo.findById(quoteId);
     const validRowNos = new Set<number>((order?.line_items || []).map((it: any) => Number(it.row_no)));
 
+    // WPS 单元格图片不在 ExcelJS 的 drawing 列表中。用文件内 ID → relationship → media 映射落盘。
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const JSZip = require(require.resolve('jszip', { paths: [require.resolve('exceljs')] }));
+    const archive = await JSZip.loadAsync(fs.readFileSync(excelPath));
+    const cellXml = await archive.file('xl/cellimages.xml')?.async('string');
+    const relsXml = await archive.file('xl/_rels/cellimages.xml.rels')?.async('string');
+    if (cellXml && relsXml) {
+      const relationships = new Map<string, string>();
+      for (const tag of relsXml.match(/<Relationship\b[^>]*\/>/g) || []) {
+        const id = tag.match(/\bId="([^"]+)"/)?.[1];
+        const target = tag.match(/\bTarget="([^"]+)"/)?.[1];
+        if (id && target && !target.includes('..')) relationships.set(id, target);
+      }
+      const cellImages = new Map<string, string>();
+      for (const block of cellXml.match(/<etc:cellImage\b[^>]*>[\s\S]*?<\/etc:cellImage>/g) || []) {
+        const id = block.match(/<xdr:cNvPr\b[^>]*\bname="([^"]+)"/)?.[1];
+        const rel = block.match(/<a:blip\b[^>]*\br:embed="([^"]+)"/)?.[1];
+        if (id && rel && relationships.has(rel)) cellImages.set(id, relationships.get(rel)!);
+      }
+      const saved = new Set<string>();
+      for (const worksheet of workbook.worksheets) {
+        worksheet.eachRow(row => row.eachCell({ includeEmpty: false }, cell => {
+          const formula = String((cell.value as any)?.formula || '');
+          const id = formula.match(/DISPIMG\("([^"]+)"/i)?.[1];
+          const target = id && cellImages.get(id);
+          const rowNo = Number(cell.row);
+          if (!target || !validRowNos.has(rowNo) || saved.has(`${rowNo}:${id}`)) return;
+          const entry = archive.file(`xl/${target.replace(/^\/?xl\//, '')}`);
+          if (!entry) return;
+          saved.add(`${rowNo}:${id}`);
+          rows.push({ row_no: rowNo, entry, target });
+        }));
+      }
+      const pending = rows.splice(0);
+      for (const image of pending) {
+        const buffer: Buffer = await image.entry.async('nodebuffer');
+        const extension = path.extname(image.target).slice(1).toLowerCase();
+        if (!buffer.length || !['png', 'jpg', 'jpeg', 'webp'].includes(extension)) continue;
+        const fileName = `excel-cell-row${image.row_no}-${crypto.randomUUID()}.${extension}`;
+        fs.writeFileSync(path.join(imageDir, fileName), buffer);
+        rows.push({ client_id: clientId, quote_id: quoteId, row_no: image.row_no,
+          file_name: fileName, file_path: `apps/api/uploads/images/${fileName}`,
+          mime_type: extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : `image/${extension}`, size_bytes: buffer.length });
+      }
+    }
+
     // 先收集：drawing 锚点占用的 media 下标 + WPS DISPIMG（嵌入单元格图片）所在行
     const drawingImageIds = new Set<number>();
     const dispimgRows: number[] = [];
@@ -912,7 +1014,7 @@ export class QuoteService {
 
     // WPS DISPIMG 图片存于 media 但无 drawing 锚点（cellimages 映射常被重存丢失）：
     // 排除 drawing 占用后，剩余 media 按顺序与 DISPIMG 行号顺序一一对应
-    if (dispimgRows.length > 0) {
+    if (dispimgRows.length > 0 && rows.length === 0) {
       const mediaList: any[] = (workbook as any).media || [];
       const dispimgMedia = mediaList
         .map((media: any, index: number) => ({ media, index }))

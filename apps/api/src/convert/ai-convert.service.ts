@@ -387,7 +387,7 @@ export class AiConvertService {
     const ws = wb.worksheets.find(w => w.name === m.sheet) || wb.worksheets[0];
     if (!ws) return { ok: false, reason: 'AI 指定的数据页不存在' };
 
-    const start = Math.max(1, (m.data_start_row || ((m.header_row || 1) + 1)) - 2);
+    const start = Math.max(1, m.data_start_row || ((m.header_row || 1) + 1));
     const rows: ConvertedRow[] = [];
     let firstWarehouseLine = '';
     for (let r = start; r <= ws.rowCount; r++) {

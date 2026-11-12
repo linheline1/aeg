@@ -6,6 +6,7 @@ import { showToast } from './Toast';
 
 type Row = { row_no: number; data: Record<string, any>; source_totals?: Record<string, number | null> };
 type RowError = { row: number; field_key: string; reason: string };
+type NcmSuggestion = { row_no: number; ncm: string; confidence: number; rationale: string; used_image: boolean };
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const isSheetFile = (f: File) => /\.xlsx$/i.test(f.name);
@@ -75,6 +76,13 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [message, setMessage] = useState('');
+  const [aiChecked, setAiChecked] = useState(false);
+  const [aiCheckNote, setAiCheckNote] = useState('');
+  const [pricePaste, setPricePaste] = useState('');
+  const [showPricePaste, setShowPricePaste] = useState(false);
+  const [ncmPaste, setNcmPaste] = useState('');
+  const [showNcmPaste, setShowNcmPaste] = useState(false);
+  const [ncmSuggestions, setNcmSuggestions] = useState<NcmSuggestion[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragDepth = useRef(0);
@@ -92,6 +100,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
 
   const reset = () => {
     setDraftId(''); setRows([]); setServerErrors([]); setErr(''); setMessage(''); setConvertedByAi(false); setAiNotes('');
+    setAiChecked(false); setAiCheckNote(''); setPricePaste(''); setShowPricePaste(false); setNcmPaste(''); setShowNcmPaste(false); setNcmSuggestions([]);
   };
 
   /**
@@ -242,6 +251,70 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     } : row));
     const rowNo = rows[index]?.row_no;
     setServerErrors(current => current.filter(error => error.row !== rowNo || error.field_key !== key));
+    setAiChecked(false);
+    setAiCheckNote('数据已修改，请重新执行 AI 检查。');
+  };
+
+  const applyPriceColumn = () => {
+    const values = pricePaste.split(/\r?\n|\t/).map(value => value.trim()).filter(Boolean);
+    if (!values.length) { setErr('请先粘贴价格，每行一个价格'); return; }
+    if (values.length > rows.length) { setErr(`粘贴了 ${values.length} 个价格，但清单只有 ${rows.length} 行`); return; }
+    const invalid = values.find(value => !Number.isFinite(Number(value)) || Number(value) < 0);
+    if (invalid !== undefined) { setErr(`“${invalid}”不是有效价格`); return; }
+    setRows(current => current.map((row, index) => index < values.length
+      ? { ...row, data: { ...row.data, unit_price: Number(values[index]) } }
+      : row));
+    setServerErrors(current => current.filter(error => error.field_key !== 'unit_price' && error.field_key !== 'total_price'));
+    setAiChecked(false); setAiCheckNote('价格已批量更新，请执行 AI 检查。'); setErr('');
+    setShowPricePaste(false); setPricePaste('');
+    showToast(`已更新前 ${values.length} 行价格`);
+  };
+
+  const removeRow = (rowNo: number) => {
+    setRows(current => current.filter(row => row.row_no !== rowNo));
+    setServerErrors(current => current.filter(error => error.row !== rowNo));
+    setAiChecked(false);
+    setNcmSuggestions(current => current.filter(item => item.row_no !== rowNo));
+    setAiCheckNote('已删除该行，请重新执行 AI 检查。');
+  };
+
+  const applyNcmColumn = () => {
+    const values = ncmPaste.trim().split(/\r?\n|\t/).map(value => value.trim());
+    if (!values.length || !values.some(Boolean)) { setErr('请先粘贴 NCM，每行一个 8 位编码'); return; }
+    if (values.length > rows.length) { setErr(`粘贴了 ${values.length} 行 NCM，但清单只有 ${rows.length} 行`); return; }
+    const invalid = values.find(value => value && !/^\d{8}$/.test(value));
+    if (invalid) { setErr(`“${invalid}”不是有效的 8 位 NCM`); return; }
+    setRows(current => current.map((row, index) => index < values.length
+      ? { ...row, data: { ...row.data, hs_code: values[index] } } : row));
+    setServerErrors(current => current.filter(error => error.field_key !== 'hs_code'));
+    setAiChecked(false); setAiCheckNote('NCM 已批量更新，请核对后提交。'); setErr('');
+    setShowNcmPaste(false); setNcmPaste('');
+    showToast(`已更新前 ${values.length} 行 NCM`);
+  };
+
+  const aiCheck = async () => {
+    if (!draftId || !rows.length || errors.length > 0) return;
+    setBusy(true); setErr(''); setMessage(''); setAiCheckNote('');
+    try {
+      const response = await api.post('/api/client/orders/upload/ai-check', {
+        draft_id: draftId, rows: computedRows
+      }, { timeout: 180_000 });
+      setRows(response.data.rows || computedRows);
+      setNcmSuggestions(response.data.suggestions || []);
+      setServerErrors(response.data.issues || []);
+      if (!response.data.ok) {
+        setAiChecked(false);
+        setErr(`AI 检查发现 ${response.data.issues?.length || 0} 项问题，请修正后重新检查`);
+        return;
+      }
+      setAiChecked(true);
+      const low = Number(response.data.low_confidence_count || 0);
+      setAiCheckNote(`文件检查完成，AI 补全 ${response.data.ncm_count || 0} 行 NCM${low ? `；其中 ${low} 行置信度较低，建议人工复核` : ''}。`);
+      showToast('AI 文件检查通过，可以提交');
+    } catch (e: any) {
+      setAiChecked(false);
+      setErr(getApiErrorMessage(e, 'AI 文件检查失败'));
+    } finally { setBusy(false); }
   };
 
   const cancel = async () => {
@@ -252,7 +325,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   };
 
   const confirm = async () => {
-    if (!draftId || errors.length > 0) return;
+    if (!draftId || !rows.length || errors.length > 0 || (!aiChecked && !computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim())))) return;
     setBusy(true); setErr(''); setMessage('');
     try {
       const response = await api.post('/api/client/orders/upload/confirm', {
@@ -276,11 +349,12 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
 
   const input = (row: Row, index: number, key: string, type = 'text') => (
     <input
-      className="form-input form-input-sm"
+      className={`form-input form-input-sm${errors.some(error => error.row === row.row_no && error.field_key === key) ? ' upload-field-error' : ''}`}
       style={{ minWidth: type === 'number' ? 82 : 120, width: '100%' }}
       type={type}
       step={type === 'number' ? 'any' : undefined}
       value={row.data[key] ?? ''}
+      title={errors.filter(error => error.row === row.row_no && error.field_key === key).map(error => error.reason).join('；')}
       onChange={event => update(index, key, event.target.value)}
     />
   );
@@ -407,9 +481,9 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
           <div className="table-wrap mt-12">
             <table className="table" style={{ minWidth: 1800 }}>
               <thead><tr>
-                <th>Excel 行</th><th>箱号</th><th>中文品名</th><th>英文品名</th><th>SKU</th><th>HS/NCM</th>
+                <th>Excel 行</th><th>箱号</th><th>中文品名</th><th>英文品名</th><th>SKU</th><th>HS/NCM<button type="button" className="btn-link price-paste-trigger" onClick={() => setShowNcmPaste(value => !value)}>整列粘贴</button></th>
                 <th>箱数</th><th>每箱件数</th><th>总件数</th><th>净重/箱</th><th>毛重/箱</th>
-                <th>长 cm</th><th>宽 cm</th><th>高 cm</th><th>总 CBM</th><th>单价 {currency}</th><th>总金额 {currency}</th><th>材质</th><th>产品描述</th>
+                <th>长 cm</th><th>宽 cm</th><th>高 cm</th><th>总 CBM</th><th>单价 {currency}<button type="button" className="btn-link price-paste-trigger" onClick={() => setShowPricePaste(value => !value)}>整列粘贴</button></th><th>总金额 {currency}</th><th>材质</th><th>产品描述</th><th>问题原因</th><th>操作</th>
               </tr></thead>
               <tbody>
                 {computedRows.map((row, index) => {
@@ -421,7 +495,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
                       <td>{input(row, index, 'product_cn')}</td>
                       <td>{input(row, index, 'product_en')}</td>
                       <td>{input(row, index, 'sku')}</td>
-                      <td>{input(row, index, 'hs_code')}</td>
+                      <td>{input(row, index, 'hs_code')}{ncmSuggestions.filter(item => item.row_no === row.row_no).map(item => <div className="upload-ncm-suggestion" key={item.row_no}>AI 建议 · {Math.round(item.confidence * 100)}%{item.used_image ? ' · 已参考图片' : ''}<span>{item.rationale}</span></div>)}</td>
                       <td>{input(row, index, 'cartons', 'number')}</td>
                       <td>{input(row, index, 'pcs_per_carton', 'number')}</td>
                       <td>{Number(row.data.total_pcs).toLocaleString()}</td>
@@ -439,14 +513,36 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
                         </select>
                       </td>
                       <td>{input(row, index, 'description')}</td>
+                      <td className="upload-row-errors">{errors.filter(error => error.row === row.row_no).map((error, issueIndex) => <div key={`${error.field_key}-${issueIndex}`}><strong>{requiredFields.find(([key]) => key === error.field_key)?.[1] || error.field_key}：</strong>{error.reason}</div>)}</td>
+                      <td><button type="button" className="btn-link" disabled={busy} onClick={() => removeRow(row.row_no)} aria-label={`删除 Excel 第 ${row.row_no} 行`}>删除</button></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          {showPricePaste && (
+            <div className="price-column-paste mt-12">
+              <div>
+                <strong>批量粘贴单价</strong>
+                <p className="muted text-sm">从 Excel 复制一列价格并粘贴到下方，将从清单第一行开始依次填入。</p>
+              </div>
+              <textarea className="form-input" rows={5} autoFocus placeholder={'例如：\n12.50\n18\n9.90'} value={pricePaste} onChange={event => setPricePaste(event.target.value)} />
+              <div className="row gap-md">
+                <button type="button" className="btn" onClick={applyPriceColumn}>应用到价格列</button>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowPricePaste(false)}>取消</button>
+              </div>
+            </div>
+          )}
+          {showNcmPaste && <div className="price-column-paste mt-12">
+            <div><strong>批量粘贴 NCM</strong><p className="muted text-sm">从 Excel 复制一列 8 位 NCM，按预览顺序逐行填入；空行保留为空供 AI 补全。</p></div>
+            <textarea className="form-input" rows={5} placeholder={'例如：\n85044040\n85044090'} value={ncmPaste} onChange={event => setNcmPaste(event.target.value)} />
+            <div className="row gap-md"><button type="button" className="btn" onClick={applyNcmColumn}>应用到 NCM 列</button><button type="button" className="btn btn-ghost" onClick={() => setShowNcmPaste(false)}>取消</button></div>
+          </div>}
+          {aiCheckNote && <div className={`alert ${aiChecked ? 'alert-ok' : 'alert-warn'} mt-12`}>{aiCheckNote}</div>}
           <div className="row gap-md mt-12">
-            <button className="btn btn-lg" disabled={busy || errors.length > 0} onClick={confirm}>{busy ? '正在创建…' : `核对无误，创建${convertedByAi ? ' AI ' : ''}报价单`}</button>
+            {!computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim())) && <button className="btn btn-lg" disabled={busy || !rows.length || errors.length > 0} onClick={aiCheck}>{busy ? 'AI 检查中…' : 'AI 补全缺失 NCM 并检查文件'}</button>}
+            <button className="btn btn-lg btn-success" disabled={busy || !rows.length || errors.length > 0 || (!aiChecked && !computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim())))} onClick={confirm}>{busy ? '正在创建…' : '提交报价单'}</button>
             <button className="btn btn-ghost" disabled={busy} onClick={cancel}>取消并重新选择</button>
           </div>
         </div>
