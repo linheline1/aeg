@@ -1085,10 +1085,13 @@ export default function OrderDetail() {
           <div className="form-row" style={{ margin: 0 }}><label>保险费（BRL）</label><input className="form-input form-input-sm" style={{ width: 140 }} type="number" min="0" step="0.01" value={diParams.insurance_brl} onChange={e => setDiParams({ ...diParams, insurance_brl: Number(e.target.value) })} /></div>
           <div className="form-row" style={{ margin: 0 }}><label>进口州 UF</label><input className="form-input form-input-sm" style={{ width: 80 }} maxLength={2} value={diParams.uf} onChange={e => setDiParams({ ...diParams, uf: e.target.value.toUpperCase() })} /></div>
           <div className="form-row" style={{ margin: 0 }}><label>ICMS（%）</label><input className="form-input form-input-sm" style={{ width: 100 }} type="number" min="0" max="99" step="0.01" value={diParams.icms_rate * 100} onChange={e => setDiParams({ ...diParams, icms_rate: Number(e.target.value) / 100 })} /></div>
-          <button className="btn" disabled={diBusy || !d.line_items?.length} onClick={handleDiAnalyze}>{diBusy ? '分析中…' : di ? '重新用 AI 分析 NCM' : '用 AI 分析 NCM 并计算 DI'}</button>
+          <button className="btn" disabled={diBusy || !d.line_items?.length || ['analyzing', 'calculating'].includes(di?.status)} onClick={handleDiAnalyze}>{diBusy ? '分析中…' : Array.isArray(di?.items) ? '重新用 AI 分析 NCM' : '用 AI 分析 NCM 并计算 DI'}</button>
         </div>
 
-        {di && (
+        {di && !Array.isArray(di.items) && <div className={di.status === 'failed' ? 'alert alert-err mt-12' : 'alert alert-warn mt-12'}>
+          {di.status === 'failed' ? `AI NCM / DI 计算失败：${di.error_message || '请稍后重试'}` : 'AI 正在识别 NCM 并计算 DI，请稍后刷新页面查看结果。'}
+        </div>}
+        {di && Array.isArray(di.items) && di.totals && (
           <>
             <div className="table-wrap" style={{ marginTop: 16, overflowX: 'auto' }}>
               <table className="table" style={{ minWidth: 1200 }}>

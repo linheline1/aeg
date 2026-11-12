@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { loadRememberedPassword, rememberedUsername, saveRememberedPassword, shouldRememberPassword } from '@aeg/web-shared/remember-password';
 import { useAuth } from '../store/auth';
 import logo from '../assets/logo.png';
 
@@ -29,6 +31,7 @@ export default function Login() {
       await saveRememberedPassword(username, password, remember);
       nav('/');
     } catch (res: any) {
+      setErr(res?.response?.data?.message || t('login.wrong'));
     }
   };
 

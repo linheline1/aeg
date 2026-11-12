@@ -473,8 +473,6 @@ export const T: Record<Lang, LandingContent> = {
           title: 'Parceiros do ecossistema',
           logos: [
             { id: 'santosbrasil', name: 'Santos Brasil' },
-            { id: 'sgs', name: 'SGS' },
-            { id: 'sinosure', name: 'Sinosure' },
             { id: 'mercadolibre', name: 'Mercado Livre' }
           ]
         }
@@ -864,8 +862,6 @@ export const T: Record<Lang, LandingContent> = {
           title: '生态合作伙伴',
           logos: [
             { id: 'santosbrasil', name: '桑托斯码头 Santos Brasil' },
-            { id: 'sgs', name: '通标检验 SGS' },
-            { id: 'sinosure', name: '中国信保 Sinosure' },
             { id: 'mercadolibre', name: '美客多 Mercado Livre' }
           ]
         }

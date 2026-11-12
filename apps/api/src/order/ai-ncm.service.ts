@@ -14,25 +14,55 @@ export class AiNcmService {
   ) {}
 
   async suggest(order: any): Promise<any[]> {
+    if (Array.isArray(order.line_items) && order.line_items.length > 4) {
+      const images = Array.isArray(order.images) ? order.images : order.id ? await this.imageRepo.findAll({ quote_id: order.id }) : [];
+      const batches: any[][] = [];
+      for (let index = 0; index < order.line_items.length; index += 4) batches.push(order.line_items.slice(index, index + 4));
+      const analyzeBatch = async (batch: any[]) => {
+        try {
+          return await this.suggest({ line_items: batch, images });
+        } catch (error: any) {
+          if (!/timeout|aborted|tempo limite/i.test(String(error?.message || '')) || batch.length === 1) throw error;
+          const retried: any[] = [];
+          for (const row of batch) retried.push(...await this.suggest({ line_items: [row], images }));
+          return retried;
+        }
+      };
+      const results: any[][] = new Array(batches.length);
+      let next = 0;
+      const worker = async () => {
+        while (next < batches.length) {
+          const index = next++;
+          results[index] = await analyzeBatch(batches[index]);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(2, batches.length) }, () => worker()));
+      return results.flat();
+    }
     const cfg = await this.aiConfig.resolve('deepseek-flash', 60000);
     if (!cfg.apiKey) {
       throw new ServiceUnavailableException('IA de NCM não configurada. Configure a API do modelo em 管理端 → 模型 API.');
     }
     const { baseUrl, apiKey, model, timeoutMs } = cfg;
-    const orderImages = order.id ? await this.imageRepo.findAll({ quote_id: order.id }) : [];
+    const rowNos = order.line_items.map((row: any) => row.row_no).join(',');
+    const startedAt = Date.now();
+    const orderImages: any[] = Array.isArray(order.images) ? order.images : order.id ? await this.imageRepo.findAll({ quote_id: order.id }) : [];
     const products = await Promise.all(order.line_items.map(async (row: any) => {
       const images = orderImages.filter(image => Number(image.row_no) === Number(row.row_no)).slice(0, 2);
-      const visualDescription = images.length ? await this.describeProductImages(images, cfg) : '';
+      const existingNcm = String(row.hs_code || '').trim();
+      const visualDescription = images.length && !/^\d{8}$/.test(existingNcm) ? await this.describeProductImages(images, cfg) : '';
       return {
         row_no: row.row_no, sku: row.sku, product_cn: row.product_cn, product_en: row.product_en,
         description: row.description, material: row.material, current_hs_code: row.hs_code,
         visual_description: visualDescription
       };
     }));
-    const prompt = `Classifique os produtos importados da China ao Brasil. Pesquise na internet, priorizando Receita Federal, CLASSIF, TEC/NCM, TIPI e legislação oficial. Não invente fontes nem alíquotas. Quando visual_description estiver presente, use-a como evidência complementar do nome do produto, sem substituir a legislação oficial.\n` +
+    this.logger.log(`NCM rows=${rowNos} visual_ms=${Date.now() - startedAt} model=${model}`);
+    const prompt = `Classifique os produtos importados da China ao Brasil. Quando current_hs_code tiver exatamente 8 dígitos, preserve esse NCM e determine somente as alíquotas; não reclassifique nem analise imagens dessa linha. Pesquise na internet, priorizando Receita Federal, CLASSIF, TEC/NCM, TIPI e legislação oficial. Não invente fontes nem alíquotas. Quando visual_description estiver presente, use-a como evidência complementar do nome do produto, sem substituir a legislação oficial.\n` +
       `Retorne APENAS um objeto JSON {"items":[...]}, um item por row_no, com: row_no (número), ncm (8 dígitos), confidence (0 a 1), rationale (justificativa curta), ii_rate, ipi_rate, pis_rate, cofins_rate (FRAÇÕES decimais, ex.: 0.14 para 14%), sources (array de URLs oficiais .gov.br que comprovem NCM/alíquota).\n` +
       `Nunca deixe ncm vazio. Sempre retorne o melhor candidato com exatamente 8 dígitos, mesmo quando incerto; nesse caso use confidence baixa (máximo 0.3) e explique a dúvida. Produtos:\n${JSON.stringify(products)}`;
     let response: Response;
+    const requestStartedAt = Date.now();
     try {
       response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
@@ -49,8 +79,10 @@ export class AiNcmService {
         signal: AbortSignal.timeout(timeoutMs)
       });
     } catch (e: any) {
-      throw new BadGatewayException(`Falha ao consultar a IA de NCM: ${e?.message || 'erro de rede'}`);
+      this.logger.warn(`NCM rows=${rowNos} request_failed_ms=${Date.now() - requestStartedAt}: ${e?.message || e}`);
+      throw new BadGatewayException(`Falha ao consultar a IA de NCM (linhas ${rowNos}, ${Date.now() - requestStartedAt}ms): ${e?.message || 'erro de rede'}`);
     }
+    this.logger.log(`NCM rows=${rowNos} headers_ms=${Date.now() - requestStartedAt} status=${response.status}`);
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 500);
       throw new BadGatewayException(`A IA de NCM retornou HTTP ${response.status}: ${detail}`);
@@ -59,8 +91,10 @@ export class AiNcmService {
     try {
       payload = await response.json();
     } catch (e: any) {
-      throw new BadGatewayException(`A resposta da IA de NCM não pôde ser lida (tempo limite de ${Math.round(timeoutMs / 1000)}s?): ${e?.message || e}`);
+      this.logger.warn(`NCM rows=${rowNos} body_failed_ms=${Date.now() - requestStartedAt}: ${e?.message || e}`);
+      throw new BadGatewayException(`A resposta da IA de NCM não pôde ser lida (linhas ${rowNos}, etapa resposta, ${Date.now() - requestStartedAt}ms, limite ${timeoutMs}ms): ${e?.message || e}`);
     }
+    this.logger.log(`NCM rows=${rowNos} body_ms=${Date.now() - requestStartedAt}`);
     const content = payload.choices?.[0]?.message?.content;
     if (!content) throw new BadGatewayException('A IA não retornou uma análise de NCM');
     let parsed: any;
@@ -74,6 +108,8 @@ export class AiNcmService {
     return parsed.items.map((item: any) => ({
       row_no: Number(item.row_no),
       ncm: (() => {
+        const original = order.line_items.find((row: any) => Number(row.row_no) === Number(item.row_no));
+        if (/^\d{8}$/.test(String(original?.hs_code || '').trim())) return String(original.hs_code).trim();
         const digits = String(item.ncm || '').replace(/\D/g, '');
         return /^\d{10,12}$/.test(digits) ? digits.slice(0, 8) : digits;
       })(),

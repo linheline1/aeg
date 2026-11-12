@@ -109,6 +109,8 @@ export class ClientUploadController {
       { username: req.user?.username, role: req.user?.role || 'client' }
     );
     if (!result.draft_id) return result;
+    const draft = await this.quoteService.getUploadDraft(result.draft_id, clientId);
+    const bound = await this.bindScreenshots(result, clientId, draft.screenshots || [], req.user?.username || 'client');
     if (result.quote_id) {
       void (async () => {
         const diResult = await this.quoteService.runAutoDi(result.quote_id!);
@@ -117,9 +119,15 @@ export class ClientUploadController {
         }
       })().catch(() => undefined);
     }
-    const draft = await this.quoteService.getUploadDraft(result.draft_id, clientId);
-    const bound = await this.bindScreenshots(result, clientId, draft.screenshots || [], req.user?.username || 'client');
     return { ...result, ...bound };
+  }
+
+  @Post('upload/ai-check')
+  @HttpCode(200)
+  aiCheck(@Body() body: any, @Req() req: Request & { user?: any }) {
+    const clientId = req.user?.client_id;
+    if (!clientId) throw new BadRequestException('当前用户缺少 client_id');
+    return this.quoteService.aiCheckUpload(String(body?.draft_id || ''), clientId, body?.rows);
   }
 
   @Delete('upload/:draftId')
