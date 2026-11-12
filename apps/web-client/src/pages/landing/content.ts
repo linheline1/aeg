@@ -64,6 +64,10 @@ export interface CompanyWarehouse {
 }
 
 export interface CompanyContent {
+  teamKicker: string;
+  teamTitle: string;
+  teamLead: string;
+  teamPending: string;
   docTitle: string;
   kicker: string;
   title: string;
@@ -353,6 +357,10 @@ export const T: Record<Lang, LandingContent> = {
     },
     estimateNotice: 'Aviso: os valores exibidos são estimativas de referência, calculadas com base em tributos estimados, tarifas e câmbio atuais. Não constituem proposta final. Tributos, câmbio e despesas adicionais podem ser ajustados; o valor válido é o confirmado por escrito pela nossa empresa e na fatura oficial.',
     company: {
+      teamKicker: 'As pessoas por trás da AEG',
+      teamTitle: 'Equipe fundadora',
+      teamLead: 'Conheça as pessoas que lideram a construção das nossas operações entre a China e o Brasil.',
+      teamPending: 'Os perfis da equipe serão apresentados em breve.',
       docTitle: 'AEG DDP Brasil · Quem somos',
       kicker: 'Sobre a AEG',
       title: 'Logística cross-border completa: da China e do Sudeste Asiático ao Brasil',
@@ -742,6 +750,10 @@ export const T: Record<Lang, LandingContent> = {
     },
     estimateNotice: '免责声明：页面展示金额为参考预估，基于当前税费预估、费率及汇率计算，不构成最终报价。税费、汇率及附加费用可能调整，最终价格以我司书面确认及正式账单为准。',
     company: {
+      teamKicker: '认识 AEG',
+      teamTitle: '创始团队',
+      teamLead: '了解推动中国与巴西业务协作的团队成员。',
+      teamPending: '团队成员资料即将更新。',
       docTitle: 'AEG DDP · 公司介绍',
       kicker: '关于 AEG',
       title: '从中国与东南亚到巴西的一站式跨境物流',

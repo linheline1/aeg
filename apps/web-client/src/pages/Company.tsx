@@ -122,6 +122,16 @@ export default function Company() {
               </div>
             </section>
 
+            <section className="lp-section lp-company-team-section" aria-labelledby="company-team-title">
+              <div className="lp-container">
+                <SectionHead index="07" kicker={c.teamKicker} title={c.teamTitle} subtitle={c.teamLead} titleId="company-team-title" />
+                <Reveal className="lp-company-team-pending">
+                  <span className="lp-company-team-mark" aria-hidden="true">AEG</span>
+                  <p>{c.teamPending}</p>
+                </Reveal>
+              </div>
+            </section>
+
             {/* 总部 + 分公司 */}
             <section className="lp-section" aria-labelledby="company-hq-title">
               <div className="lp-container">
