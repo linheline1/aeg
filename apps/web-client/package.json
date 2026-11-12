@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5175",
+    "dev": "vite --port 5176",
     "build": "tsc -b && vite build",
     "build:android": "tsc -b && vite build --mode android",
     "android:sync": "pnpm run build:android && cap sync android",

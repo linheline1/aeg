@@ -15,6 +15,8 @@ const formatSize = (bytes: number) =>
   bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 const numericFields = new Set(['cartons', 'pcs_per_carton', 'nw_per_carton', 'gw_per_carton', 'length_cm', 'width_cm', 'height_cm', 'unit_price']);
+const pasteFields = ['carton_no', 'product_cn', 'product_en', 'sku', 'hs_code', 'cartons', 'pcs_per_carton', 'nw_per_carton', 'gw_per_carton', 'length_cm', 'width_cm', 'height_cm', 'unit_price', 'material', 'description'] as const;
+const pasteLabels = ['箱号', '中文品名', '英文品名', 'SKU', 'HS/NCM', '箱数', '每箱件数', '单箱净重', '单箱毛重', '长 cm', '宽 cm', '高 cm', '单价', '材质', '产品描述'];
 const requiredFields: [string, string][] = [
   ['product_cn', '中文品名'], ['product_en', '英文品名'], ['sku', 'SKU'],
   ['cartons', '箱数'], ['pcs_per_carton', '每箱件数'], ['nw_per_carton', '单箱净重'], ['gw_per_carton', '单箱毛重'],
@@ -82,9 +84,16 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   const [showPricePaste, setShowPricePaste] = useState(false);
   const [ncmPaste, setNcmPaste] = useState('');
   const [showNcmPaste, setShowNcmPaste] = useState(false);
+  const [rowPasteTarget, setRowPasteTarget] = useState<number | null>(null);
+  const [rowPaste, setRowPaste] = useState('');
   const [ncmSuggestions, setNcmSuggestions] = useState<NcmSuggestion[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const ncmPasteRef = useRef<HTMLDivElement | null>(null);
+  const openNcmPaste = () => {
+    setShowNcmPaste(value => !value);
+    if (!showNcmPaste) window.setTimeout(() => ncmPasteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+  };
   const dragDepth = useRef(0);
 
   const computedRows = useMemo(() => rows.map(calculate), [rows]);
@@ -100,7 +109,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
 
   const reset = () => {
     setDraftId(''); setRows([]); setServerErrors([]); setErr(''); setMessage(''); setConvertedByAi(false); setAiNotes('');
-    setAiChecked(false); setAiCheckNote(''); setPricePaste(''); setShowPricePaste(false); setNcmPaste(''); setShowNcmPaste(false); setNcmSuggestions([]);
+    setAiChecked(false); setAiCheckNote(''); setPricePaste(''); setShowPricePaste(false); setNcmPaste(''); setShowNcmPaste(false); setRowPasteTarget(null); setRowPaste(''); setNcmSuggestions([]);
   };
 
   /**
@@ -292,6 +301,40 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     showToast(`已更新前 ${values.length} 行 NCM`);
   };
 
+  const applyRowPaste = () => {
+    const targetIndex = rows.findIndex(row => row.row_no === rowPasteTarget);
+    if (targetIndex < 0) { setErr('目标行已不存在，请重新选择'); return; }
+    const lines = rowPaste.replace(/(?:\r?\n)+$/, '').split(/\r?\n/).filter(line => line.trim());
+    if (!lines.length) { setErr('请先从 Excel 复制整行数据'); return; }
+    if (targetIndex + lines.length > rows.length) { setErr(`从第 ${rowPasteTarget} 行开始只剩 ${rows.length - targetIndex} 行，请减少粘贴行数`); return; }
+    const values = lines.map(line => line.split('\t'));
+    const wrong = values.findIndex(cells => cells.length !== pasteFields.length);
+    if (wrong >= 0) { setErr(`粘贴的第 ${wrong + 1} 行有 ${values[wrong].length} 列，需要 ${pasteFields.length} 列；请只复制可编辑字段，不含自动计算列`); return; }
+    for (const cells of values) {
+      for (let index = 0; index < pasteFields.length; index++) {
+        const key = pasteFields[index];
+        const value = cells[index].trim();
+        if (numericFields.has(key) && value && !Number.isFinite(Number(value))) { setErr(`${pasteLabels[index]}「${value}」不是有效数字`); return; }
+        if (key === 'hs_code' && value && !/^\d{8}$/.test(value)) { setErr(`NCM「${value}」应为 8 位数字`); return; }
+      }
+    }
+    const affected = new Set(rows.slice(targetIndex, targetIndex + values.length).map(row => row.row_no));
+    setRows(current => current.map((row, index) => {
+      if (index < targetIndex || index >= targetIndex + values.length) return row;
+      const data = { ...row.data };
+      pasteFields.forEach((key, fieldIndex) => {
+        const value = values[index - targetIndex][fieldIndex].trim();
+        data[key] = numericFields.has(key) ? (value === '' ? null : Number(value)) : value;
+      });
+      return { ...row, data };
+    }));
+    setServerErrors(current => current.filter(error => !affected.has(error.row)));
+    setNcmSuggestions(current => current.filter(item => !affected.has(item.row_no)));
+    setAiChecked(false); setAiCheckNote('数据已修改，请重新执行 AI 检查。'); setErr('');
+    setRowPasteTarget(null); setRowPaste('');
+    showToast(`已粘贴 ${values.length} 行数据`);
+  };
+
   const aiCheck = async () => {
     if (!draftId || !rows.length || errors.length > 0) return;
     setBusy(true); setErr(''); setMessage(''); setAiCheckNote('');
@@ -478,10 +521,14 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
             </div>
           )}
 
+          <div className="row gap-md mt-12" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={openNcmPaste}>整列粘贴 NCM</button>
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setShowPricePaste(value => !value)}>整列粘贴价格</button>
+          </div>
           <div className="table-wrap mt-12">
             <table className="table" style={{ minWidth: 1800 }}>
               <thead><tr>
-                <th>Excel 行</th><th>箱号</th><th>中文品名</th><th>英文品名</th><th>SKU</th><th>HS/NCM<button type="button" className="btn-link price-paste-trigger" onClick={() => setShowNcmPaste(value => !value)}>整列粘贴</button></th>
+                <th>Excel 行</th><th>箱号</th><th>中文品名</th><th>英文品名</th><th>SKU</th><th>HS/NCM<button type="button" className="btn-link price-paste-trigger" onClick={openNcmPaste}>整列粘贴</button></th>
                 <th>箱数</th><th>每箱件数</th><th>总件数</th><th>净重/箱</th><th>毛重/箱</th>
                 <th>长 cm</th><th>宽 cm</th><th>高 cm</th><th>总 CBM</th><th>单价 {currency}<button type="button" className="btn-link price-paste-trigger" onClick={() => setShowPricePaste(value => !value)}>整列粘贴</button></th><th>总金额 {currency}</th><th>材质</th><th>产品描述</th><th>问题原因</th><th>操作</th>
               </tr></thead>
@@ -514,13 +561,18 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
                       </td>
                       <td>{input(row, index, 'description')}</td>
                       <td className="upload-row-errors">{errors.filter(error => error.row === row.row_no).map((error, issueIndex) => <div key={`${error.field_key}-${issueIndex}`}><strong>{requiredFields.find(([key]) => key === error.field_key)?.[1] || error.field_key}：</strong>{error.reason}</div>)}</td>
-                      <td><button type="button" className="btn-link" disabled={busy} onClick={() => removeRow(row.row_no)} aria-label={`删除 Excel 第 ${row.row_no} 行`}>删除</button></td>
+                      <td><button type="button" className="btn-link" disabled={busy} onClick={() => { setRowPasteTarget(row.row_no); setRowPaste(''); }} aria-label={`从 Excel 第 ${row.row_no} 行开始粘贴整行`}>粘贴整行</button> <button type="button" className="btn-link" disabled={busy} onClick={() => removeRow(row.row_no)} aria-label={`删除 Excel 第 ${row.row_no} 行`}>删除</button></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          {rowPasteTarget !== null && <div className="price-column-paste mt-12">
+            <div><strong>从 Excel 第 {rowPasteTarget} 行开始粘贴</strong><p className="muted text-sm">可连续粘贴多行。每行按以下 {pasteFields.length} 列排列，保留空白单元格：{pasteLabels.join('、')}。不要包含自动计算列。</p></div>
+            <textarea className="form-input" rows={5} autoFocus aria-label="粘贴 Excel 整行数据" placeholder="从 Excel 复制可编辑的整行数据，粘贴到这里" value={rowPaste} onChange={event => setRowPaste(event.target.value)} />
+            <div className="row gap-md"><button type="button" className="btn" disabled={busy} onClick={applyRowPaste}>应用整行数据</button><button type="button" className="btn btn-ghost" onClick={() => { setRowPasteTarget(null); setRowPaste(''); }}>取消</button></div>
+          </div>}
           {showPricePaste && (
             <div className="price-column-paste mt-12">
               <div>
@@ -534,7 +586,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
               </div>
             </div>
           )}
-          {showNcmPaste && <div className="price-column-paste mt-12">
+          {showNcmPaste && <div ref={ncmPasteRef} className="price-column-paste mt-12">
             <div><strong>批量粘贴 NCM</strong><p className="muted text-sm">从 Excel 复制一列 8 位 NCM，按预览顺序逐行填入；空行保留为空供 AI 补全。</p></div>
             <textarea className="form-input" rows={5} placeholder={'例如：\n85044040\n85044090'} value={ncmPaste} onChange={event => setNcmPaste(event.target.value)} />
             <div className="row gap-md"><button type="button" className="btn" onClick={applyNcmColumn}>应用到 NCM 列</button><button type="button" className="btn btn-ghost" onClick={() => setShowNcmPaste(false)}>取消</button></div>

@@ -387,7 +387,23 @@ export class AiConvertService {
     const ws = wb.worksheets.find(w => w.name === m.sheet) || wb.worksheets[0];
     if (!ws) return { ok: false, reason: 'AI 指定的数据页不存在' };
 
-    const start = Math.max(1, m.data_start_row || ((m.header_row || 1) + 1));
+    let start = Math.max(1, m.data_start_row || ((m.header_row || 1) + 1));
+    // AI 可能把前几条产品行当成表头；从实际表头后寻找最早的产品行。
+    for (let candidate = 1; candidate < start; candidate++) {
+      const previous = ws.getRow(candidate);
+      const identityFields = ['sku', 'product_en', 'product_cn'];
+      const quantityFields = ['cartons', 'pcs_per_carton', 'total_pcs'];
+      const read = (field: string) => {
+        const col = m.mapping[field];
+        return col ? previous.getCell(this.colToIndex(col) + 1).value : null;
+      };
+      const identity = identityFields.map(read).map(value => String(value ?? '').trim());
+      const quantity = quantityFields.map(read).some(value => Number(value) > 0);
+      if (quantity && identity.some(value => value && !/商品名称|产品名称|nome\s*do\s*produto|^sku$/i.test(value))) {
+        start = candidate;
+        break;
+      }
+    }
     const rows: ConvertedRow[] = [];
     let firstWarehouseLine = '';
     for (let r = start; r <= ws.rowCount; r++) {
