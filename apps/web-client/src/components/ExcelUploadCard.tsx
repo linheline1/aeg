@@ -17,6 +17,17 @@ const formatSize = (bytes: number) =>
   bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 const numericFields = new Set(['cartons', 'pcs_per_carton', 'nw_per_carton', 'gw_per_carton', 'length_cm', 'width_cm', 'height_cm', 'unit_price']);
+const parsePastedPrice = (raw: string): number | null => {
+  const value = raw.trim().replace(/\s/g, '');
+  if (!value) return null;
+  let normalized = value;
+  if (/^\d{1,3}(?:\.\d{3})+,\d+$/.test(value)) normalized = value.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(?:,\d{3})+\.\d+$/.test(value)) normalized = value.replace(/,/g, '');
+  else if (/^\d+(?:,\d+)?$/.test(value)) normalized = value.replace(',', '.');
+  else if (!/^\d+(?:\.\d+)?$/.test(value)) return null;
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : null;
+};
 const pasteFields = ['carton_no', 'product_cn', 'product_en', 'sku', 'hs_code', 'cartons', 'pcs_per_carton', 'nw_per_carton', 'gw_per_carton', 'length_cm', 'width_cm', 'height_cm', 'unit_price', 'material', 'description'] as const;
 const requiredFields = ['product_cn', 'product_en', 'sku', 'cartons', 'pcs_per_carton', 'nw_per_carton', 'gw_per_carton', 'length_cm', 'width_cm', 'height_cm', 'unit_price', 'material'];
 const MATERIAL_OPTIONS: { value: string; labelKey: string }[] = [
@@ -82,6 +93,8 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   const [aiNotes, setAiNotes] = useState('');
   const [serverErrors, setServerErrors] = useState<RowError[]>([]);
   const [busy, setBusy] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
+  const [uploadStage, setUploadStage] = useState<'uploading' | 'recognizing' | null>(null);
   const [err, setErr] = useState('');
   const [message, setMessage] = useState('');
   const [aiChecked, setAiChecked] = useState(false);
@@ -229,6 +242,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       return;
     }
     setBusy(true); setErr(''); setMessage(''); reset();
+    setUploadPercent(null); setUploadStage('uploading');
     try {
       const data = new FormData();
       data.append('file', file);
@@ -239,7 +253,16 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
         if (Number.isInteger(rowNo) && rowNo > 0) rowMap[shot.name] = rowNo;
       });
       data.append('row_map', JSON.stringify(rowMap));
-      const response = await api.post('/api/client/orders/upload/preview', data, { timeout: 180_000 });
+      const response = await api.post('/api/client/orders/upload/preview', data, {
+        timeout: 180_000,
+        onUploadProgress: event => {
+          if (event.total && event.total > 0) {
+            const percent = Math.min(100, Math.round(event.loaded / event.total * 100));
+            setUploadPercent(percent);
+            if (percent >= 100) setUploadStage('recognizing');
+          }
+        }
+      });
       if (!response.data.ok) {
         setErr(response.data.error_summary || t('upload.err.recognizeFailed'));
         return;
@@ -258,7 +281,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       } else {
         setErr(e?.message || t('upload.err.recognizeFailed'));
       }
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setUploadStage(null); setUploadPercent(null); }
   };
 
   const update = (index: number, key: string, value: string) => {
@@ -277,10 +300,10 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     const values = pricePaste.replace(/[\r\n]+$/, '').split(/\r?\n|\t/).map(value => value.trim());
     if (!values.length || !values.some(Boolean)) { fail(t('upload.err.priceEmpty')); return; }
     if (values.length > rows.length) { fail(t('upload.err.priceTooMany', { pasted: values.length, rows: rows.length })); return; }
-    const invalid = values.find(value => value && (!Number.isFinite(Number(value)) || Number(value) < 0));
+    const invalid = values.find(value => value && parsePastedPrice(value) === null);
     if (invalid !== undefined) { fail(t('upload.err.priceInvalid', { value: invalid })); return; }
     setRows(current => current.map((row, index) => index < values.length
-      ? { ...row, data: { ...row.data, unit_price: values[index] ? Number(values[index]) : null } }
+      ? { ...row, data: { ...row.data, unit_price: parsePastedPrice(values[index]) } }
       : row));
     setServerErrors(current => current.filter(error => error.field_key !== 'unit_price' && error.field_key !== 'total_price'));
     setAiChecked(false); setAiCheckNote(t('upload.note.priceUpdated')); setErr(''); setPasteError('');
@@ -475,6 +498,15 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
             <button className="btn btn-lg" disabled={!file || busy} onClick={preview}>{busy ? t('upload.recognizing') : t('upload.recognize')}</button>
             {!file && <span className="muted text-sm">{t('upload.recognizeHint')}</span>}
           </div>
+          {busy && uploadStage && <div className="upload-progress" role="status" aria-live="polite">
+            <div className="upload-progress-label">
+              <strong>{uploadStage === 'uploading' ? t('upload.progressUploading') : t('upload.progressRecognizing')}</strong>
+              {uploadStage === 'uploading' && uploadPercent !== null && <span>{uploadPercent}%</span>}
+            </div>
+            {uploadStage === 'uploading' && uploadPercent !== null
+              ? <progress value={uploadPercent} max={100} aria-label={t('upload.progressUploading')} />
+              : <progress aria-label={uploadStage === 'uploading' ? t('upload.progressUploading') : t('upload.progressRecognizing')} />}
+          </div>}
           {shots.map((shot, index) => (
             <div className="row gap-md mt-8" key={`${shot.name}-${index}`}>
               <span className="text-sm" style={{ flex: 1 }}>{shot.name}</span>

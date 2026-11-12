@@ -497,6 +497,8 @@ export default {
   'upload.shotsSelected': '{{count}} imagens selecionadas',
   'upload.shotsOptional': 'Imagens dos itens (opcional)',
   'upload.recognizing': 'Reconhecendo e validando com IA…',
+  'upload.progressUploading': 'Enviando arquivo Excel',
+  'upload.progressRecognizing': 'Arquivo enviado. Reconhecendo e validando, aguarde…',
   'upload.recognize': 'Reconhecer lista',
   'upload.recognizeHint': 'Arraste ou selecione um .xlsx para reconhecer',
   'upload.rowNoPlaceholder': 'Linha correspondente no Excel (opcional)',

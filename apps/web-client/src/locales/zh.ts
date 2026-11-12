@@ -502,6 +502,8 @@ export default {
   'upload.shotsSelected': '已选 {{count}} 张截图',
   'upload.shotsOptional': '明细截图（可选）',
   'upload.recognizing': 'AI 识别与校验中…',
+  'upload.progressUploading': '正在上传 Excel 文件',
+  'upload.progressRecognizing': '文件已上传，正在识别和校验，请稍候…',
   'upload.recognize': '识别清单',
   'upload.recognizeHint': '拖入或选择 .xlsx 后即可识别',
   'upload.rowNoPlaceholder': '对应 Excel 行号（可选）',
