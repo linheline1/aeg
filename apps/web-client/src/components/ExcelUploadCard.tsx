@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 import { showToast } from './Toast';
@@ -16,11 +18,12 @@ const formatSize = (bytes: number) =>
 
 const numericFields = new Set(['cartons', 'pcs_per_carton', 'nw_per_carton', 'gw_per_carton', 'length_cm', 'width_cm', 'height_cm', 'unit_price']);
 const pasteFields = ['carton_no', 'product_cn', 'product_en', 'sku', 'hs_code', 'cartons', 'pcs_per_carton', 'nw_per_carton', 'gw_per_carton', 'length_cm', 'width_cm', 'height_cm', 'unit_price', 'material', 'description'] as const;
-const pasteLabels = ['箱号', '中文品名', '英文品名', 'SKU', 'HS/NCM', '箱数', '每箱件数', '单箱净重', '单箱毛重', '长 cm', '宽 cm', '高 cm', '单价', '材质', '产品描述'];
-const requiredFields: [string, string][] = [
-  ['product_cn', '中文品名'], ['product_en', '英文品名'], ['sku', 'SKU'],
-  ['cartons', '箱数'], ['pcs_per_carton', '每箱件数'], ['nw_per_carton', '单箱净重'], ['gw_per_carton', '单箱毛重'],
-  ['length_cm', '长'], ['width_cm', '宽'], ['height_cm', '高'], ['unit_price', '单价'], ['material', '材质']
+const requiredFields = ['product_cn', 'product_en', 'sku', 'cartons', 'pcs_per_carton', 'nw_per_carton', 'gw_per_carton', 'length_cm', 'width_cm', 'height_cm', 'unit_price', 'material'];
+const MATERIAL_OPTIONS: { value: string; labelKey: string }[] = [
+  { value: '不带电', labelKey: 'upload.material.noBattery' },
+  { value: '带电', labelKey: 'upload.material.battery' },
+  { value: '含电池', labelKey: 'upload.material.batteryIncluded' },
+  { value: '其他', labelKey: 'upload.material.other' }
 ];
 
 function calculate(row: Row): Row {
@@ -35,37 +38,40 @@ function calculate(row: Row): Row {
   return { ...row, data: d };
 }
 
-function validate(row: Row): RowError[] {
+function validate(row: Row, t: TFunction): RowError[] {
   const d = row.data;
   const errors: RowError[] = [];
-  for (const [key, label] of requiredFields) {
-    if (d[key] == null || String(d[key]).trim() === '') errors.push({ row: row.row_no, field_key: key, reason: `${label}必填` });
+  for (const key of requiredFields) {
+    if (d[key] == null || String(d[key]).trim() === '') {
+      errors.push({ row: row.row_no, field_key: key, reason: t('upload.errors.required', { field: t(`upload.field.${key}`) }) });
+    }
   }
   for (const key of numericFields) {
     if (d[key] == null || d[key] === '') continue;
     const value = Number(d[key]);
-    if (!Number.isFinite(value)) errors.push({ row: row.row_no, field_key: key, reason: '必须是数字' });
-    else if (key !== 'unit_price' && value <= 0) errors.push({ row: row.row_no, field_key: key, reason: '必须大于 0' });
-    else if (key === 'unit_price' && value < 0) errors.push({ row: row.row_no, field_key: key, reason: '不能小于 0' });
+    if (!Number.isFinite(value)) errors.push({ row: row.row_no, field_key: key, reason: t('upload.errors.number') });
+    else if (key !== 'unit_price' && value <= 0) errors.push({ row: row.row_no, field_key: key, reason: t('upload.errors.positive') });
+    else if (key === 'unit_price' && value < 0) errors.push({ row: row.row_no, field_key: key, reason: t('upload.errors.nonNegative') });
   }
-  if (Number(d.gw_per_carton) < Number(d.nw_per_carton)) errors.push({ row: row.row_no, field_key: 'gw_per_carton', reason: '毛重不能小于净重' });
-  if (d.carton_no && !/^\d+(-\d+)?$/.test(String(d.carton_no))) errors.push({ row: row.row_no, field_key: 'carton_no', reason: '箱号格式如 1 或 1-20' });
-  if (d.hs_code && !/^\d{8}$/.test(String(d.hs_code))) errors.push({ row: row.row_no, field_key: 'hs_code', reason: 'HS/NCM 应为 8 位数字' });
+  if (Number(d.gw_per_carton) < Number(d.nw_per_carton)) errors.push({ row: row.row_no, field_key: 'gw_per_carton', reason: t('upload.errors.gwLtNw') });
+  if (d.carton_no && !/^\d+(-\d+)?$/.test(String(d.carton_no))) errors.push({ row: row.row_no, field_key: 'carton_no', reason: t('upload.errors.cartonNoFormat') });
+  if (d.hs_code && !/^\d{8}$/.test(String(d.hs_code))) errors.push({ row: row.row_no, field_key: 'hs_code', reason: t('upload.errors.ncm8') });
   const source = row.source_totals || {};
   if (source.total_pcs != null && Math.abs(Number(source.total_pcs) - d.total_pcs) > 0.000001) {
-    errors.push({ row: row.row_no, field_key: 'total_pcs', reason: `原表 ${source.total_pcs}，重算 ${d.total_pcs}` });
+    errors.push({ row: row.row_no, field_key: 'total_pcs', reason: t('upload.errors.totalPcsMismatch', { source: source.total_pcs, computed: d.total_pcs }) });
   }
   if (source.total_price != null && Math.abs(Number(source.total_price) - d.total_price) > 0.02) {
-    errors.push({ row: row.row_no, field_key: 'total_price', reason: `原表金额 ${source.total_price}，重算 ${d.total_price}` });
+    errors.push({ row: row.row_no, field_key: 'total_price', reason: t('upload.errors.totalPriceMismatch', { source: source.total_price, computed: d.total_price }) });
   }
   if (source.total_cbm != null && Math.abs(Number(source.total_cbm) - d.total_cbm) > Math.max(0.0001, Math.abs(Number(source.total_cbm)) * 0.001)) {
-    errors.push({ row: row.row_no, field_key: 'total_cbm', reason: `原表 CBM ${source.total_cbm}，重算 ${d.total_cbm}` });
+    errors.push({ row: row.row_no, field_key: 'total_cbm', reason: t('upload.errors.totalCbmMismatch', { source: source.total_cbm, computed: d.total_cbm }) });
   }
   return errors;
 }
 
 export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => void }) {
   const nav = useNavigate();
+  const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
   const [shots, setShots] = useState<File[]>([]);
   const [shotRows, setShotRows] = useState<string[]>([]);
@@ -96,8 +102,9 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   };
   const dragDepth = useRef(0);
 
+  const fieldLabel = (key: string) => t(`upload.field.${key}`, { defaultValue: key });
   const computedRows = useMemo(() => rows.map(calculate), [rows]);
-  const localErrors = useMemo(() => computedRows.flatMap(validate), [computedRows]);
+  const localErrors = useMemo(() => computedRows.flatMap(row => validate(row, t)), [computedRows, t]);
   const remainingServerErrors = serverErrors.filter(error => !localErrors.some(item => item.row === error.row && item.field_key === error.field_key));
   const errors = [...localErrors, ...remainingServerErrors];
   const summary = useMemo(() => computedRows.reduce((total, row) => ({
@@ -121,9 +128,9 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     try {
       head = new Uint8Array(await f.slice(0, 64).arrayBuffer());
     } catch {
-      return `浏览器无法读取「${f.name}」：文件可能已被移动、删除，或来自邮件/微信的临时缓存。请先另存到本地（桌面）后重新拖入。`;
+      return t('upload.problem.unreadable', { name: f.name });
     }
-    if (head.length === 0) return `「${f.name}」是空文件（0 KB），请在 Excel 中重新导出后再上传。`;
+    if (head.length === 0) return t('upload.problem.empty', { name: f.name });
 
     const isZip = head.length >= 4 && head[0] === 0x50 && head[1] === 0x4b
       && (head[2] === 0x03 || head[2] === 0x05 || head[2] === 0x07);
@@ -131,17 +138,17 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
 
     const ole2 = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
     if (head.length >= 8 && ole2.every((byte, index) => head[index] === byte)) {
-      return `「${f.name}」是旧版 .xls 或带密码保护的 Excel 工作簿。请在 Excel / WPS 中打开（如有密码请先取消保护），然后「另存为 → Excel 工作簿 (*.xlsx)」再上传。`;
+      return t('upload.problem.legacyXls', { name: f.name });
     }
 
     const text = new TextDecoder('utf-8').decode(head).trimStart().toLowerCase();
     if (text.startsWith('<?xml') || text.startsWith('<workbook')) {
-      return `「${f.name}」是 Excel 2003 XML 表格，请用 Excel 打开后「另存为 .xlsx」再上传。`;
+      return t('upload.problem.xml', { name: f.name });
     }
     if (text.startsWith('%pdf') || text.startsWith('<!doctype') || text.startsWith('<html')) {
-      return `「${f.name}」不是 Excel 工作簿（看起来是 PDF 或网页文件）。请上传装箱清单的 .xlsx 原文件。`;
+      return t('upload.problem.notExcel', { name: f.name });
     }
-    return `「${f.name}」无法识别为 Excel 工作簿。当前支持 .xlsx；若是 .xls / .csv / 加密文件，请先在 Excel 中「另存为 .xlsx」再上传。`;
+    return t('upload.problem.unknown', { name: f.name });
   };
 
   /** 拖拽/选择统一入口：一个 Excel 清单 + 最多 9 张明细截图 */
@@ -155,11 +162,11 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     const unknown = picked.filter(f => !isSheetFile(f) && !isImageFile(f));
 
     if (unknown.length > 0) {
-      setErr(`「${unknown[0].name}」不是 .xlsx 清单文件，请先在 Excel 中另存为 .xlsx 后重试`);
+      setErr(t('upload.err.notXlsx', { name: unknown[0].name }));
     }
     const sheet = sheets[0];
     if (sheet && sheet.size > MAX_FILE_BYTES) {
-      setErr(`「${sheet.name}」超过 20 MB，请拆分或压缩后重试`);
+      setErr(t('upload.err.tooLarge', { name: sheet.name }));
       return;
     }
     if (sheet) {
@@ -170,12 +177,12 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
         setErr(problem);
         return;
       }
-      if (sheets.length > 1) setMessage(`一次只识别一个清单，已使用「${sheet.name}」`);
+      if (sheets.length > 1) setMessage(t('upload.msg.singleFile', { name: sheet.name }));
     }
     if (images.length > 0) {
       setShots(current => [...current, ...images].slice(0, 9));
       setShotRows(current => [...current, ...images.map(() => '')].slice(0, 9));
-      if (!sheet) setMessage(`已加入 ${images.length} 张明细截图，再拖入 Excel 清单即可识别`);
+      if (!sheet) setMessage(t('upload.msg.imagesAdded', { count: images.length }));
     }
   };
 
@@ -233,7 +240,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       data.append('row_map', JSON.stringify(rowMap));
       const response = await api.post('/api/client/orders/upload/preview', data, { timeout: 180_000 });
       if (!response.data.ok) {
-        setErr(response.data.error_summary || '文件识别失败');
+        setErr(response.data.error_summary || t('upload.err.recognizeFailed'));
         return;
       }
       setDraftId(response.data.draft_id);
@@ -246,9 +253,9 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       const serverMessage = e?.response?.data?.message || e?.response?.data?.error_summary;
       if (serverMessage) setErr(serverMessage);
       else if (!e?.response) {
-        setErr('上传中断：文件没有送达服务器。请确认文件仍在本机（未被移动或删除）、网络正常后重试；若来自邮件或微信，请先另存到桌面。');
+        setErr(t('upload.err.uploadInterrupted'));
       } else {
-        setErr(e?.message || '文件识别失败');
+        setErr(e?.message || t('upload.err.recognizeFailed'));
       }
     } finally { setBusy(false); }
   };
@@ -261,22 +268,22 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     const rowNo = rows[index]?.row_no;
     setServerErrors(current => current.filter(error => error.row !== rowNo || error.field_key !== key));
     setAiChecked(false);
-    setAiCheckNote('数据已修改，请重新执行 AI 检查。');
+    setAiCheckNote(t('upload.note.dataChanged'));
   };
 
   const applyPriceColumn = () => {
     const values = pricePaste.split(/\r?\n|\t/).map(value => value.trim()).filter(Boolean);
-    if (!values.length) { setErr('请先粘贴价格，每行一个价格'); return; }
-    if (values.length > rows.length) { setErr(`粘贴了 ${values.length} 个价格，但清单只有 ${rows.length} 行`); return; }
+    if (!values.length) { setErr(t('upload.err.priceEmpty')); return; }
+    if (values.length > rows.length) { setErr(t('upload.err.priceTooMany', { pasted: values.length, rows: rows.length })); return; }
     const invalid = values.find(value => !Number.isFinite(Number(value)) || Number(value) < 0);
-    if (invalid !== undefined) { setErr(`“${invalid}”不是有效价格`); return; }
+    if (invalid !== undefined) { setErr(t('upload.err.priceInvalid', { value: invalid })); return; }
     setRows(current => current.map((row, index) => index < values.length
       ? { ...row, data: { ...row.data, unit_price: Number(values[index]) } }
       : row));
     setServerErrors(current => current.filter(error => error.field_key !== 'unit_price' && error.field_key !== 'total_price'));
-    setAiChecked(false); setAiCheckNote('价格已批量更新，请执行 AI 检查。'); setErr('');
+    setAiChecked(false); setAiCheckNote(t('upload.note.priceUpdated')); setErr('');
     setShowPricePaste(false); setPricePaste('');
-    showToast(`已更新前 ${values.length} 行价格`);
+    showToast(t('upload.toast.priceUpdated', { count: values.length }));
   };
 
   const removeRow = (rowNo: number) => {
@@ -284,38 +291,38 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     setServerErrors(current => current.filter(error => error.row !== rowNo));
     setAiChecked(false);
     setNcmSuggestions(current => current.filter(item => item.row_no !== rowNo));
-    setAiCheckNote('已删除该行，请重新执行 AI 检查。');
+    setAiCheckNote(t('upload.note.rowDeleted'));
   };
 
   const applyNcmColumn = () => {
     const values = ncmPaste.trim().split(/\r?\n|\t/).map(value => value.trim());
-    if (!values.length || !values.some(Boolean)) { setErr('请先粘贴 NCM，每行一个 8 位编码'); return; }
-    if (values.length > rows.length) { setErr(`粘贴了 ${values.length} 行 NCM，但清单只有 ${rows.length} 行`); return; }
+    if (!values.length || !values.some(Boolean)) { setErr(t('upload.err.ncmEmpty')); return; }
+    if (values.length > rows.length) { setErr(t('upload.err.ncmTooMany', { pasted: values.length, rows: rows.length })); return; }
     const invalid = values.find(value => value && !/^\d{8}$/.test(value));
-    if (invalid) { setErr(`“${invalid}”不是有效的 8 位 NCM`); return; }
+    if (invalid) { setErr(t('upload.err.ncmInvalid', { value: invalid })); return; }
     setRows(current => current.map((row, index) => index < values.length
       ? { ...row, data: { ...row.data, hs_code: values[index] } } : row));
     setServerErrors(current => current.filter(error => error.field_key !== 'hs_code'));
-    setAiChecked(false); setAiCheckNote('NCM 已批量更新，请核对后提交。'); setErr('');
+    setAiChecked(false); setAiCheckNote(t('upload.note.ncmUpdated')); setErr('');
     setShowNcmPaste(false); setNcmPaste('');
-    showToast(`已更新前 ${values.length} 行 NCM`);
+    showToast(t('upload.toast.ncmUpdated', { count: values.length }));
   };
 
   const applyRowPaste = () => {
     const targetIndex = rows.findIndex(row => row.row_no === rowPasteTarget);
-    if (targetIndex < 0) { setErr('目标行已不存在，请重新选择'); return; }
+    if (targetIndex < 0) { setErr(t('upload.err.rowGone')); return; }
     const lines = rowPaste.replace(/(?:\r?\n)+$/, '').split(/\r?\n/).filter(line => line.trim());
-    if (!lines.length) { setErr('请先从 Excel 复制整行数据'); return; }
-    if (targetIndex + lines.length > rows.length) { setErr(`从第 ${rowPasteTarget} 行开始只剩 ${rows.length - targetIndex} 行，请减少粘贴行数`); return; }
+    if (!lines.length) { setErr(t('upload.err.rowPasteEmpty')); return; }
+    if (targetIndex + lines.length > rows.length) { setErr(t('upload.err.rowPasteOverflow', { row: rowPasteTarget, remaining: rows.length - targetIndex })); return; }
     const values = lines.map(line => line.split('\t'));
     const wrong = values.findIndex(cells => cells.length !== pasteFields.length);
-    if (wrong >= 0) { setErr(`粘贴的第 ${wrong + 1} 行有 ${values[wrong].length} 列，需要 ${pasteFields.length} 列；请只复制可编辑字段，不含自动计算列`); return; }
+    if (wrong >= 0) { setErr(t('upload.err.rowPasteColumns', { line: wrong + 1, actual: values[wrong].length, expected: pasteFields.length })); return; }
     for (const cells of values) {
       for (let index = 0; index < pasteFields.length; index++) {
         const key = pasteFields[index];
         const value = cells[index].trim();
-        if (numericFields.has(key) && value && !Number.isFinite(Number(value))) { setErr(`${pasteLabels[index]}「${value}」不是有效数字`); return; }
-        if (key === 'hs_code' && value && !/^\d{8}$/.test(value)) { setErr(`NCM「${value}」应为 8 位数字`); return; }
+        if (numericFields.has(key) && value && !Number.isFinite(Number(value))) { setErr(t('upload.err.fieldNotNumber', { field: fieldLabel(key), value })); return; }
+        if (key === 'hs_code' && value && !/^\d{8}$/.test(value)) { setErr(t('upload.err.ncm8Short', { value })); return; }
       }
     }
     const affected = new Set(rows.slice(targetIndex, targetIndex + values.length).map(row => row.row_no));
@@ -330,9 +337,9 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     }));
     setServerErrors(current => current.filter(error => !affected.has(error.row)));
     setNcmSuggestions(current => current.filter(item => !affected.has(item.row_no)));
-    setAiChecked(false); setAiCheckNote('数据已修改，请重新执行 AI 检查。'); setErr('');
+    setAiChecked(false); setAiCheckNote(t('upload.note.dataChanged')); setErr('');
     setRowPasteTarget(null); setRowPaste('');
-    showToast(`已粘贴 ${values.length} 行数据`);
+    showToast(t('upload.toast.rowPasted', { count: values.length }));
   };
 
   const aiCheck = async () => {
@@ -347,16 +354,18 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       setServerErrors(response.data.issues || []);
       if (!response.data.ok) {
         setAiChecked(false);
-        setErr(`AI 检查发现 ${response.data.issues?.length || 0} 项问题，请修正后重新检查`);
+        setErr(t('upload.err.aiIssues', { count: response.data.issues?.length || 0 }));
         return;
       }
       setAiChecked(true);
       const low = Number(response.data.low_confidence_count || 0);
-      setAiCheckNote(`文件检查完成，AI 补全 ${response.data.ncm_count || 0} 行 NCM${low ? `；其中 ${low} 行置信度较低，建议人工复核` : ''}。`);
-      showToast('AI 文件检查通过，可以提交');
+      setAiCheckNote(low
+        ? t('upload.note.aiDoneLow', { count: response.data.ncm_count || 0, low })
+        : t('upload.note.aiDone', { count: response.data.ncm_count || 0 }));
+      showToast(t('upload.toast.aiPassed'));
     } catch (e: any) {
       setAiChecked(false);
-      setErr(getApiErrorMessage(e, 'AI 文件检查失败'));
+      setErr(getApiErrorMessage(e, t('upload.err.aiFailed')));
     } finally { setBusy(false); }
   };
 
@@ -378,15 +387,15 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       }, { timeout: 120_000 });
       if (!response.data.ok) {
         setServerErrors(response.data.errors || []);
-        setErr(response.data.error_summary || '校验未通过，请继续修改');
+        setErr(response.data.error_summary || t('upload.err.validationFailed'));
         return;
       }
-      setMessage(`报价 ${response.data.quote_no} 已创建，AI 正在计算 DI 并生成参考 DDP…`);
-      showToast(`报价 ${response.data.quote_no} 已创建，AI 正在计算 DI 并生成参考 DDP…`);
+      setMessage(t('upload.msg.quoteCreated', { quote: response.data.quote_no }));
+      showToast(t('upload.msg.quoteCreated', { quote: response.data.quote_no }));
       onConfirmed?.();
       setTimeout(() => nav(`/orders/${response.data.quote_id}`), 800);
     } catch (e: any) {
-      setErr(getApiErrorMessage(e, '确认提交失败'));
+      setErr(getApiErrorMessage(e, t('upload.err.confirmFailed')));
     } finally { setBusy(false); }
   };
 
@@ -397,7 +406,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       type={type}
       step={type === 'number' ? 'any' : undefined}
       value={row.data[key] ?? ''}
-      title={errors.filter(error => error.row === row.row_no && error.field_key === key).map(error => error.reason).join('；')}
+      title={errors.filter(error => error.row === row.row_no && error.field_key === key).map(error => error.reason).join(t('upload.fieldSeparator'))}
       onChange={event => update(index, key, event.target.value)}
     />
   );
@@ -405,8 +414,8 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   return (
     <div className="card">
       <div className="card-title">
-        <h3>上传清单 · 获取报价</h3>
-        <span className="muted text-sm">先识别核对，再创建报价</span>
+        <h3>{t('upload.title')}</h3>
+        <span className="muted text-sm">{t('upload.subtitle')}</span>
       </div>
       {!draftId && (
         <>
@@ -424,7 +433,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
               ref={fileInputRef}
               type="file"
               accept=".xlsx"
-              aria-label="选择 Excel 清单文件"
+              aria-label={t('upload.chooseFileAria')}
               onChange={event => { acceptFiles(event.target.files); event.target.value = ''; }}
             />
             {file ? (
@@ -432,24 +441,24 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
                 <span className="dropzone-file-icon" aria-hidden="true">📄</span>
                 <div className="dropzone-file-main">
                   <strong title={file.name}>{file.name}</strong>
-                  <span className="muted text-sm">{formatSize(file.size)} · 已就绪，可直接拖入新文件替换</span>
+                  <span className="muted text-sm">{formatSize(file.size)} · {t('upload.fileReady')}</span>
                 </div>
                 <div className="dropzone-actions">
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileInputRef.current?.click()}>更换</button>
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={clearFile}>移除</button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileInputRef.current?.click()}>{t('upload.replace')}</button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={clearFile}>{t('upload.remove')}</button>
                 </div>
               </div>
             ) : (
               <div className="dropzone-empty">
                 <span className="dropzone-icon" aria-hidden="true">📥</span>
-                <strong className="dropzone-title">{dragActive ? '松开鼠标，开始识别清单' : '把 Excel 清单拖到这里'}</strong>
+                <strong className="dropzone-title">{dragActive ? t('upload.dropActiveTitle') : t('upload.dropTitle')}</strong>
                 <span className="muted text-sm">
-                  也可以<span className="dropzone-link">点击选择文件</span>
-                  · 支持 .xlsx（客户任意模板，AI 自动识别列）· 单文件 ≤ 20 MB
+                  {t('upload.or')}<span className="dropzone-link">{t('upload.clickToChoose')}</span>
+                  {t('upload.dropHint')}
                 </span>
               </div>
             )}
-            {dragActive && <span className="dropzone-badge">松开即可导入 · 也可同时拖入明细截图</span>}
+            {dragActive && <span className="dropzone-badge">{t('upload.dropBadge')}</span>}
           </label>
 
           <div className="row gap-md mt-12" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
@@ -458,15 +467,15 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
                 const picked = Array.from(event.target.files || []).slice(0, 9);
                 setShots(picked); setShotRows(picked.map(() => ''));
               }} />
-              {shots.length ? `已选 ${shots.length} 张截图` : '明细截图（可选）'}
+              {shots.length ? t('upload.shotsSelected', { count: shots.length }) : t('upload.shotsOptional')}
             </label>
-            <button className="btn btn-lg" disabled={!file || busy} onClick={preview}>{busy ? 'AI 识别与校验中…' : '识别清单'}</button>
-            {!file && <span className="muted text-sm">拖入或选择 .xlsx 后即可识别</span>}
+            <button className="btn btn-lg" disabled={!file || busy} onClick={preview}>{busy ? t('upload.recognizing') : t('upload.recognize')}</button>
+            {!file && <span className="muted text-sm">{t('upload.recognizeHint')}</span>}
           </div>
           {shots.map((shot, index) => (
             <div className="row gap-md mt-8" key={`${shot.name}-${index}`}>
               <span className="text-sm" style={{ flex: 1 }}>{shot.name}</span>
-              <input className="form-input form-input-sm" style={{ width: 160 }} type="number" min={1} placeholder="对应 Excel 行号（可选）"
+              <input className="form-input form-input-sm" style={{ width: 160 }} type="number" min={1} placeholder={t('upload.rowNoPlaceholder')}
                 value={shotRows[index] || ''} onChange={event => setShotRows(current => current.map((value, i) => i === index ? event.target.value : value))} />
             </div>
           ))}
@@ -479,7 +488,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
           {file && !draftId && (
             <div className="mt-8">
               <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={reselect}>
-                重新选择文件
+                {t('upload.reselectFile')}
               </button>
             </div>
           )}
@@ -490,47 +499,47 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
         <div className="mt-12">
           {file && (
             <p className="muted text-sm" style={{ margin: '0 0 8px' }}>
-              已识别清单：<strong>{file.name}</strong>
-              <button type="button" className="btn-link" style={{ marginLeft: 8 }} onClick={cancel} disabled={busy}>重新上传</button>
+              {t('upload.recognizedFile')}<strong>{file.name}</strong>
+              <button type="button" className="btn-link" style={{ marginLeft: 8 }} onClick={cancel} disabled={busy}>{t('upload.reupload')}</button>
             </p>
           )}
           <div className="alert alert-warn">
-            请核对识别结果。总件数、金额和 CBM 由系统重算；原表合计不一致的行必须修正后才能创建报价。
-            {convertedByAi && <div className="mt-8">AI 已转换非标准模板{aiNotes ? `：${aiNotes}` : ''}</div>}
+            {t('upload.reviewNote')}
+            {convertedByAi && <div className="mt-8">{aiNotes ? t('upload.aiConvertedNotes', { notes: aiNotes }) : t('upload.aiConverted')}</div>}
           </div>
           <div className="row gap-md" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div className="form-row" style={{ margin: 0 }}>
-              <label>清单申报币种</label>
+              <label>{t('upload.currencyLabel')}</label>
               <select className="form-input" value={currency} onChange={event => setCurrency(event.target.value as 'RMB' | 'USD')}>
-                <option value="RMB">RMB 人民币</option>
-                <option value="USD">USD 美元（确认时折算 RMB）</option>
+                <option value="RMB">{t('upload.currencyRmb')}</option>
+                <option value="USD">{t('upload.currencyUsd')}</option>
               </select>
             </div>
-            <span>产品行：<strong>{rows.length}</strong></span>
-            <span>总件数：<strong>{summary.pcs.toLocaleString()}</strong></span>
-            <span>总毛重：<strong>{summary.gw.toFixed(2)} kg</strong></span>
-            <span>总 CBM：<strong>{summary.cbm.toFixed(4)}</strong></span>
-            <span>总金额：<strong>{summary.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}</strong></span>
+            <span>{t('upload.rowCountLabel')}<strong>{rows.length}</strong></span>
+            <span>{t('upload.totalPcsLabel')}<strong>{summary.pcs.toLocaleString()}</strong></span>
+            <span>{t('upload.totalGwLabel')}<strong>{summary.gw.toFixed(2)} kg</strong></span>
+            <span>{t('upload.totalCbmLabel')}<strong>{summary.cbm.toFixed(4)}</strong></span>
+            <span>{t('upload.totalAmountLabel')}<strong>{summary.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}</strong></span>
           </div>
 
           {errors.length > 0 && (
             <div className="alert alert-err mt-12">
-              <strong>还有 {errors.length} 项需要核对</strong>
-              {errors.slice(0, 12).map((error, index) => <div key={`${error.row}-${error.field_key}-${index}`}>Excel Row{error.row} · {error.field_key}：{error.reason}</div>)}
-              {errors.length > 12 && <div>…共 {errors.length} 条</div>}
+              <strong>{t('upload.errorsCount', { count: errors.length })}</strong>
+              {errors.slice(0, 12).map((error, index) => <div key={`${error.row}-${error.field_key}-${index}`}>{t('upload.errorLine', { row: error.row, field: fieldLabel(error.field_key), reason: error.reason })}</div>)}
+              {errors.length > 12 && <div>{t('upload.errorsMore', { count: errors.length })}</div>}
             </div>
           )}
 
           <div className="row gap-md mt-12" style={{ flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={openNcmPaste}>整列粘贴 NCM</button>
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setShowPricePaste(value => !value)}>整列粘贴价格</button>
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={openNcmPaste}>{t('upload.pasteNcmColumn')}</button>
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setShowPricePaste(value => !value)}>{t('upload.pastePriceColumn')}</button>
           </div>
           <div className="table-wrap mt-12">
             <table className="table" style={{ minWidth: 1800 }}>
               <thead><tr>
-                <th>Excel 行</th><th>箱号</th><th>中文品名</th><th>英文品名</th><th>SKU</th><th>HS/NCM<button type="button" className="btn-link price-paste-trigger" onClick={openNcmPaste}>整列粘贴</button></th>
-                <th>箱数</th><th>每箱件数</th><th>总件数</th><th>净重/箱</th><th>毛重/箱</th>
-                <th>长 cm</th><th>宽 cm</th><th>高 cm</th><th>总 CBM</th><th>单价 {currency}<button type="button" className="btn-link price-paste-trigger" onClick={() => setShowPricePaste(value => !value)}>整列粘贴</button></th><th>总金额 {currency}</th><th>材质</th><th>产品描述</th><th>问题原因</th><th>操作</th>
+                <th>{t('upload.th.row')}</th><th>{t('upload.field.carton_no')}</th><th>{t('upload.field.product_cn')}</th><th>{t('upload.field.product_en')}</th><th>{t('upload.field.sku')}</th><th>{t('upload.field.hs_code')}<button type="button" className="btn-link price-paste-trigger" onClick={openNcmPaste}>{t('upload.pasteColumn')}</button></th>
+                <th>{t('upload.field.cartons')}</th><th>{t('upload.field.pcs_per_carton')}</th><th>{t('upload.field.total_pcs')}</th><th>{t('upload.field.nw_per_carton')}</th><th>{t('upload.field.gw_per_carton')}</th>
+                <th>{t('upload.field.length_cm')}</th><th>{t('upload.field.width_cm')}</th><th>{t('upload.field.height_cm')}</th><th>{t('upload.field.total_cbm')}</th><th>{t('upload.th.unitPrice', { currency })}<button type="button" className="btn-link price-paste-trigger" onClick={() => setShowPricePaste(value => !value)}>{t('upload.pasteColumn')}</button></th><th>{t('upload.th.totalPrice', { currency })}</th><th>{t('upload.field.material')}</th><th>{t('upload.field.description')}</th><th>{t('upload.th.issue')}</th><th>{t('upload.th.actions')}</th>
               </tr></thead>
               <tbody>
                 {computedRows.map((row, index) => {
@@ -542,7 +551,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
                       <td>{input(row, index, 'product_cn')}</td>
                       <td>{input(row, index, 'product_en')}</td>
                       <td>{input(row, index, 'sku')}</td>
-                      <td>{input(row, index, 'hs_code')}{ncmSuggestions.filter(item => item.row_no === row.row_no).map(item => <div className="upload-ncm-suggestion" key={item.row_no}>AI 建议 · {Math.round(item.confidence * 100)}%{item.used_image ? ' · 已参考图片' : ''}<span>{item.rationale}</span></div>)}</td>
+                      <td>{input(row, index, 'hs_code')}{ncmSuggestions.filter(item => item.row_no === row.row_no).map(item => <div className="upload-ncm-suggestion" key={item.row_no}>{t('upload.aiSuggestion', { confidence: Math.round(item.confidence * 100) })}{item.used_image ? t('upload.aiUsedImage') : ''}<span>{item.rationale}</span></div>)}</td>
                       <td>{input(row, index, 'cartons', 'number')}</td>
                       <td>{input(row, index, 'pcs_per_carton', 'number')}</td>
                       <td>{Number(row.data.total_pcs).toLocaleString()}</td>
@@ -556,12 +565,12 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
                       <td>{Number(row.data.total_price).toFixed(2)}</td>
                       <td>
                         <select className="form-input form-input-sm" value={row.data.material || '其他'} onChange={event => update(index, 'material', event.target.value)}>
-                          {['不带电', '带电', '含电池', '其他'].map(value => <option key={value}>{value}</option>)}
+                          {MATERIAL_OPTIONS.map(option => <option key={option.value} value={option.value}>{t(option.labelKey)}</option>)}
                         </select>
                       </td>
                       <td>{input(row, index, 'description')}</td>
-                      <td className="upload-row-errors">{errors.filter(error => error.row === row.row_no).map((error, issueIndex) => <div key={`${error.field_key}-${issueIndex}`}><strong>{requiredFields.find(([key]) => key === error.field_key)?.[1] || error.field_key}：</strong>{error.reason}</div>)}</td>
-                      <td><button type="button" className="btn-link" disabled={busy} onClick={() => { setRowPasteTarget(row.row_no); setRowPaste(''); }} aria-label={`从 Excel 第 ${row.row_no} 行开始粘贴整行`}>粘贴整行</button> <button type="button" className="btn-link" disabled={busy} onClick={() => removeRow(row.row_no)} aria-label={`删除 Excel 第 ${row.row_no} 行`}>删除</button></td>
+                      <td className="upload-row-errors">{errors.filter(error => error.row === row.row_no).map((error, issueIndex) => <div key={`${error.field_key}-${issueIndex}`}><strong>{fieldLabel(error.field_key)}:</strong> {error.reason}</div>)}</td>
+                      <td><button type="button" className="btn-link" disabled={busy} onClick={() => { setRowPasteTarget(row.row_no); setRowPaste(''); }} aria-label={t('upload.pasteRowAria', { row: row.row_no })}>{t('upload.pasteRow')}</button> <button type="button" className="btn-link" disabled={busy} onClick={() => removeRow(row.row_no)} aria-label={t('upload.deleteRowAria', { row: row.row_no })}>{t('common.delete')}</button></td>
                     </tr>
                   );
                 })}
@@ -569,33 +578,33 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
             </table>
           </div>
           {rowPasteTarget !== null && <div className="price-column-paste mt-12">
-            <div><strong>从 Excel 第 {rowPasteTarget} 行开始粘贴</strong><p className="muted text-sm">可连续粘贴多行。每行按以下 {pasteFields.length} 列排列，保留空白单元格：{pasteLabels.join('、')}。不要包含自动计算列。</p></div>
-            <textarea className="form-input" rows={5} autoFocus aria-label="粘贴 Excel 整行数据" placeholder="从 Excel 复制可编辑的整行数据，粘贴到这里" value={rowPaste} onChange={event => setRowPaste(event.target.value)} />
-            <div className="row gap-md"><button type="button" className="btn" disabled={busy} onClick={applyRowPaste}>应用整行数据</button><button type="button" className="btn btn-ghost" onClick={() => { setRowPasteTarget(null); setRowPaste(''); }}>取消</button></div>
+            <div><strong>{t('upload.pasteRowTitle', { row: rowPasteTarget })}</strong><p className="muted text-sm">{t('upload.pasteRowHint', { count: pasteFields.length, fields: pasteFields.map(key => fieldLabel(key)).join(t('upload.fieldSeparator')) })}</p></div>
+            <textarea className="form-input" rows={5} autoFocus aria-label={t('upload.pasteRowInputAria')} placeholder={t('upload.pasteRowPlaceholder')} value={rowPaste} onChange={event => setRowPaste(event.target.value)} />
+            <div className="row gap-md"><button type="button" className="btn" disabled={busy} onClick={applyRowPaste}>{t('upload.applyRow')}</button><button type="button" className="btn btn-ghost" onClick={() => { setRowPasteTarget(null); setRowPaste(''); }}>{t('common.cancel')}</button></div>
           </div>}
           {showPricePaste && (
             <div className="price-column-paste mt-12">
               <div>
-                <strong>批量粘贴单价</strong>
-                <p className="muted text-sm">从 Excel 复制一列价格并粘贴到下方，将从清单第一行开始依次填入。</p>
+                <strong>{t('upload.priceTitle')}</strong>
+                <p className="muted text-sm">{t('upload.priceHint')}</p>
               </div>
-              <textarea className="form-input" rows={5} autoFocus placeholder={'例如：\n12.50\n18\n9.90'} value={pricePaste} onChange={event => setPricePaste(event.target.value)} />
+              <textarea className="form-input" rows={5} autoFocus placeholder={t('upload.pricePlaceholder')} value={pricePaste} onChange={event => setPricePaste(event.target.value)} />
               <div className="row gap-md">
-                <button type="button" className="btn" onClick={applyPriceColumn}>应用到价格列</button>
-                <button type="button" className="btn btn-ghost" onClick={() => setShowPricePaste(false)}>取消</button>
+                <button type="button" className="btn" onClick={applyPriceColumn}>{t('upload.applyPrice')}</button>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowPricePaste(false)}>{t('common.cancel')}</button>
               </div>
             </div>
           )}
           {showNcmPaste && <div ref={ncmPasteRef} className="price-column-paste mt-12">
-            <div><strong>批量粘贴 NCM</strong><p className="muted text-sm">从 Excel 复制一列 8 位 NCM，按预览顺序逐行填入；空行保留为空供 AI 补全。</p></div>
-            <textarea className="form-input" rows={5} placeholder={'例如：\n85044040\n85044090'} value={ncmPaste} onChange={event => setNcmPaste(event.target.value)} />
-            <div className="row gap-md"><button type="button" className="btn" onClick={applyNcmColumn}>应用到 NCM 列</button><button type="button" className="btn btn-ghost" onClick={() => setShowNcmPaste(false)}>取消</button></div>
+            <div><strong>{t('upload.ncmTitle')}</strong><p className="muted text-sm">{t('upload.ncmHint')}</p></div>
+            <textarea className="form-input" rows={5} placeholder={t('upload.ncmPlaceholder')} value={ncmPaste} onChange={event => setNcmPaste(event.target.value)} />
+            <div className="row gap-md"><button type="button" className="btn" onClick={applyNcmColumn}>{t('upload.applyNcm')}</button><button type="button" className="btn btn-ghost" onClick={() => setShowNcmPaste(false)}>{t('common.cancel')}</button></div>
           </div>}
           {aiCheckNote && <div className={`alert ${aiChecked ? 'alert-ok' : 'alert-warn'} mt-12`}>{aiCheckNote}</div>}
           <div className="row gap-md mt-12">
-            {!computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim())) && <button className="btn btn-lg" disabled={busy || !rows.length || errors.length > 0} onClick={aiCheck}>{busy ? 'AI 检查中…' : 'AI 补全缺失 NCM 并检查文件'}</button>}
-            <button className="btn btn-lg btn-success" disabled={busy || !rows.length || errors.length > 0 || (!aiChecked && !computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim())))} onClick={confirm}>{busy ? '正在创建…' : '提交报价单'}</button>
-            <button className="btn btn-ghost" disabled={busy} onClick={cancel}>取消并重新选择</button>
+            {!computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim())) && <button className="btn btn-lg" disabled={busy || !rows.length || errors.length > 0} onClick={aiCheck}>{busy ? t('upload.aiChecking') : t('upload.aiCheck')}</button>}
+            <button className="btn btn-lg btn-success" disabled={busy || !rows.length || errors.length > 0 || (!aiChecked && !computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim())))} onClick={confirm}>{busy ? t('upload.creating') : t('upload.submit')}</button>
+            <button className="btn btn-ghost" disabled={busy} onClick={cancel}>{t('upload.cancelAndReselect')}</button>
           </div>
         </div>
       )}

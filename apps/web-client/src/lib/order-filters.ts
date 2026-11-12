@@ -46,42 +46,42 @@ const SHIPMENT_VALUES: ShipmentFilter[] = ['all', 'unassigned', 'in_transit', 'a
 const INVOICE_VALUES: InvoiceFilter[] = ['all', 'selected', 'missing'];
 const SORT_VALUES: OrderSort[] = ['created_desc', 'created_asc', 'ddp_desc', 'ddp_asc', 'eta_asc'];
 
-export const ORDER_STATUS_OPTIONS: { value: OrderStatusFilter; label: string }[] = [
-  { value: 'all', label: '全部' },
-  { value: 'processing', label: '核算中' },
-  { value: 'done', label: '参考价已生成' },
-  { value: 'failed', label: '失败' }
+export const ORDER_STATUS_OPTIONS: { value: OrderStatusFilter; labelKey: string }[] = [
+  { value: 'all', labelKey: 'filters.status.all' },
+  { value: 'processing', labelKey: 'filters.status.processing' },
+  { value: 'done', labelKey: 'filters.status.done' },
+  { value: 'failed', labelKey: 'filters.status.failed' }
 ];
 
-export const ORDER_PERIOD_OPTIONS: { value: OrderPeriod; label: string }[] = [
-  { value: 'all', label: '全部时间' },
-  { value: '7d', label: '最近 7 天' },
-  { value: '30d', label: '最近 30 天' },
-  { value: '90d', label: '最近 90 天' }
+export const ORDER_PERIOD_OPTIONS: { value: OrderPeriod; labelKey: string }[] = [
+  { value: 'all', labelKey: 'filters.period.all' },
+  { value: '7d', labelKey: 'filters.period.7d' },
+  { value: '30d', labelKey: 'filters.period.30d' },
+  { value: '90d', labelKey: 'filters.period.90d' }
 ];
 
-export const SHIPMENT_FILTER_OPTIONS: { value: ShipmentFilter; label: string }[] = [
-  { value: 'all', label: '全部物流' },
-  { value: 'unassigned', label: '未安排物流' },
-  { value: 'in_transit', label: '运输中' },
-  { value: 'arrived', label: '已到港' },
-  { value: 'customs_br', label: '巴西清关中' },
-  { value: 'cleared', label: '已缴税 / 已放行' },
-  { value: 'delivered', label: '已签收' }
+export const SHIPMENT_FILTER_OPTIONS: { value: ShipmentFilter; labelKey: string }[] = [
+  { value: 'all', labelKey: 'filters.shipment.all' },
+  { value: 'unassigned', labelKey: 'filters.shipment.unassigned' },
+  { value: 'in_transit', labelKey: 'filters.shipment.in_transit' },
+  { value: 'arrived', labelKey: 'filters.shipment.arrived' },
+  { value: 'customs_br', labelKey: 'filters.shipment.customs_br' },
+  { value: 'cleared', labelKey: 'filters.shipment.cleared' },
+  { value: 'delivered', labelKey: 'filters.shipment.delivered' }
 ];
 
-export const INVOICE_FILTER_OPTIONS: { value: InvoiceFilter; label: string }[] = [
-  { value: 'all', label: '全部开票状态' },
-  { value: 'selected', label: '已选择开票公司' },
-  { value: 'missing', label: '未选择开票公司' }
+export const INVOICE_FILTER_OPTIONS: { value: InvoiceFilter; labelKey: string }[] = [
+  { value: 'all', labelKey: 'filters.invoice.all' },
+  { value: 'selected', labelKey: 'filters.invoice.selected' },
+  { value: 'missing', labelKey: 'filters.invoice.missing' }
 ];
 
-export const ORDER_SORT_OPTIONS: { value: OrderSort; label: string }[] = [
-  { value: 'created_desc', label: '最新上传' },
-  { value: 'created_asc', label: '最早上传' },
-  { value: 'ddp_desc', label: 'DDP 从高到低' },
-  { value: 'ddp_asc', label: 'DDP 从低到高' },
-  { value: 'eta_asc', label: '预计到港从近到远' }
+export const ORDER_SORT_OPTIONS: { value: OrderSort; labelKey: string }[] = [
+  { value: 'created_desc', labelKey: 'filters.sort.created_desc' },
+  { value: 'created_asc', labelKey: 'filters.sort.created_asc' },
+  { value: 'ddp_desc', labelKey: 'filters.sort.ddp_desc' },
+  { value: 'ddp_asc', labelKey: 'filters.sort.ddp_asc' },
+  { value: 'eta_asc', labelKey: 'filters.sort.eta_asc' }
 ];
 
 const oneOf = <T extends string>(value: string | null, allowed: T[], fallback: T): T =>

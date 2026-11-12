@@ -5,10 +5,10 @@
   "description": "DDP Quotation System — NestJS API",
   "main": "dist/main.js",
   "scripts": {
-    "dev": "nest start --watch",
+    "dev": "node ../../scripts/write-version.mjs api . && nest start --watch",
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",
-    "build": "nest build",
+    "build": "node ../../scripts/write-version.mjs api . && nest build",
     "lint": "eslint \"src/**/*.ts\"",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/data-source.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/data-source.ts",

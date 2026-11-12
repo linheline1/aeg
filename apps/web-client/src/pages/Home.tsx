@@ -51,6 +51,13 @@ export default function Home() {
         </div>
       </div>
       {err && <div className="alert alert-err">{err}</div>}
+      {profile && <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        {profile.salesperson?.avatar_data ? <img src={profile.salesperson.avatar_data} alt="" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }} /> : null}
+        <span>{t('profile.salespersonTitle')}：<strong>{profile.salesperson?.name || t('profile.salespersonUnassigned')}</strong>
+          {profile.salesperson?.phone && <span style={{ marginLeft: 12 }}><a href={`tel:${profile.salesperson.phone}`}>{t('profile.salesPhone')}：{profile.salesperson.phone}</a></span>}
+          {profile.salesperson?.wechat && <span style={{ marginLeft: 12 }}>{t('profile.salesWechat')}：{profile.salesperson.wechat}</span>}
+        </span>
+      </div>}
 
       <div className="home-stats">
         {[

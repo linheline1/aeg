@@ -10,6 +10,7 @@ export default {
   'nav.help': 'Ajuda',
   'nav.audit': 'Log de Auditoria',
   'nav.aiConfig': 'API de Modelo',
+  'nav.versions': 'Versões',
   'nav.clientReview': 'Aprovação de Empresa',
 
   'login.title': 'Login Admin',
@@ -626,4 +627,24 @@ export default {
   'aiConfig.err.activateFail': 'Falha ao alternar',
   'aiConfig.err.deleteFail': 'Falha ao excluir',
   'aiConfig.confirm.delete': 'Confirma excluir a configuração "{name}"? Essa ação é irreversível.',
+
+  // Versions
+  'versions.title': 'Informações de Versão',
+  'versions.subtitle': 'Versões de build de cada aplicação · gravadas em versions.json na raiz do repositório durante o build',
+  'versions.currentOrigin': 'Endereço atual: {{origin}}',
+  'versions.serverTime': 'Hora do servidor: {{time}}',
+  'versions.refresh': 'Atualizar',
+  'versions.loading': 'Carregando...',
+  'versions.loadFail': 'Falha ao carregar informações de versão',
+  'versions.col.app': 'Aplicação',
+  'versions.col.version': 'Versão',
+  'versions.col.commit': 'Commit Git',
+  'versions.col.builtAt': 'Data do build',
+  'versions.col.address': 'Endereço local padrão',
+  'versions.notBuilt': 'Não construído / não reportado',
+  'versions.app.api': 'API',
+  'versions.app.admin': 'Painel Admin',
+  'versions.app.ops': 'Painel de Operações',
+  'versions.app.client': 'Cliente',
+  'versions.app.customs': 'Despacho',
 };

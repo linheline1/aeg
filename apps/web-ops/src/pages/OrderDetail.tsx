@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { api } from '../store/auth';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { downloadOrShareFile } from '@aeg/web-shared/file-actions';
@@ -78,41 +79,42 @@ const DEFAULT_MARKUP_RATE = 0.20;
 const DEFAULT_TAX_RATE = 0.065;
 const DEFAULT_PROFIT_BRL = 30000;
 
-const FIELD_LABELS: Record<string, string> = {
-  row_no: '行号', carton_no: '箱号', sku: 'SKU', product_cn: '品名 CN',
-  product_en: '品名 EN', hs_code: 'HS Code', cartons: '箱数', pcs_per_carton: '件数/箱',
-  total_pcs: '总件数', nw_per_carton: '净重/箱', gw_per_carton: '毛重/箱', total_gw: '总毛重',
-  length_cm: '长 cm', width_cm: '宽 cm', height_cm: '高 cm', unit_cbm: '体积 CBM',
-  unit_price: '计价单价 RMB', base_unit_price: '原单价 RMB',
-  material: '材质', destination: '目的地', remark: '备注'
+const FIELD_LABEL_KEYS: Record<string, string> = {
+  row_no: 'orderDetail.field.rowNo', carton_no: 'orderDetail.field.cartonNo', sku: 'SKU', product_cn: 'orderDetail.field.productCn',
+  product_en: 'orderDetail.field.productEn', hs_code: 'HS Code', cartons: 'orderDetail.field.cartons', pcs_per_carton: 'orderDetail.field.pcsPerCarton',
+  total_pcs: 'orderDetail.field.totalPcs', nw_per_carton: 'orderDetail.field.nwPerCarton', gw_per_carton: 'orderDetail.field.gwPerCarton', total_gw: 'orderDetail.field.totalGw',
+  length_cm: 'orderDetail.field.lengthCm', width_cm: 'orderDetail.field.widthCm', height_cm: 'orderDetail.field.heightCm', unit_cbm: 'orderDetail.field.unitCbm',
+  unit_price: 'orderDetail.field.unitPrice', base_unit_price: 'orderDetail.field.baseUnitPrice',
+  material: 'orderDetail.field.material', destination: 'orderDetail.field.destination', remark: 'orderDetail.field.remark'
 };
 
-const STATUS_CN: Record<string, string> = {
-  uploaded: '已上传', validating: '校验中', pending_fee: '待核算',
-  computing: '计算中', done: '已完成', failed: '失败'
+const STATUS_KEYS: Record<string, string> = {
+  uploaded: 'orderDetail.status.uploaded', validating: 'orderDetail.status.validating', pending_fee: 'orderDetail.status.pendingFee',
+  computing: 'orderDetail.status.computing', done: 'orderDetail.status.done', failed: 'orderDetail.status.failed'
 };
 /** M4 成交状态 */
-const DEAL_CN: Record<string, string> = { open: '跟进中', won: '已成交', lost: '未成交' };
+const DEAL_KEYS: Record<string, string> = { open: 'orderDetail.dealStatus.open', won: 'orderDetail.dealStatus.won', lost: 'orderDetail.dealStatus.lost' };
 /** M7 物流节点阶段（清关环节细化为三节点） */
-const SHIP_STAGE_CN: Record<string, string> = {
-  booked: '已订舱', loaded: '已装柜', customs_cn: '中国报关', departed: '已开船',
-  on_water: '海运途中', arrived: '已到港', customs_br: '巴西清关中',
-  duty_paid: '关税已缴', cleared: '清关放行', delivered: '已签收'
+const SHIP_STAGE_KEYS: Record<string, string> = {
+  booked: 'orderDetail.stage.booked', loaded: 'orderDetail.stage.loaded', customs_cn: 'orderDetail.stage.customsCn', departed: 'orderDetail.stage.departed',
+  on_water: 'orderDetail.stage.onWater', arrived: 'orderDetail.stage.arrived', customs_br: 'orderDetail.stage.customsBr',
+  duty_paid: 'orderDetail.stage.dutyPaid', cleared: 'orderDetail.stage.cleared', delivered: 'orderDetail.stage.delivered'
 };
 /** M7 物流流程顺序（进度条 / 一键推进 / 智能默认） */
 const SHIP_FLOW = ['booked', 'loaded', 'customs_cn', 'departed', 'on_water', 'arrived', 'customs_br', 'duty_paid', 'cleared', 'delivered'];
 /** 进度条上的阶段短名 */
-const FLOW_SHORT: Record<string, string> = {
-  booked: '订舱', loaded: '装柜', customs_cn: '报关', departed: '开船',
-  on_water: '海运', arrived: '到港', customs_br: '清关中', duty_paid: '缴税',
-  cleared: '放行', delivered: '签收'
+const FLOW_SHORT_KEYS: Record<string, string> = {
+  booked: 'orderDetail.stageShort.booked', loaded: 'orderDetail.stageShort.loaded', customs_cn: 'orderDetail.stageShort.customsCn', departed: 'orderDetail.stageShort.departed',
+  on_water: 'orderDetail.stageShort.onWater', arrived: 'orderDetail.stageShort.arrived', customs_br: 'orderDetail.stageShort.customsBr', duty_paid: 'orderDetail.stageShort.dutyPaid',
+  cleared: 'orderDetail.stageShort.cleared', delivered: 'orderDetail.stageShort.delivered'
 };
 /** 可触发核算的状态（M3 状态机，computing 视为重启残留可重试） */
 const COMPUTABLE = new Set(['uploaded', 'pending_fee', 'failed', 'computing']);
 /** M8 交付文件类型 */
-const FILE_KIND_CN: Record<string, string> = { clearance_shot: '放行截图', invoice: '发票PDF', other: '其他' };
+const FILE_KIND_KEYS: Record<string, string> = { clearance_shot: 'orderDetail.fileKind.clearanceShot', invoice: 'orderDetail.fileKind.invoice', other: 'orderDetail.fileKind.other' };
 
 export default function OrderDetail() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const [d, setD] = useState<OrderDetail | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -267,20 +269,20 @@ export default function OrderDetail() {
   const currentCustomsApproved = d?.customs_review?.status === 'approved'
     && d.customs_review.di_review_version != null
     && d.customs_review.di_review_version === d.di_analysis?.review_version;
-  const customsApprovalHint = '需由报关行批准当前 DI 版本后才能进行此操作';
+  const customsApprovalHint = t('orderDetail.customs.approvalRequired');
   const checkCurrentCustomsApproval = (action: string) => {
     if (currentCustomsApproved) return true;
-    setErr(`报关行尚未批准当前 DI 版本，不能${action}`);
+    setErr(t('orderDetail.customs.notApproved', { action }));
     return false;
   };
 
   /** M3：按费率表核算并发布（uploaded/pending_fee/failed → computing → done） */
   const handleCompute = async () => {
-    if (diAmountOf(d) == null) { setErr('请先生成 DI（NCM / DI 进口税费预估）后再核算参考 DDP'); return; }
+    if (diAmountOf(d) == null) { setErr(t('orderDetail.di.requiredForCompute')); return; }
     setBusy(true); setErr(null);
     try {
       const r = await api.post(`/api/ops/orders/${id}/compute`, {});
-      flashMsg(`✅ 核算完成 ${r.data.quote_no} → R$ ${r.data.total_amount_brl?.toFixed(2)}`);
+      flashMsg(t('orderDetail.computed', { quote: r.data.quote_no, amount: r.data.total_amount_brl?.toFixed(2) }));
       load();
     } catch (e: any) {
       setErr(getApiErrorMessage(e));
@@ -291,18 +293,20 @@ export default function OrderDetail() {
     const raw = (adjPct[rowNo] || '').trim();
     const pct = Number(raw);
     if (!raw || !Number.isFinite(pct) || pct <= 0 || pct > 10000) {
-      flashMsg('请输入大于 0 的计价百分比，例如 30 表示按原单价的 30% 计价');
+      flashMsg(t('orderDetail.invalidPercent'));
       return;
     }
     setPriceBusyRow(rowNo); setErr(null);
     try {
       const r = await api.patch(`/api/ops/orders/${id}/line-items/${rowNo}/price`, { percent: pct });
-      const parts = [`行 ${rowNo}：原价 ¥${r.data.base_unit_price} × ${pct}% = ¥${r.data.unit_price}`];
-      parts.push(`行总价 ¥${r.data.total_price}；整柜货值 ¥${r.data.total_amount_rmb}`);
+      const parts = [t('orderDetail.price.rowSummary', {
+        row: rowNo, base: r.data.base_unit_price, pct, price: r.data.unit_price
+      })];
+      parts.push(t('orderDetail.price.totalSummary', { total: r.data.total_price, amount: r.data.total_amount_rmb }));
       if (r.data.total_amount_brl != null) {
-        parts.push(`参考 DDP R$ ${Number(r.data.total_amount_brl).toFixed(2)}；请等待报关行重新确认`);
+        parts.push(t('orderDetail.price.ddpPending', { amount: Number(r.data.total_amount_brl).toFixed(2) }));
       } else {
-        parts.push('订单已回到「已上传」，请重新核算发布');
+        parts.push(t('orderDetail.price.resetToUploaded'));
       }
       flashMsg(parts.join(' · '));
       setAdjPct(prev => ({ ...prev, [rowNo]: '' }));
@@ -314,11 +318,11 @@ export default function OrderDetail() {
 
   /** M3：手动流转（标记失败 / 失败重开） */
   const handleStatus = async (next: 'failed' | 'pending_fee') => {
-    if (next === 'failed' && !window.confirm('确定标记该订单为失败？客户将看不到此报价。')) return;
+    if (next === 'failed' && !window.confirm(t('orderDetail.confirmMarkFailed'))) return;
     setBusy(true); setErr(null);
     try {
       await api.patch(`/api/ops/orders/${id}/status`, { status: next });
-      flashMsg(next === 'failed' ? '已标记失败' : '已重新开启核算');
+      flashMsg(next === 'failed' ? t('orderDetail.markedFailed') : t('orderDetail.reopened'));
       load();
     } catch (e: any) {
       setErr(getApiErrorMessage(e));
@@ -326,7 +330,7 @@ export default function OrderDetail() {
   };
 
   const handleRecompute = async () => {
-    if (diAmountOf(d) == null) { setErr('请先生成 DI（NCM / DI 进口税费预估）后再重新计算参考 DDP'); return; }
+    if (diAmountOf(d) == null) { setErr(t('orderDetail.di.requiredForRecompute')); return; }
     setSaving(true); setErr(null);
     try {
       const r = await api.patch(`/api/ops/orders/${id}/fees`, {
@@ -339,7 +343,11 @@ export default function OrderDetail() {
         // 兼容旧接口：巴西清关合并价已由 DI + 税率 + 利润取代
         br_clearance_brl: 0
       });
-      setFlash(`✅ 已保存参考 DDP 预估 ${r.data.quote_no} → R$ ${r.data.total_amount_brl.toFixed(2)} / USD ${r.data.total_amount_usd.toFixed(2)}`);
+      setFlash(t('orderDetail.savedDdp', {
+        quote: r.data.quote_no,
+        brl: r.data.total_amount_brl.toFixed(2),
+        usd: r.data.total_amount_usd.toFixed(2)
+      }));
       setTimeout(() => setFlash(null), 2500);
       setD(prev => prev ? {
         ...prev,
@@ -358,7 +366,9 @@ export default function OrderDetail() {
     try {
       const r = await api.get(`/api/ops/orders/${id}/file`, { responseType: 'blob' });
       await downloadOrShareFile(r.data, d.input_file_name || `${d.quote_no}.xlsx`);
-    } catch (e: any) { alert('下载失败: ' + (e?.response?.data?.message || e?.message)); }
+    } catch (e: any) {
+      alert(t('orderDetail.downloadFailed', { message: e?.response?.data?.message || e?.message }));
+    }
   };
 
   const diPayload = () => ({
@@ -369,14 +379,14 @@ export default function OrderDetail() {
   });
 
   const handleDiAnalyze = async () => {
-    if (!diParams.rmb_brl) { setErr('请填写 RMB → BRL 汇率'); return; }
+    if (!diParams.rmb_brl) { setErr(t('orderDetail.di.rmbRateRequired')); return; }
     setDiBusy(true); setErr(null);
     try {
       const r = await api.post(`/api/ops/orders/${id}/di/analyze`, diPayload());
       setDi(r.data);
       setD(prev => prev ? { ...prev, di_analysis: r.data } : prev);
-      flashMsg('✅ AI NCM 分析与 DI 计算完成，请核对后保存 DI 版本');
-    } catch (e: any) { setErr(e?.response?.data?.message || e?.message || 'NCM 分析失败'); }
+      flashMsg(t('orderDetail.di.analyzed'));
+    } catch (e: any) { setErr(e?.response?.data?.message || e?.message || t('orderDetail.di.analyzeFailed')); }
     finally { setDiBusy(false); }
   };
 
@@ -408,8 +418,8 @@ export default function OrderDetail() {
         }
       } : prev);
       loadDiVersions();
-      flashMsg(`✅ 已保存 DI 版本 v${r.data.review_version}，可生成参考 DDP；报关行批准后才能标记成交`);
-    } catch (e: any) { setErr(e?.response?.data?.message || e?.message || 'DI 版本保存失败'); }
+      flashMsg(t('orderDetail.di.saved', { version: r.data.review_version }));
+    } catch (e: any) { setErr(e?.response?.data?.message || e?.message || t('orderDetail.di.saveFailed')); }
     finally { setDiBusy(false); }
   };
 
@@ -420,25 +430,25 @@ export default function OrderDetail() {
     try {
       const r = await api.get(`/api/ops/orders/${id}/di/versions/${value}`);
       setDiHistory(r.data);
-    } catch (e: any) { setErr(e?.response?.data?.message || e?.message || 'DI 历史版本加载失败'); }
+    } catch (e: any) { setErr(e?.response?.data?.message || e?.message || t('orderDetail.di.historyLoadFailed')); }
   };
 
   const handleDiDdp = async () => {
     setDiBusy(true); setErr(null);
     try {
       const r = await api.post(`/api/ops/orders/${id}/di/ddp`);
-      flashMsg(`✅ 已按 DI 版本 v${di?.review_version} + 默认运费生成参考 DDP：R$ ${r.data.total_amount_brl?.toFixed(2)}`);
+      flashMsg(t('orderDetail.di.ddpGenerated', { version: di?.review_version, amount: r.data.total_amount_brl?.toFixed(2) }));
       load();
-    } catch (e: any) { setErr(e?.response?.data?.message || e?.message || 'DDP 生成失败'); }
+    } catch (e: any) { setErr(e?.response?.data?.message || e?.message || t('orderDetail.di.ddpFailed')); }
     finally { setDiBusy(false); }
   };
 
   /** M4：成交标记（won/lost/open） */
   const handleDeal = async (next: 'won' | 'lost' | 'open') => {
-    if (next === 'won' && !checkCurrentCustomsApproval('标记成交')) return;
+    if (next === 'won' && !checkCurrentCustomsApproval(t('orderDetail.deal.actionMarkWon'))) return;
     let note: string | undefined;
     if (next === 'lost') {
-      note = window.prompt('未成交原因（可选，将记入审计日志）：') ?? undefined;
+      note = window.prompt(t('orderDetail.lostReasonPrompt')) ?? undefined;
     }
     setBusy(true); setErr(null);
     try {
@@ -446,7 +456,7 @@ export default function OrderDetail() {
         deal_status: next,
         ...(note !== undefined ? { note } : {})
       });
-      flashMsg(next === 'won' ? '✅ 已标记成交' : next === 'lost' ? '已标记未成交' : '已恢复跟进中');
+      flashMsg(next === 'won' ? t('orderDetail.deal.markedWon') : next === 'lost' ? t('orderDetail.deal.markedLost') : t('orderDetail.deal.reopenedOpen'));
       load();
     } catch (e: any) {
       setErr(getApiErrorMessage(e));
@@ -458,7 +468,7 @@ export default function OrderDetail() {
     setBusy(true); setErr(null);
     try {
       await api.patch(`/api/ops/orders/${id}/assign`, { salesperson_id: salespersonId || null });
-      flashMsg('✅ 业务员已更新');
+      flashMsg(t('orderDetail.salesUpdated'));
       load();
     } catch (e: any) {
       setErr(getApiErrorMessage(e));
@@ -471,7 +481,7 @@ export default function OrderDetail() {
     setShipSaving(true); setErr(null);
     try {
       await api.put(`/api/ops/orders/${id}/shipment`, shipForm);
-      flashMsg('✅ 物流信息已保存');
+      flashMsg(t('orderDetail.ship.saved'));
       load();
     } catch (e: any) {
       setErr(getApiErrorMessage(e));
@@ -489,7 +499,7 @@ export default function OrderDetail() {
         note: evForm.note || undefined,
         happened_at
       });
-      flashMsg('✅ 物流节点已添加');
+      flashMsg(t('orderDetail.ship.eventAdded'));
       setEvForm({ stage: evForm.stage, at: '', note: '' });
       load();
     } catch (e: any) {
@@ -506,7 +516,7 @@ export default function OrderDetail() {
         stage: evNextStage,
         note: evForm.note || undefined
       });
-      flashMsg(`✅ 已推进到「${SHIP_STAGE_CN[evNextStage]}」`);
+      flashMsg(t('orderDetail.ship.advancedTo', { stage: t(SHIP_STAGE_KEYS[evNextStage]) }));
       setEvForm({ stage: evNextStage, at: '', note: '' });
       load();
     } catch (e: any) {
@@ -516,11 +526,11 @@ export default function OrderDetail() {
 
   /** M7：删除误录的物流节点 */
   const handleEvDel = async (eventId: string) => {
-    if (!window.confirm('确定删除该物流节点？')) return;
+    if (!window.confirm(t('orderDetail.ship.confirmDeleteEvent'))) return;
     setShipBusy(true); setErr(null);
     try {
       await api.delete(`/api/ops/orders/${id}/shipment/events/${eventId}`);
-      flashMsg('物流节点已删除');
+      flashMsg(t('orderDetail.ship.eventDeleted'));
       load();
     } catch (e: any) {
       setErr(getApiErrorMessage(e));
@@ -548,7 +558,7 @@ export default function OrderDetail() {
       fd.append('kind', fileKind);
       if (fileNote.trim()) fd.append('note', fileNote.trim());
       const r = await api.post(`/api/ops/orders/${id}/files`, fd);
-      flashMsg(`✅ 已上传 ${r.data.count} 个文件，客户端可见`);
+      flashMsg(t('orderDetail.files.uploaded', { count: r.data.count }));
       setPickFiles([]); setFileNote('');
       loadFiles();
     } catch (e: any) {
@@ -557,11 +567,11 @@ export default function OrderDetail() {
   };
 
   const doFileDelete = async (fid: string) => {
-    if (!window.confirm('确定删除该文件？客户端将不再可见。')) return;
+    if (!window.confirm(t('orderDetail.files.confirmDelete'))) return;
     setFileBusy(true); setErr(null);
     try {
       await api.delete(`/api/ops/files/${fid}`);
-      flashMsg('文件已删除');
+      flashMsg(t('orderDetail.files.deleted'));
       loadFiles();
     } catch (e: any) {
       setErr(getApiErrorMessage(e));
@@ -572,11 +582,11 @@ export default function OrderDetail() {
     try {
       const r = await api.get(`/api/ops/files/${f.id}/file`, { responseType: 'blob' });
       await downloadOrShareFile(new Blob([r.data], { type: f.mime_type }), f.file_name);
-    } catch (e: any) { alert('下载失败: ' + (e?.response?.data?.message || e?.message)); }
+    } catch (e: any) { alert(t('orderDetail.downloadFailed', { message: e?.response?.data?.message || e?.message })); }
   };
 
-  if (err && !d) return <div className="card"><p className="err-msg">❌ {err}</p><Link to="/orders">← 返回列表</Link></div>;
-  if (!d) return <div className="card"><p>加载中…</p></div>;
+  if (err && !d) return <div className="card"><p className="err-msg">❌ {err}</p><Link to="/orders">← {t('orderDetail.backToList')}</Link></div>;
+  if (!d) return <div className="card"><p>{t('common.loading')}</p></div>;
 
   // 前端本地预演：税基=(DI+货值)×(1+20%)+国际运费；税务=税基×6.5%
   // 参考 DDP = 税务 + DI + 国际运费 + 其他成本 + 每票利润
@@ -595,7 +605,7 @@ export default function OrderDetail() {
   const previewTotal = Math.round((previewSalesTaxBrl + (diBrl ?? 0) + previewOceanBrl + previewPortBrl + fees.profit_brl) * 100) / 100;
   const prevTotal = d.pricing_breakdown?.total ?? d.total_amount_brl ?? 0;
   const diff = Math.round((previewTotal - prevTotal) * 100) / 100;
-  const noDiHint = '请先生成 DI（NCM / DI 进口税费预估）后再计算参考 DDP';
+  const noDiHint = t('orderDetail.di.requiredForDdp');
 
   // line_items 的字段（取第一个 row 的 keys 做表头）
   const liKeys: string[] = (d.line_items?.[0] && typeof d.line_items[0] === 'object')
@@ -636,7 +646,7 @@ export default function OrderDetail() {
         >
           {shotThumbs[img.id]
             ? <img src={shotThumbs[img.id]} alt={img.file_name} />
-            : <span className="muted text-sm">加载中…</span>}
+            : <span className="muted text-sm">{t('common.loading')}</span>}
         </div>
       ))}
     </div>
@@ -646,12 +656,12 @@ export default function OrderDetail() {
     <div className="order-detail">
       <div className="page-title">
         <h1>
-          <Link to="/orders" className="btn-link">← 返回</Link> &nbsp;
-          报价单 <code>{d.quote_no}</code>
+          <Link to="/orders" className="btn-link">← {t('common.back')}</Link> &nbsp;
+          {t('orderDetail.quoteLabel')} <code>{d.quote_no}</code>
         </h1>
         <div className="row gap-md">
-          <span className={`status-tag status-${d.status}`}>{STATUS_CN[d.status] || d.status}</span>
-          {d.has_file && <button onClick={handleDownload} className="btn">📥 原 Excel</button>}
+          <span className={`status-tag status-${d.status}`}>{STATUS_KEYS[d.status] ? t(STATUS_KEYS[d.status]) : d.status}</span>
+          {d.has_file && <button onClick={handleDownload} className="btn">📥 {t('orderDetail.originalExcel')}</button>}
         </div>
       </div>
 
@@ -660,25 +670,25 @@ export default function OrderDetail() {
 
       <div className={`alert ${currentCustomsApproved ? 'alert-ok' : 'alert-warn'}`}>
         <strong>
-          报关审核：{!d.customs_review
-            ? '尚未提交'
+          {t('orderDetail.customs.title')}{!d.customs_review
+            ? t('orderDetail.customs.notSubmitted')
             : d.customs_review.status === 'pending'
-              ? '等待报关行'
+              ? t('orderDetail.customs.pending')
               : d.customs_review.status === 'changes_requested'
-                ? '需修改'
-                : `已批准${d.customs_review.di_review_version != null ? ` v${d.customs_review.di_review_version}` : ''}`}
+                ? t('orderDetail.customs.changesRequested')
+                : t('orderDetail.customs.approvedVersion', { version: d.customs_review.di_review_version != null ? ` v${d.customs_review.di_review_version}` : '' })}
         </strong>
         {d.customs_review?.status === 'approved' && !currentCustomsApproved && (
-          <span style={{ marginLeft: 8 }}>批准版本与当前 DI 版本不匹配，需重新提交报关行审核。</span>
+          <span style={{ marginLeft: 8 }}>{t('orderDetail.customs.versionMismatch')}</span>
         )}
         {(d.customs_review?.reviewed_by || d.customs_review?.reviewed_at) && (
           <div className="text-sm" style={{ marginTop: 4 }}>
-            复核人：{d.customs_review.reviewed_by || '—'}
+            {t('orderDetail.customs.reviewer', { name: d.customs_review.reviewed_by || '—' })}
             {d.customs_review.reviewed_at && ` · ${d.customs_review.reviewed_at.slice(0, 16).replace('T', ' ')}`}
           </div>
         )}
         {d.customs_review?.status === 'changes_requested' && d.customs_review.note && (
-          <div style={{ marginTop: 4 }}>需修改备注：{d.customs_review.note}</div>
+          <div style={{ marginTop: 4 }}>{t('orderDetail.customs.changesNote', { note: d.customs_review.note })}</div>
         )}
       </div>
 
@@ -686,13 +696,13 @@ export default function OrderDetail() {
       {COMPUTABLE.has(d.status) && (
         <div className="alert alert-warn row-between order-workbar" style={{ alignItems: 'center' }}>
           <div>
-            <strong>{d.status === 'failed' ? '⚠️ 该订单已标记失败' : '⏳ 该订单待核算'}</strong>
+            <strong>{d.status === 'failed' ? t('orderDetail.workbar.failed') : t('orderDetail.workbar.pending')}</strong>
             <span className="text-sm" style={{ marginLeft: 8 }}>
               {d.status === 'failed'
-                ? (d.error_message || '可修改费率后重新核算')
+                ? (d.error_message || t('orderDetail.workbar.failedHintDefault'))
                 : !hasDi
-                  ? '尚未生成 DI，请先生成 NCM / DI 进口税费预估'
-                  : '可按费率表生成参考 DDP；报关行批准仅影响最终成交'}
+                  ? t('orderDetail.workbar.noDiHint')
+                  : t('orderDetail.workbar.readyHint')}
             </span>
           </div>
           <div className="row gap-sm">
@@ -702,11 +712,11 @@ export default function OrderDetail() {
               onClick={handleCompute}
               title={!hasDi ? noDiHint : undefined}
             >
-              {busy ? '处理中…' : '⚡ 按费率表核算并发布'}
+              {busy ? t('orderDetail.workbar.computing') : t('orderDetail.workbar.compute')}
             </button>
             {d.status !== 'failed'
-              ? <button className="btn btn-ghost" disabled={busy} onClick={() => handleStatus('failed')}>标记失败</button>
-              : <button className="btn btn-ghost" disabled={busy} onClick={() => handleStatus('pending_fee')}>重新开启</button>}
+              ? <button className="btn btn-ghost" disabled={busy} onClick={() => handleStatus('failed')}>{t('orderDetail.workbar.markFailed')}</button>
+              : <button className="btn btn-ghost" disabled={busy} onClick={() => handleStatus('pending_fee')}>{t('orderDetail.workbar.reopen')}</button>}
           </div>
         </div>
       )}
@@ -715,23 +725,23 @@ export default function OrderDetail() {
       {d.status === 'done' && (
         <div className="alert alert-warn row-between order-workbar" style={{ alignItems: 'center' }}>
           <div>
-            <strong>🤝 成交跟进</strong>
+            <strong>🤝 {t('orderDetail.deal.followUp')}</strong>
             <span className="text-sm" style={{ marginLeft: 8 }}>
-              当前：
+              {t('orderDetail.deal.current')}
               <span className={
                 d.deal_status === 'won' ? 'deal-tag deal-won'
                 : d.deal_status === 'lost' ? 'deal-tag deal-lost'
                 : d.deal_status === 'open' ? 'deal-tag deal-open'
                 : 'deal-tag deal-none'
               }>
-                {d.deal_status ? DEAL_CN[d.deal_status] : '未标记'}
+                {d.deal_status ? (DEAL_KEYS[d.deal_status] ? t(DEAL_KEYS[d.deal_status]) : d.deal_status) : t('orderDetail.deal.none')}
               </span>
               {d.deal_closed_at && (
                 <span className="muted" style={{ marginLeft: 6 }}>
-                  {d.deal_status === 'won' ? '成交于' : '标记于'} {d.deal_closed_at.slice(0, 16).replace('T', ' ')}
+                  {d.deal_status === 'won' ? t('orderDetail.deal.closedAt') : t('orderDetail.deal.markedAt')} {d.deal_closed_at.slice(0, 16).replace('T', ' ')}
                 </span>
               )}
-              {d.deal_note && <span className="muted" style={{ marginLeft: 6 }}>备注：{d.deal_note}</span>}
+              {d.deal_note && <span className="muted" style={{ marginLeft: 6 }}>{t('orderDetail.deal.note', { note: d.deal_note })}</span>}
             </span>
           </div>
           <div className="row gap-sm">
@@ -741,13 +751,13 @@ export default function OrderDetail() {
                 disabled={busy || !currentCustomsApproved}
                 title={!currentCustomsApproved ? customsApprovalHint : undefined}
                 onClick={() => handleDeal('won')}
-              >✅ 标记成交</button>
+              >✅ {t('orderDetail.deal.actionMarkWon')}</button>
             )}
             {d.deal_status !== 'lost' && (
-              <button className="btn btn-ghost" disabled={busy} onClick={() => handleDeal('lost')}>✗ 标记未成交</button>
+              <button className="btn btn-ghost" disabled={busy} onClick={() => handleDeal('lost')}>✗ {t('orderDetail.deal.actionMarkLost')}</button>
             )}
             {d.deal_status && (
-              <button className="btn btn-ghost" disabled={busy} onClick={() => handleDeal('open')}>恢复跟进</button>
+              <button className="btn btn-ghost" disabled={busy} onClick={() => handleDeal('open')}>{t('orderDetail.deal.resume')}</button>
             )}
           </div>
         </div>
@@ -757,34 +767,32 @@ export default function OrderDetail() {
         {/* 左：DDP 可编辑面板 */}
         <div className="card">
           <div className="card-title">
-            <h3>💰 参考 DDP 预估 · 编辑费率</h3>
+            <h3>💰 {t('orderDetail.ddp.title')}</h3>
             <div className="row gap-sm">
-              {meta?.is_reference && <span className="deal-tag deal-open">参考 DDP 预估</span>}
-              <span className="muted text-sm">运营端 · 可修改后重新计算</span>
+              {meta?.is_reference && <span className="deal-tag deal-open">{t('orderDetail.ddp.referenceTag')}</span>}
+              <span className="muted text-sm">{t('orderDetail.ddp.editableHint')}</span>
             </div>
           </div>
           <p className="muted text-sm mt-8">
-            公式：销售税基 =（DI + 货值）×（1 + 20% 加成）+ 国际运费；销售税务 = 税基 × 6.5%；
-            参考 DDP = 税务 + DI + 国际运费 + 其他成本 + 每票利润。
-            修改后点「重新计算并保存」，客户端看到的是更新后的<strong>参考预估</strong>，不构成最终成交价。
+            {t('orderDetail.ddp.formulaPrefix')}<strong>{t('orderDetail.ddp.formulaBold')}</strong>{t('orderDetail.ddp.formulaSuffix')}
           </p>
 
           <div className="table-wrap mt-12">
             <table className="table ddp-edit-table">
               <thead>
                 <tr>
-                  <th>费用项</th>
-                  <th style={{ width: 180 }}>参数</th>
-                  <th style={{ width: 140 }}>当前值</th>
-                  <th style={{ width: 80 }}>单位</th>
-                  <th className="amt">行小计 (BRL)</th>
+                  <th>{t('orderDetail.ddp.costItem')}</th>
+                  <th style={{ width: 180 }}>{t('orderDetail.ddp.parameter')}</th>
+                  <th style={{ width: 140 }}>{t('orderDetail.ddp.currentValue')}</th>
+                  <th style={{ width: 80 }}>{t('orderDetail.ddp.unit')}</th>
+                  <th className="amt">{t('orderDetail.ddp.lineSubtotal')}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td>整柜海运费</td>
+                  <td>{t('orderDetail.ddp.oceanFreight')}</td>
                   <td>
-                    <label className="text-sm muted">一口价（USD/整柜）</label>
+                    <label className="text-sm muted">{t('orderDetail.ddp.oceanFreightLabel')}</label>
                     <input
                       type="number" step="1"
                       className="form-input"
@@ -794,13 +802,13 @@ export default function OrderDetail() {
                     />
                   </td>
                   <td>USD {fees.ocean_freight_usd}</td>
-                  <td>USD/柜</td>
+                  <td>{t('orderDetail.ddp.usdPerContainer')}</td>
                   <td className="amt">{previewOceanBrl.toFixed(2)}</td>
                 </tr>
                 <tr>
-                  <td>起运港杂费</td>
+                  <td>{t('orderDetail.ddp.originPortFee')}</td>
                   <td>
-                    <label className="text-sm muted">固定（USD）</label>
+                    <label className="text-sm muted">{t('orderDetail.ddp.fixedUsd')}</label>
                     <input
                       type="number" step="0.1"
                       className="form-input"
@@ -814,27 +822,27 @@ export default function OrderDetail() {
                   <td className="amt">{previewPortBrl.toFixed(2)}</td>
                 </tr>
                 <tr>
-                  <td>巴西进口税费（DI）</td>
+                  <td>{t('orderDetail.ddp.importTax')}</td>
                   <td>
                     <span className="muted text-sm">
-                      只读 · 来源于订单 DI 分析{meta?.di_review_version ? `（DI 版本 v${meta.di_review_version}）` : ''}
+                      {t('orderDetail.ddp.readonlyDi')}{meta?.di_review_version ? t('orderDetail.ddp.diVersionSuffix', { version: meta.di_review_version }) : ''}
                     </span>
                   </td>
-                  <td>{hasDi ? `R$ ${diBrl!.toFixed(2)}` : '未生成 DI'}</td>
+                  <td>{hasDi ? `R$ ${diBrl!.toFixed(2)}` : t('orderDetail.ddp.diNotGenerated')}</td>
                   <td>BRL</td>
                   <td className="amt">{hasDi ? diBrl!.toFixed(2) : '—'}</td>
                 </tr>
                 <tr>
-                  <td>申报货值</td>
-                  <td><span className="muted text-sm">只读 · 来源于 AI DI 分析的货值（BRL）</span></td>
+                  <td>{t('orderDetail.ddp.declaredValue')}</td>
+                  <td><span className="muted text-sm">{t('orderDetail.ddp.readonlyValue')}</span></td>
                   <td>R$ {merchandiseBrl.toFixed(2)}</td>
                   <td>BRL</td>
                   <td className="amt">{merchandiseBrl.toFixed(2)}</td>
                 </tr>
                 <tr>
-                  <td>税基利润加成</td>
+                  <td>{t('orderDetail.ddp.markup')}</td>
                   <td>
-                    <label className="text-sm muted">（DI + 货值）× 加成（%）</label>
+                    <label className="text-sm muted">{t('orderDetail.ddp.markupLabel')}</label>
                     <input
                       type="number" step="1" min="0" max="99"
                       className="form-input"
@@ -848,9 +856,9 @@ export default function OrderDetail() {
                   <td className="amt">{previewMarkupBrl.toFixed(2)}</td>
                 </tr>
                 <tr>
-                  <td>销售税务</td>
+                  <td>{t('orderDetail.ddp.salesTax')}</td>
                   <td>
-                    <label className="text-sm muted">销售税基 × 税率（%）</label>
+                    <label className="text-sm muted">{t('orderDetail.ddp.salesTaxLabel')}</label>
                     <input
                       type="number" step="0.1" min="0"
                       className="form-input"
@@ -864,9 +872,9 @@ export default function OrderDetail() {
                   <td className="amt">{previewSalesTaxBrl.toFixed(2)}</td>
                 </tr>
                 <tr>
-                  <td>每票利润</td>
+                  <td>{t('orderDetail.ddp.profit')}</td>
                   <td>
-                    <label className="text-sm muted">固定（BRL/票）</label>
+                    <label className="text-sm muted">{t('orderDetail.ddp.profitLabel')}</label>
                     <input
                       type="number" step="1000" min="0"
                       className="form-input"
@@ -882,7 +890,7 @@ export default function OrderDetail() {
               </tbody>
               <tfoot>
                 <tr className="pricing-subtotal">
-                  <td colSpan={4}>汇率（USD→BRL）</td>
+                  <td colSpan={4}>{t('orderDetail.ddp.fxRate')}</td>
                   <td className="amt text-num" style={{ padding: 8 }}>
                     <input
                       type="number" step="0.1"
@@ -894,15 +902,15 @@ export default function OrderDetail() {
                   </td>
                 </tr>
                 <tr className="pricing-subtotal">
-                  <td colSpan={4}>销售税基（DI + 货值 + 20%加成 + 国际运费）</td>
+                  <td colSpan={4}>{t('orderDetail.ddp.taxBase')}</td>
                   <td className="amt">{previewTaxBaseBrl.toFixed(2)}</td>
                 </tr>
                 <tr className="pricing-subtotal">
-                  <td colSpan={4}>巴西段小计（DI + 销售税务 + 每票利润）</td>
+                  <td colSpan={4}>{t('orderDetail.ddp.brazilSubtotal')}</td>
                   <td className="amt">{previewBrazilSegment.toFixed(2)}</td>
                 </tr>
                 <tr className="pricing-total">
-                  <td colSpan={4}>参考 DDP 合计（BRL）</td>
+                  <td colSpan={4}>{t('orderDetail.ddp.total')}</td>
                   <td className="amt" style={{ fontSize: 17 }}>
                     R$ {previewTotal.toFixed(2)}
                     {diff !== 0 && (
@@ -920,11 +928,11 @@ export default function OrderDetail() {
           {d.pricing_breakdown?.items?.length ? (
             <div className="mt-12">
               <div className="muted text-sm" style={{ marginBottom: 6 }}>
-                订单已保存的分项（API 返回{meta?.calculation_version ? ` · 计算版本 ${meta.calculation_version}` : ''}）
+                {t('orderDetail.ddp.savedItems')}{meta?.calculation_version ? t('orderDetail.ddp.calcVersionSuffix', { version: meta.calculation_version }) : ''}
               </div>
               <table className="table">
                 <thead>
-                  <tr><th>分项</th><th>说明</th><th className="amt">金额 (BRL)</th></tr>
+                  <tr><th>{t('orderDetail.ddp.item')}</th><th>{t('orderDetail.ddp.description')}</th><th className="amt">{t('orderDetail.ddp.amount')}</th></tr>
                 </thead>
                 <tbody>
                   {d.pricing_breakdown.items.map(item => (
@@ -937,7 +945,7 @@ export default function OrderDetail() {
                 </tbody>
                 <tfoot>
                   <tr className="pricing-subtotal">
-                    <td colSpan={2}>分项合计</td>
+                    <td colSpan={2}>{t('orderDetail.ddp.itemsTotal')}</td>
                     <td className="amt">{d.pricing_breakdown.total.toFixed(2)}</td>
                   </tr>
                 </tfoot>
@@ -955,26 +963,26 @@ export default function OrderDetail() {
             <button
               onClick={handleRecompute}
               disabled={saving || !hasDi}
-              title={!hasDi ? noDiHint : '按当前参数重新计算并写回订单'}
+              title={!hasDi ? noDiHint : t('orderDetail.ddp.recomputeHint')}
               className="btn btn-lg"
               style={{ background: hasDi ? '#2563eb' : undefined }}
             >
-              {saving ? '计算中…' : '🔄 重新计算并保存'}
+              {saving ? t('orderDetail.ddp.calculating') : t('orderDetail.ddp.recompute')}
             </button>
-            <button onClick={load} className="btn btn-ghost btn-lg">取消更改</button>
+            <button onClick={load} className="btn btn-ghost btn-lg">{t('orderDetail.ddp.discard')}</button>
           </div>
         </div>
 
         {/* 右：货物汇总 */}
         <div className="card">
           <div className="card-title">
-            <h3>📊 货物汇总</h3>
+            <h3>📊 {t('orderDetail.summary.title')}</h3>
           </div>
           <table className="table">
             <tbody>
-              <tr><th style={{ width: 140, textAlign: 'left' }}>客户</th><td>{d.client_name || '—'} <code style={{ fontSize: 11 }}>{d.client_id}</code></td></tr>
+              <tr><th style={{ width: 140, textAlign: 'left' }}>{t('orderDetail.summary.client')}</th><td>{d.client_name || '—'} <code style={{ fontSize: 11 }}>{d.client_id}</code></td></tr>
               <tr>
-                <th style={{ textAlign: 'left' }}>归属业务员</th>
+                <th style={{ textAlign: 'left' }}>{t('orderDetail.summary.salesperson')}</th>
                 <td>
                   <select
                     className="form-input form-input-sm"
@@ -982,29 +990,29 @@ export default function OrderDetail() {
                     value={d.salesperson_id || ''}
                     disabled={busy}
                     onChange={e => handleAssign(e.target.value)}
-                    title="改派业务员（清空 = 回到客户默认归属）"
+                    title={t('orderDetail.summary.reassignHint')}
                   >
-                    <option value="">未分配</option>
+                    <option value="">{t('orderDetail.summary.unassigned')}</option>
                     {salespeople.map(s => (
                       <option key={s.id} value={s.id}>{s.username}</option>
                     ))}
                   </select>
                 </td>
               </tr>
-              <tr><th style={{ textAlign: 'left' }}>模板版本</th><td>v{d.template_version}</td></tr>
-              <tr><th style={{ textAlign: 'left' }}>有效行</th><td>{d.valid_rows} / {d.total_rows}</td></tr>
-              <tr><th style={{ textAlign: 'left' }}>总体积</th><td>{d.total_cbm?.toFixed(3) ?? '—'} CBM</td></tr>
-              <tr><th style={{ textAlign: 'left' }}>总毛重</th><td>{d.total_gw_kg?.toFixed(2) ?? '—'} kg</td></tr>
-              <tr><th style={{ textAlign: 'left' }}>整柜申报金额（RMB）</th><td>¥ {d.total_amount_rmb?.toFixed(2) ?? '—'}</td></tr>
-              <tr><th style={{ textAlign: 'left' }}>申报币种</th><td>{d.declared_currency === 'USD' ? 'USD（已按汇率折算为 RMB）' : 'RMB'}</td></tr>
-              <tr><th style={{ textAlign: 'left' }}>上传文件</th><td>{d.input_file_name || '—'}</td></tr>
-              <tr><th style={{ textAlign: 'left' }}>最后修改</th><td>{d.updated_at?.slice(0, 19).replace('T', ' ')}</td></tr>
+              <tr><th style={{ textAlign: 'left' }}>{t('orderDetail.summary.templateVersion')}</th><td>v{d.template_version}</td></tr>
+              <tr><th style={{ textAlign: 'left' }}>{t('orderDetail.summary.validRows')}</th><td>{d.valid_rows} / {d.total_rows}</td></tr>
+              <tr><th style={{ textAlign: 'left' }}>{t('orderDetail.summary.totalCbm')}</th><td>{d.total_cbm?.toFixed(3) ?? '—'} CBM</td></tr>
+              <tr><th style={{ textAlign: 'left' }}>{t('orderDetail.summary.totalGw')}</th><td>{d.total_gw_kg?.toFixed(2) ?? '—'} kg</td></tr>
+              <tr><th style={{ textAlign: 'left' }}>{t('orderDetail.summary.declaredAmount')}</th><td>¥ {d.total_amount_rmb?.toFixed(2) ?? '—'}</td></tr>
+              <tr><th style={{ textAlign: 'left' }}>{t('orderDetail.summary.declaredCurrency')}</th><td>{d.declared_currency === 'USD' ? t('orderDetail.summary.currencyUsd') : 'RMB'}</td></tr>
+              <tr><th style={{ textAlign: 'left' }}>{t('orderDetail.summary.uploadedFile')}</th><td>{d.input_file_name || '—'}</td></tr>
+              <tr><th style={{ textAlign: 'left' }}>{t('orderDetail.summary.updatedAt')}</th><td>{d.updated_at?.slice(0, 19).replace('T', ' ')}</td></tr>
               <tr style={{ fontWeight: 700 }}>
-                <th style={{ textAlign: 'left' }}>当前 BRL 合计</th>
+                <th style={{ textAlign: 'left' }}>{t('orderDetail.summary.totalBrl')}</th>
                 <td style={{ fontSize: 16, color: '#c00', fontWeight: 700 }}>R$ {d.total_amount_brl?.toFixed(2) ?? '—'}</td>
               </tr>
               <tr style={{ fontWeight: 700 }}>
-                <th style={{ textAlign: 'left' }}>当前国际海运费 USD</th>
+                <th style={{ textAlign: 'left' }}>{t('orderDetail.summary.totalUsd')}</th>
                 <td style={{ fontSize: 16, fontWeight: 700 }}>USD {d.total_amount_usd?.toFixed(2) ?? '—'}</td>
               </tr>
             </tbody>
@@ -1014,49 +1022,55 @@ export default function OrderDetail() {
 
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-title">
-          <h3>🧾 NCM / DI 进口税费预估</h3>
+          <h3>🧾 {t('orderDetail.di.title')}</h3>
           <div className="row gap-sm">
             {diVersions.length > 0 && (
               <select
                 className="form-input form-input-sm"
                 style={{ width: 190 }}
-                aria-label="DI 历史版本"
+                aria-label={t('orderDetail.di.historyLabel')}
                 value={diHistory?.version || ''}
                 onChange={e => handleDiVersion(e.target.value)}
               >
-                <option value="">当前编辑</option>
+                <option value="">{t('orderDetail.di.currentDraft')}</option>
                 {[...diVersions].sort((a, b) => b.version - a.version).map(version => (
-                  <option key={version.version} value={version.version}>查看历史版本 v{version.version}</option>
+                  <option key={version.version} value={version.version}>{t('orderDetail.di.viewVersion', { version: version.version })}</option>
                 ))}
               </select>
             )}
-            {di && <span className={`status-tag ${di.status === 'reviewed' ? 'status-done' : 'status-pending_fee'}`}>{di.status === 'reviewed' ? `已保存 DI 版本${di.review_version ? ` v${di.review_version}` : ''}` : '待保存 DI 版本'}</span>}
+            {di && <span className={`status-tag ${di.status === 'reviewed' ? 'status-done' : 'status-pending_fee'}`}>{di.status === 'reviewed' ? `${t('orderDetail.di.savedTag')}${di.review_version ? ` ${t('orderDetail.di.versionTag', { version: di.review_version })}` : ''}` : t('orderDetail.di.unsavedTag')}</span>}
           </div>
         </div>
-        <div className="alert alert-warn">AI 仅用于检索和建议 NCM。请核对官方来源、NCM 与税率；进口税费由系统按固定公式预估，DI 即可生成参考 DDP。报关行批准当前 DI 版本后才可标记成交，客户端展示的 DDP 为参考预估，不构成最终报价。</div>
+        <div className="alert alert-warn">{t('orderDetail.di.disclaimer')}</div>
 
         {diHistory?.analysis && (
           <div style={{ marginTop: 16, padding: 16, border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb' }}>
             <div className="row-between" style={{ flexWrap: 'wrap', gap: 8 }}>
               <div>
-                <strong>历史版本 v{diHistory.version}（只读）</strong>
-                <div className="muted text-sm">复核人：{diHistory.reviewed_by} · {diHistory.reviewed_at?.slice(0, 16).replace('T', ' ')}</div>
+                <strong>{t('orderDetail.di.historyTitle', { version: diHistory.version })}</strong>
+                <div className="muted text-sm">{t('orderDetail.di.reviewerLine', { name: diHistory.reviewed_by, time: diHistory.reviewed_at?.slice(0, 16).replace('T', ' ') })}</div>
               </div>
-              <button className="btn btn-sm btn-ghost" onClick={() => setDiHistory(null)}>返回当前编辑</button>
+              <button className="btn btn-sm btn-ghost" onClick={() => setDiHistory(null)}>{t('orderDetail.di.backToDraft')}</button>
             </div>
             <p className="muted text-sm">
-              参数：RMB → BRL {diHistory.analysis.parameters?.rmb_brl} · 保险 R$ {diHistory.analysis.parameters?.insurance_brl} · UF {diHistory.analysis.parameters?.uf} · ICMS {(Number(diHistory.analysis.parameters?.icms_rate) * 100).toFixed(2)}% · 国际运费 R$ {diHistory.analysis.parameters?.freight_brl}
-              <br />历史快照仅供查看，不会修改当前草稿或报价。
+              {t('orderDetail.di.paramsLine', {
+                rmb: diHistory.analysis.parameters?.rmb_brl,
+                insurance: diHistory.analysis.parameters?.insurance_brl,
+                uf: diHistory.analysis.parameters?.uf,
+                icms: (Number(diHistory.analysis.parameters?.icms_rate) * 100).toFixed(2),
+                freight: diHistory.analysis.parameters?.freight_brl
+              })}
+              <br />{t('orderDetail.di.historyNote')}
             </p>
             <div className="table-wrap" style={{ overflowX: 'auto' }}>
               <table className="table" style={{ minWidth: 1100 }}>
-                <thead><tr><th>产品 / NCM</th><th>货值 RMB / BRL</th><th>II %</th><th>IPI %</th><th>PIS %</th><th>COFINS %</th><th>CIF BRL</th><th>进口税费预估 BRL</th><th>官方来源</th></tr></thead>
+                <thead><tr><th>{t('orderDetail.di.productNcm')}</th><th>{t('orderDetail.di.valueRmbBrl')}</th><th>II %</th><th>IPI %</th><th>PIS %</th><th>COFINS %</th><th>CIF BRL</th><th>{t('orderDetail.di.taxEstimateBrl')}</th><th>{t('orderDetail.di.sources')}</th></tr></thead>
                 <tbody>
                   {diHistory.analysis.items.map((item: any) => (
                     <tr key={item.row_no}>
                       <td style={{ minWidth: 240 }}>
                         <strong>{item.product_en}</strong>
-                        <div className="muted text-sm">行 {item.row_no} · {item.sku}</div>
+                        <div className="muted text-sm">{t('orderDetail.di.rowSku', { row: item.row_no, sku: item.sku })}</div>
                         <code>{item.ncm}</code>
                         {item.rationale && <div className="muted text-sm" style={{ marginTop: 5 }}>{item.rationale}</div>}
                       </td>
@@ -1067,41 +1081,41 @@ export default function OrderDetail() {
                       <td>{(Number(item.cofins_rate) * 100).toFixed(2)}%</td>
                       <td>R$ {Number(item.cif_brl).toFixed(2)}</td>
                       <td><strong>R$ {Number(item.di_brl).toFixed(2)}</strong><div className="muted text-sm">II {item.ii_brl} · IPI {item.ipi_brl}<br />PIS {item.pis_brl} · COFINS {item.cofins_brl}<br />ICMS {item.icms_brl}</div></td>
-                      <td>{item.sources?.length ? item.sources.map((url: string, i: number) => <div key={url}><a href={url} target="_blank" rel="noreferrer">来源 {i + 1}</a></div>) : <span className="muted">—</span>}</td>
+                      <td>{item.sources?.length ? item.sources.map((url: string, i: number) => <div key={url}><a href={url} target="_blank" rel="noreferrer">{t('orderDetail.di.source', { index: i + 1 })}</a></div>) : <span className="muted">—</span>}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <div style={{ marginTop: 12 }}>
-              <strong>CIF 合计：R$ {Number(diHistory.analysis.totals.cif_brl).toFixed(2)}</strong>
+              <strong>{t('orderDetail.di.cifTotal', { amount: Number(diHistory.analysis.totals.cif_brl).toFixed(2) })}</strong>
               <div className="muted text-sm">II {diHistory.analysis.totals.ii_brl} · IPI {diHistory.analysis.totals.ipi_brl} · PIS {diHistory.analysis.totals.pis_brl} · COFINS {diHistory.analysis.totals.cofins_brl} · ICMS {diHistory.analysis.totals.icms_brl}</div>
-              <div style={{ fontSize: 18, marginTop: 6 }}><strong>进口税费预估合计：R$ {Number(diHistory.analysis.totals.di_brl).toFixed(2)}</strong></div>
+              <div style={{ fontSize: 18, marginTop: 6 }}><strong>{t('orderDetail.di.taxTotal', { amount: Number(diHistory.analysis.totals.di_brl).toFixed(2) })}</strong></div>
             </div>
           </div>
         )}
         <div className="row gap-md di-params" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div className="form-row" style={{ margin: 0 }}><label>RMB → BRL 汇率</label><input className="form-input form-input-sm" style={{ width: 150 }} type="number" min="0" step="0.0001" value={diParams.rmb_brl} onChange={e => setDiParams({ ...diParams, rmb_brl: e.target.value })} placeholder="例如 0.78" /></div>
-          <div className="form-row" style={{ margin: 0 }}><label>保险费（BRL）</label><input className="form-input form-input-sm" style={{ width: 140 }} type="number" min="0" step="0.01" value={diParams.insurance_brl} onChange={e => setDiParams({ ...diParams, insurance_brl: Number(e.target.value) })} /></div>
-          <div className="form-row" style={{ margin: 0 }}><label>进口州 UF</label><input className="form-input form-input-sm" style={{ width: 80 }} maxLength={2} value={diParams.uf} onChange={e => setDiParams({ ...diParams, uf: e.target.value.toUpperCase() })} /></div>
-          <div className="form-row" style={{ margin: 0 }}><label>ICMS（%）</label><input className="form-input form-input-sm" style={{ width: 100 }} type="number" min="0" max="99" step="0.01" value={diParams.icms_rate * 100} onChange={e => setDiParams({ ...diParams, icms_rate: Number(e.target.value) / 100 })} /></div>
-          <button className="btn" disabled={diBusy || !d.line_items?.length || ['analyzing', 'calculating'].includes(di?.status)} onClick={handleDiAnalyze}>{diBusy ? '分析中…' : Array.isArray(di?.items) ? '重新用 AI 分析 NCM' : '用 AI 分析 NCM 并计算 DI'}</button>
+          <div className="form-row" style={{ margin: 0 }}><label>{t('orderDetail.di.rmbRate')}</label><input className="form-input form-input-sm" style={{ width: 150 }} type="number" min="0" step="0.0001" value={diParams.rmb_brl} onChange={e => setDiParams({ ...diParams, rmb_brl: e.target.value })} placeholder={t('orderDetail.di.rmbRatePlaceholder')} /></div>
+          <div className="form-row" style={{ margin: 0 }}><label>{t('orderDetail.di.insurance')}</label><input className="form-input form-input-sm" style={{ width: 140 }} type="number" min="0" step="0.01" value={diParams.insurance_brl} onChange={e => setDiParams({ ...diParams, insurance_brl: Number(e.target.value) })} /></div>
+          <div className="form-row" style={{ margin: 0 }}><label>{t('orderDetail.di.uf')}</label><input className="form-input form-input-sm" style={{ width: 80 }} maxLength={2} value={diParams.uf} onChange={e => setDiParams({ ...diParams, uf: e.target.value.toUpperCase() })} /></div>
+          <div className="form-row" style={{ margin: 0 }}><label>{t('orderDetail.di.icms')}</label><input className="form-input form-input-sm" style={{ width: 100 }} type="number" min="0" max="99" step="0.01" value={diParams.icms_rate * 100} onChange={e => setDiParams({ ...diParams, icms_rate: Number(e.target.value) / 100 })} /></div>
+          <button className="btn" disabled={diBusy || !d.line_items?.length || ['analyzing', 'calculating'].includes(di?.status)} onClick={handleDiAnalyze}>{diBusy ? t('orderDetail.di.analyzing') : Array.isArray(di?.items) ? t('orderDetail.di.reanalyze') : t('orderDetail.di.analyze')}</button>
         </div>
 
         {di && !Array.isArray(di.items) && <div className={di.status === 'failed' ? 'alert alert-err mt-12' : 'alert alert-warn mt-12'}>
-          {di.status === 'failed' ? `AI NCM / DI 计算失败：${di.error_message || '请稍后重试'}` : 'AI 正在识别 NCM 并计算 DI，请稍后刷新页面查看结果。'}
+          {di.status === 'failed' ? t('orderDetail.di.calcFailed', { message: di.error_message || t('orderDetail.di.retryLater') }) : t('orderDetail.di.processing')}
         </div>}
         {di && Array.isArray(di.items) && di.totals && (
           <>
             <div className="table-wrap" style={{ marginTop: 16, overflowX: 'auto' }}>
               <table className="table" style={{ minWidth: 1200 }}>
-                <thead><tr><th>产品 / NCM 建议</th><th>可信度</th><th>货值 RMB / BRL</th><th>II %</th><th>IPI %</th><th>PIS %</th><th>COFINS %</th><th>CIF BRL</th><th>DI BRL</th><th>官方来源</th></tr></thead>
+                <thead><tr><th>{t('orderDetail.di.productSuggestion')}</th><th>{t('orderDetail.di.confidence')}</th><th>{t('orderDetail.di.valueRmbBrl')}</th><th>II %</th><th>IPI %</th><th>PIS %</th><th>COFINS %</th><th>CIF BRL</th><th>DI BRL</th><th>{t('orderDetail.di.sources')}</th></tr></thead>
                 <tbody>
                   {di.items.map((item: any) => (
                     <tr key={item.row_no}>
                       <td style={{ minWidth: 250 }}>
                         <strong>{item.product_en}</strong>
-                        <div className="muted text-sm">行 {item.row_no} · {item.sku} · 原 HS {item.previous_ncm || '—'}</div>
+                        <div className="muted text-sm">{t('orderDetail.di.rowSkuHs', { row: item.row_no, sku: item.sku, hs: item.previous_ncm || '—' })}</div>
                         <input className="form-input form-input-sm" style={{ width: 130, marginTop: 5 }} maxLength={8} value={item.ncm}
                           onChange={e => updateDiItem(item.row_no, 'ncm', e.target.value.replace(/\D/g, ''))} />
                         {item.rationale && <div className="muted text-sm" style={{ marginTop: 5 }}>{item.rationale}</div>}
@@ -1115,7 +1129,7 @@ export default function OrderDetail() {
                       ))}
                       <td>R$ {Number(item.cif_brl).toFixed(2)}</td>
                       <td><strong>R$ {Number(item.di_brl).toFixed(2)}</strong><div className="muted text-sm">II {item.ii_brl} · IPI {item.ipi_brl}<br />PIS {item.pis_brl} · COFINS {item.cofins_brl}<br />ICMS {item.icms_brl}</div></td>
-                      <td>{item.sources?.length ? item.sources.map((url: string, i: number) => <div key={url}><a href={url} target="_blank" rel="noreferrer">来源 {i + 1}</a></div>) : <span className="muted">—</span>}</td>
+                      <td>{item.sources?.length ? item.sources.map((url: string, i: number) => <div key={url}><a href={url} target="_blank" rel="noreferrer">{t('orderDetail.di.source', { index: i + 1 })}</a></div>) : <span className="muted">—</span>}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1123,19 +1137,19 @@ export default function OrderDetail() {
             </div>
             <div className="row-between" style={{ marginTop: 16, flexWrap: 'wrap', gap: 12 }}>
               <div>
-                <strong>CIF 合计：R$ {Number(di.totals.cif_brl).toFixed(2)}</strong><br />
+                <strong>{t('orderDetail.di.cifTotal', { amount: Number(di.totals.cif_brl).toFixed(2) })}</strong><br />
                 <span className="muted text-sm">II {di.totals.ii_brl} · IPI {di.totals.ipi_brl} · PIS {di.totals.pis_brl} · COFINS {di.totals.cofins_brl} · ICMS {di.totals.icms_brl}</span>
-                <div style={{ fontSize: 20, marginTop: 6 }}><strong>进口税费预估合计：R$ {Number(di.totals.di_brl).toFixed(2)}</strong></div>
+                <div style={{ fontSize: 20, marginTop: 6 }}><strong>{t('orderDetail.di.taxTotal', { amount: Number(di.totals.di_brl).toFixed(2) })}</strong></div>
               </div>
-              <button className="btn" disabled={diBusy} onClick={handleDiReview}>保存 DI 版本</button>
+              <button className="btn" disabled={diBusy} onClick={handleDiReview}>{t('orderDetail.di.saveVersion')}</button>
               <button
                 className="btn btn-ghost"
                 disabled={diBusy || di.status !== 'reviewed'}
-                title={di.status !== 'reviewed' ? '请先保存当前 DI 版本' : '按当前 DI 版本生成参考 DDP'}
+                title={di.status !== 'reviewed' ? t('orderDetail.di.saveFirst') : t('orderDetail.di.generateDdpHint')}
                 onClick={handleDiDdp}
-              >用默认运费 + DI 进口税费预估生成 DDP</button>
+              >{t('orderDetail.di.generateDdp')}</button>
             </div>
-            {di.reviewed_by && <p className="muted text-sm">DI 版本保存人：{di.reviewed_by} · {di.reviewed_at?.slice(0, 16).replace('T', ' ')}</p>}
+            {di.reviewed_by && <p className="muted text-sm">{t('orderDetail.di.savedBy', { name: di.reviewed_by, time: di.reviewed_at?.slice(0, 16).replace('T', ' ') })}</p>}
           </>
         )}
       </div>
@@ -1144,66 +1158,66 @@ export default function OrderDetail() {
       {d.status === 'done' && (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="card-title">
-            <h3>🚢 国际物流</h3>
+            <h3>🚢 {t('orderDetail.ship.title')}</h3>
             {curStage ? (
               <span className="text-sm">
-                当前阶段：<span className="deal-tag deal-open">{SHIP_STAGE_CN[curStage] || curStage}</span>
+                {t('orderDetail.ship.currentStage', { stage: t(SHIP_STAGE_KEYS[curStage] || curStage) })}
               </span>
             ) : (
-              <span className="muted text-sm">成交走柜后在此维护物流信息，客户将实时可见</span>
+              <span className="muted text-sm">{t('orderDetail.ship.emptyHint')}</span>
             )}
           </div>
 
           <div className="ship-form-grid">
             <div>
-              <label>船名</label>
+              <label>{t('orderDetail.ship.vessel')}</label>
               <input className="form-input form-input-sm" value={shipForm.vessel} disabled={shipSaving}
-                onChange={e => setShipForm({ ...shipForm, vessel: e.target.value })} placeholder="如 MSC ANNA" />
+                onChange={e => setShipForm({ ...shipForm, vessel: e.target.value })} placeholder={t('orderDetail.ship.vesselPlaceholder')} />
             </div>
             <div>
-              <label>航次</label>
+              <label>{t('orderDetail.ship.voyage')}</label>
               <input className="form-input form-input-sm" value={shipForm.voyage} disabled={shipSaving}
-                onChange={e => setShipForm({ ...shipForm, voyage: e.target.value })} placeholder="如 244W" />
+                onChange={e => setShipForm({ ...shipForm, voyage: e.target.value })} placeholder={t('orderDetail.ship.voyagePlaceholder')} />
             </div>
             <div>
-              <label>提单号 B/L</label>
+              <label>{t('orderDetail.ship.billNo')}</label>
               <input className="form-input form-input-sm" value={shipForm.bill_no} disabled={shipSaving}
                 onChange={e => setShipForm({ ...shipForm, bill_no: e.target.value })} />
             </div>
             <div>
-              <label>柜号</label>
+              <label>{t('orderDetail.ship.containerNo')}</label>
               <input className="form-input form-input-sm" value={shipForm.container_no} disabled={shipSaving}
-                onChange={e => setShipForm({ ...shipForm, container_no: e.target.value })} placeholder="如 MSCU1234567" />
+                onChange={e => setShipForm({ ...shipForm, container_no: e.target.value })} placeholder={t('orderDetail.ship.containerNoPlaceholder')} />
             </div>
             <div>
-              <label>起运港</label>
+              <label>{t('orderDetail.ship.pol')}</label>
               <input className="form-input form-input-sm" value={shipForm.pol} disabled={shipSaving}
-                onChange={e => setShipForm({ ...shipForm, pol: e.target.value })} placeholder="如 Shanghai" />
+                onChange={e => setShipForm({ ...shipForm, pol: e.target.value })} placeholder={t('orderDetail.ship.polPlaceholder')} />
             </div>
             <div>
-              <label>目的港（巴西）</label>
+              <label>{t('orderDetail.ship.pod')}</label>
               <input className="form-input form-input-sm" value={shipForm.pod} disabled={shipSaving}
-                onChange={e => setShipForm({ ...shipForm, pod: e.target.value })} placeholder="如 Santos" />
+                onChange={e => setShipForm({ ...shipForm, pod: e.target.value })} placeholder={t('orderDetail.ship.podPlaceholder')} />
             </div>
             <div>
-              <label>预计开船日 ETD</label>
+              <label>{t('orderDetail.ship.etd')}</label>
               <input type="date" className="form-input form-input-sm" value={shipForm.etd} disabled={shipSaving}
                 onChange={e => setShipForm({ ...shipForm, etd: e.target.value })} />
             </div>
             <div>
-              <label>预计到港日 ETA</label>
+              <label>{t('orderDetail.ship.eta')}</label>
               <input type="date" className="form-input form-input-sm" value={shipForm.eta} disabled={shipSaving}
                 onChange={e => setShipForm({ ...shipForm, eta: e.target.value })} />
             </div>
             <div className="span-2">
-              <label>物流备注</label>
+              <label>{t('orderDetail.ship.remark')}</label>
               <textarea className="form-input form-input-sm" rows={2} value={shipForm.remark} disabled={shipSaving}
-                onChange={e => setShipForm({ ...shipForm, remark: e.target.value })} placeholder="可选，客户可见" />
+                onChange={e => setShipForm({ ...shipForm, remark: e.target.value })} placeholder={t('orderDetail.ship.remarkPlaceholder')} />
             </div>
           </div>
           <div className="row gap-md mt-12">
             <button className="btn" disabled={shipSaving} onClick={handleShipSave}>
-              {shipSaving ? '保存中…' : '💾 保存物流信息'}
+              {shipSaving ? t('common.saving') : t('orderDetail.ship.save')}
             </button>
           </div>
 
@@ -1212,9 +1226,9 @@ export default function OrderDetail() {
             {SHIP_FLOW.map((s, i) => (
               <div key={s}
                 className={`ship-flow-step${i <= doneIdx ? ' done' : ''}${i === doneIdx ? ' cur' : ''}`}
-                title={SHIP_STAGE_CN[s]}>
+                title={t(SHIP_STAGE_KEYS[s] || s)}>
                 <span className="ship-flow-dot" />
-                <span className="ship-flow-name">{FLOW_SHORT[s]}</span>
+                <span className="ship-flow-name">{t(FLOW_SHORT_KEYS[s] || s)}</span>
               </div>
             ))}
           </div>
@@ -1222,7 +1236,7 @@ export default function OrderDetail() {
           {/* 节点时间线管理（竖向时间线，与客户端视觉统一） */}
           <div className="ship-ev-section">
             <div className="muted text-sm" style={{ marginBottom: 8 }}>
-              📍 物流节点 · 客户可见的动态时间线（按时间正序）
+              📍 {t('orderDetail.ship.timelineTitle')}
             </div>
             {shipEvents.length > 0 && (
               <div className="ship-timeline">
@@ -1231,10 +1245,10 @@ export default function OrderDetail() {
                     <span className="ship-tl-dot" />
                     <div className="ship-tl-body">
                       <div className="ship-tl-head">
-                        <span className="deal-tag deal-open">{SHIP_STAGE_CN[ev.stage] || ev.stage}</span>
+                        <span className="deal-tag deal-open">{SHIP_STAGE_KEYS[ev.stage] ? t(SHIP_STAGE_KEYS[ev.stage]) : ev.stage}</span>
                         <span className="muted text-sm">{ev.happened_at.slice(0, 16).replace('T', ' ')}</span>
                         <button className="btn btn-sm btn-ghost ship-tl-del" disabled={shipBusy}
-                          title="删除该节点" onClick={() => handleEvDel(ev.id)}>✕</button>
+                          title={t('orderDetail.ship.deleteEvent')} onClick={() => handleEvDel(ev.id)}>✕</button>
                       </div>
                       {ev.note && <div className="muted text-sm" style={{ marginTop: 2 }}>{ev.note}</div>}
                     </div>
@@ -1243,7 +1257,7 @@ export default function OrderDetail() {
               </div>
             )}
             {shipEvents.length === 0 && (
-              <p className="muted text-sm" style={{ margin: '0 0 8px' }}>暂无节点，从「已订舱」开始推进。</p>
+              <p className="muted text-sm" style={{ margin: '0 0 8px' }}>{t('orderDetail.ship.noEvents')}</p>
             )}
 
             {/* M7 优化：一键推进（时间记为现在） */}
@@ -1251,15 +1265,15 @@ export default function OrderDetail() {
               {evNextStage ? (
                 <>
                   <button className="btn" disabled={shipBusy} onClick={handleEvAdvance}>
-                    ⚡ 推进到「{SHIP_STAGE_CN[evNextStage]}」
+                    ⚡ {t('orderDetail.ship.advanceTo', { stage: t(SHIP_STAGE_KEYS[evNextStage]) })}
                   </button>
                   <input className="form-input form-input-sm" style={{ flex: 1, minWidth: 200 }}
-                    placeholder="本次推进备注（可选，客户可见）"
+                    placeholder={t('orderDetail.ship.advanceNote')}
                     value={evForm.note} disabled={shipBusy}
                     onChange={e => setEvForm({ ...evForm, note: e.target.value })} />
                 </>
               ) : (
-                <span className="ok-msg">🎉 流程已完成（已签收）</span>
+                <span className="ok-msg">{t('orderDetail.ship.flowDone')}</span>
               )}
             </div>
 
@@ -1267,19 +1281,19 @@ export default function OrderDetail() {
             <div className="row gap-md mt-8" style={{ flexWrap: 'wrap' }}>
               <select className="form-input form-input-sm" style={{ width: 150 }} value={evForm.stage}
                 disabled={shipBusy} onChange={e => setEvForm({ ...evForm, stage: e.target.value })}
-                title="默认选中建议的下一阶段">
-                {Object.entries(SHIP_STAGE_CN).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
+                title={t('orderDetail.ship.stageDefaultHint')}>
+                {Object.keys(SHIP_STAGE_KEYS).map(k => (
+                  <option key={k} value={k}>{t(SHIP_STAGE_KEYS[k])}</option>
                 ))}
               </select>
               <input type="datetime-local" className="form-input form-input-sm" style={{ width: 200 }}
-                value={evForm.at} disabled={shipBusy} title="节点发生时间（留空 = 现在）"
+                value={evForm.at} disabled={shipBusy} title={t('orderDetail.ship.eventTime')}
                 onChange={e => setEvForm({ ...evForm, at: e.target.value })} />
-              <input className="form-input form-input-sm" style={{ width: 220 }} placeholder="节点备注（可选）"
+              <input className="form-input form-input-sm" style={{ width: 220 }} placeholder={t('orderDetail.ship.eventNote')}
                 value={evForm.note} disabled={shipBusy}
                 onChange={e => setEvForm({ ...evForm, note: e.target.value })} />
-              <button className="btn btn-sm" disabled={shipBusy} onClick={handleEvAdd}>➕ 自定义添加</button>
-              <span className="muted text-sm" style={{ alignSelf: 'center' }}>补录历史节点或跳阶段时使用</span>
+              <button className="btn btn-sm" disabled={shipBusy} onClick={handleEvAdd}>➕ {t('orderDetail.ship.addCustom')}</button>
+              <span className="muted text-sm" style={{ alignSelf: 'center' }}>{t('orderDetail.ship.addCustomHint')}</span>
             </div>
           </div>
         </div>
@@ -1289,43 +1303,43 @@ export default function OrderDetail() {
       {d.status === 'done' && (
         <div className="card">
           <div className="card-title">
-            <h3>📎 交付文件 · 客户可见</h3>
-            <span className="muted text-sm">放行截图 / 发票 PDF · 单个 ≤10MB · 一次最多 9 个</span>
+            <h3>📎 {t('orderDetail.files.title')}</h3>
+            <span className="muted text-sm">{t('orderDetail.files.hint')}</span>
           </div>
           {/* M9：开票抬头（客户维护并绑定到订单，开 NF 时使用） */}
           {d.invoice_cnpj ? (
             <div className="order-file-row" style={{ marginBottom: 12, background: '#fffbeb', borderColor: '#f59e0b' }}>
-              <span className="deal-tag deal-open">NF 受票公司</span>
+              <span className="deal-tag deal-open">{t('orderDetail.files.nfCompany')}</span>
               <span className="text-sm">{d.invoice_cnpj.company_name}</span>
               <span className="text-sm" style={{ fontFamily: 'monospace', fontWeight: 600 }}>CNPJ: {d.invoice_cnpj.cnpj}</span>
-              <span className="text-sm" style={{ fontFamily: 'monospace', fontWeight: 600 }}>IE: {d.invoice_cnpj.ie || '未登记（历史资料）'}</span>
-              <span className="muted text-sm">请使用以上巴西公司资料开具 NF</span>
+              <span className="text-sm" style={{ fontFamily: 'monospace', fontWeight: 600 }}>IE: {d.invoice_cnpj.ie || t('orderDetail.files.ieMissing')}</span>
+              <span className="muted text-sm">{t('orderDetail.files.nfHint')}</span>
             </div>
           ) : (
             <p className="muted text-sm" style={{ margin: '0 0 12px' }}>
-              客户尚未指定本订单的开票 CNPJ（可在订单详情页选择）。
+              {t('orderDetail.files.noCnpj')}
             </p>
           )}
           <div className="row gap-md order-file-upload" style={{ flexWrap: 'wrap' }}>
             <select className="form-input form-input-sm" style={{ width: 150 }} value={fileKind}
               disabled={fileBusy} onChange={e => setFileKind(e.target.value as any)}>
-              <option value="clearance_shot">🖼 放行截图</option>
-              <option value="invoice">🧾 发票 PDF</option>
-              <option value="other">📄 其他</option>
+              <option value="clearance_shot">🖼 {t('orderDetail.fileKind.clearanceShot')}</option>
+              <option value="invoice">🧾 {t('orderDetail.fileKind.invoice')}</option>
+              <option value="other">📄 {t('orderDetail.fileKind.other')}</option>
             </select>
-            <input className="form-input form-input-sm" style={{ width: 240 }} placeholder="备注（可选，客户可见）"
+            <input className="form-input form-input-sm" style={{ width: 240 }} placeholder={t('orderDetail.files.notePlaceholder')}
               value={fileNote} disabled={fileBusy} onChange={e => setFileNote(e.target.value)} />
             <input type="file" accept="image/*,application/pdf" multiple disabled={fileBusy}
-              onChange={onFilePick} title="选择图片或 PDF 文件" />
+              onChange={onFilePick} title={t('orderDetail.files.pickTitle')} />
             <button className="btn btn-sm" disabled={pickFiles.length === 0 || fileBusy} onClick={doFileUpload}>
-              📤 上传{pickFiles.length > 0 ? `（${pickFiles.length} 个）` : ''}
+              📤 {t('orderDetail.files.upload')}{pickFiles.length > 0 ? t('orderDetail.files.uploadCount', { count: pickFiles.length }) : ''}
             </button>
           </div>
           {orderFiles.length > 0 ? (
             <div className="order-file-list mt-12">
               {orderFiles.map(f => (
                 <div className="order-file-row" key={f.id}>
-                  <span className="deal-tag deal-open">{FILE_KIND_CN[f.kind] || f.kind}</span>
+                  <span className="deal-tag deal-open">{FILE_KIND_KEYS[f.kind] ? t(FILE_KIND_KEYS[f.kind]) : f.kind}</span>
                   <span className="text-sm" title={f.file_name}
                     style={{ minWidth: 0, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {/^image\//.test(f.mime_type) ? '🖼' : '🧾'} {f.file_name}
@@ -1334,14 +1348,14 @@ export default function OrderDetail() {
                     {(f.size_bytes / 1024).toFixed(0)} KB · {f.created_at?.slice(0, 10)}
                   </span>
                   {f.note && <span className="muted text-sm" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.note}</span>}
-                  <button className="btn btn-sm btn-ghost" disabled={fileBusy} title="下载/查看" onClick={() => doFileDownload(f)}>⬇</button>
-                  <button className="btn btn-sm btn-ghost" disabled={fileBusy} title="删除" onClick={() => doFileDelete(f.id)}>✕</button>
+                  <button className="btn btn-sm btn-ghost" disabled={fileBusy} title={t('orderDetail.files.download')} onClick={() => doFileDownload(f)}>⬇</button>
+                  <button className="btn btn-sm btn-ghost" disabled={fileBusy} title={t('common.delete')} onClick={() => doFileDelete(f.id)}>✕</button>
                 </div>
               ))}
             </div>
           ) : (
             <p className="muted text-sm" style={{ margin: '12px 0 0' }}>
-              暂无交付文件。清关放行后可上传放行截图与发票 PDF，客户在其订单详情页可查看/下载。
+              {t('orderDetail.files.empty')}
             </p>
           )}
         </div>
@@ -1351,9 +1365,9 @@ export default function OrderDetail() {
       {(d.line_items?.length || shots.length) ? (
         <div className="card">
           <div className="card-title">
-            <h3>📋 客户填写明细</h3>
+            <h3>📋 {t('orderDetail.lines.title')}</h3>
             <span className="muted text-sm">
-              {d.line_items?.length || 0} 行 · {liKeys.length} 列{shots.length > 0 ? ` · 🖼 截图 ${shots.length} 张（按行对应）` : ''} · 可按行百分比计价（联动重算 DI/DDP）
+              {t('orderDetail.lines.summary', { rows: d.line_items?.length || 0, cols: liKeys.length })}{shots.length > 0 ? t('orderDetail.lines.shotsSuffix', { count: shots.length }) : ''}{t('orderDetail.lines.priceHint')}
             </span>
           </div>
           <div className="table-wrap">
@@ -1362,9 +1376,9 @@ export default function OrderDetail() {
                 <thead>
                   <tr>
                     <th style={{ width: 70 }}>Row</th>
-                    {liKeys.map(k => <th key={k}>{FIELD_LABELS[k] || k}</th>)}
-                    {shots.length > 0 && <th style={{ width: 150 }}>🖼 图片</th>}
-                    <th style={{ width: 160 }} title="新单价 = 原单价 × 自定义百分比；行总价和参考 DDP 自动重算">原单价计价 %</th>
+                    {liKeys.map(k => <th key={k}>{FIELD_LABEL_KEYS[k] ? t(FIELD_LABEL_KEYS[k]) : k}</th>)}
+                    {shots.length > 0 && <th style={{ width: 150 }}>🖼 {t('orderDetail.lines.image')}</th>}
+                    <th style={{ width: 160 }} title={t('orderDetail.lines.priceColumnHint')}>{t('orderDetail.lines.priceColumn')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1393,8 +1407,8 @@ export default function OrderDetail() {
                             <input
                               type="number" step="0.01" min={0.0001} max={10000}
                               placeholder="%"
-                              aria-label={`第 ${it.row_no} 行原单价计价百分比`}
-                              title="新单价 = 原单价 × 百分比，例如原价 35 输入 30 → 10.5；100 = 恢复原价"
+                              aria-label={t('orderDetail.lines.rowPriceLabel', { row: it.row_no })}
+                              title={t('orderDetail.lines.rowPriceHint')}
                               value={adjPct[it.row_no] || ''}
                               disabled={priceBusyRow !== null}
                               onChange={e => setAdjPct(prev => ({ ...prev, [it.row_no]: e.target.value }))}
@@ -1403,12 +1417,12 @@ export default function OrderDetail() {
                             <button
                               className="btn btn-sm"
                               disabled={priceBusyRow !== null || !(adjPct[it.row_no] || '').trim()}
-                              title="应用计价并重新计算 DI / DDP"
+                              title={t('orderDetail.lines.applyHint')}
                               onClick={() => handleAdjustPrice(Number(it.row_no))}
-                            >{priceBusyRow === Number(it.row_no) ? '…' : '应用'}</button>
+                            >{priceBusyRow === Number(it.row_no) ? '…' : t('orderDetail.lines.apply')}</button>
                           </span>
                         ) : (
-                          <span className="muted text-sm" title="该行无有效单价，无法按百分比调整">—</span>
+                          <span className="muted text-sm" title={t('orderDetail.lines.noPrice')}>—</span>
                         )}
                       </td>
                     </tr>
@@ -1416,7 +1430,7 @@ export default function OrderDetail() {
                   {/* 行数据为空但存在截图：单行仅渲染图片单元格 */}
                   {(!d.line_items || d.line_items.length === 0) && shots.length > 0 && (
                     <tr>
-                      <td colSpan={liKeys.length + 1} className="muted text-sm">无行数据</td>
+                      <td colSpan={liKeys.length + 1} className="muted text-sm">{t('orderDetail.lines.noRows')}</td>
                       <td style={{ verticalAlign: 'top', padding: 10 }}>{renderShots(shots)}</td>
                       <td><span className="muted text-sm">—</span></td>
                     </tr>
@@ -1429,7 +1443,7 @@ export default function OrderDetail() {
           {/* 未关联到具体行的截图（整单维度） */}
           {unboundShots.length > 0 && (
             <div className="mt-12">
-              <p className="muted text-sm" style={{ margin: '0 0 8px' }}>🖼 未关联到明细行的截图（{unboundShots.length} 张）</p>
+              <p className="muted text-sm" style={{ margin: '0 0 8px' }}>🖼 {t('orderDetail.lines.unboundShots', { count: unboundShots.length })}</p>
               {renderShots(unboundShots)}
             </div>
           )}
@@ -1442,7 +1456,7 @@ export default function OrderDetail() {
           <div className="img-preview-body" onClick={e => e.stopPropagation()}>
             <div className="row-between mb-8">
               <strong className="text-sm">{shotPreview.name}</strong>
-              <button className="btn btn-sm btn-ghost" onClick={() => setShotPreview(null)}>关闭 ✕</button>
+              <button className="btn btn-sm btn-ghost" onClick={() => setShotPreview(null)}>{t('common.close')} ✕</button>
             </div>
             <img src={shotPreview.url} alt={shotPreview.name} />
           </div>

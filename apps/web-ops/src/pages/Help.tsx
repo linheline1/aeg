@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 import './Help.css';
@@ -9,15 +10,15 @@ type Article = { slug: string; title: string; summary: string; category: string;
 type ApiArticle = Omit<Article, 'sections'> & { content: string };
 
 const categories = [
-  { id: 'start', icon: '📦', title: '订单处理', description: '清单核对、核算与报价发布' },
-  { id: 'guide', icon: '🧭', title: '运营指南', description: '费率、成交、物流与财务' },
-  { id: 'invoice', icon: '🧾', title: '开票与交付', description: 'CNPJ、IE、NF 与交付文件' },
-  { id: 'faq', icon: '❓', title: '常见问题', description: '金额、资料与文件问题' }
+  { id: 'start', icon: '📦', titleKey: 'help.cat.start.title', descriptionKey: 'help.cat.start.description' },
+  { id: 'guide', icon: '🧭', titleKey: 'help.cat.guide.title', descriptionKey: 'help.cat.guide.description' },
+  { id: 'invoice', icon: '🧾', titleKey: 'help.cat.invoice.title', descriptionKey: 'help.cat.invoice.description' },
+  { id: 'faq', icon: '❓', titleKey: 'help.cat.faq.title', descriptionKey: 'help.cat.faq.description' }
 ];
 
-function parseContent(content: string): Section[] {
+function parseContent(content: string, defaultTitle: string): Section[] {
   const sections: Section[] = [];
-  let current: Section = { title: '帮助说明', paragraphs: [], steps: [], bullets: [] };
+  let current: Section = { title: defaultTitle, paragraphs: [], steps: [], bullets: [] };
   const push = () => {
     if (current.paragraphs.length || current.steps.length || current.bullets.length || current.note) sections.push(current);
   };
@@ -49,6 +50,7 @@ function ArticleLinks({ items }: { items: Article[] }) {
 }
 
 export default function Help() {
+  const { t } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
   const [query, setQuery] = useState('');
   const [articles, setArticles] = useState<Article[]>([]);
@@ -58,8 +60,8 @@ export default function Help() {
   useEffect(() => {
     setLoading(true);
     api.get('/api/ops/help/articles')
-      .then(r => setArticles((r.data || []).map((article: ApiArticle) => ({ ...article, sections: parseContent(article.content) }))))
-      .catch(e => setErr(getApiErrorMessage(e, '帮助文档加载失败')))
+      .then(r => setArticles((r.data || []).map((article: ApiArticle) => ({ ...article, sections: parseContent(article.content, t('help.section.defaultTitle')) }))))
+      .catch(e => setErr(getApiErrorMessage(e, t('help.loadError'))))
       .finally(() => setLoading(false));
   }, []);
 
@@ -70,19 +72,19 @@ export default function Help() {
     return articles.filter(article => JSON.stringify(article).toLowerCase().includes(keyword));
   }, [query, articles]);
 
-  if (loading) return <div className="card"><p className="muted">帮助文档加载中…</p></div>;
+  if (loading) return <div className="card"><p className="muted">{t('help.loading')}</p></div>;
   if (err) return <div className="alert alert-err">❌ {err}</div>;
 
   if (slug) {
     if (!current) {
-      return <div className="help-not-found"><h1>未找到帮助文章</h1><p>该文章可能已下架、移动或删除。</p><Link className="btn" to="/help">返回帮助中心</Link></div>;
+      return <div className="help-not-found"><h1>{t('help.notFound.title')}</h1><p>{t('help.notFound.body')}</p><Link className="btn" to="/help">{t('help.backToCenter')}</Link></div>;
     }
     const related = articles.filter(article => article.category === current.category && article.slug !== current.slug).slice(0, 3);
     return (
       <div className="help-reader">
-        <nav className="help-breadcrumb"><Link to="/help">帮助中心</Link><span>›</span><span>{categories.find(c => c.id === current.category)?.title}</span></nav>
+        <nav className="help-breadcrumb"><Link to="/help">{t('help.center')}</Link><span>›</span><span>{t(categories.find(c => c.id === current.category)?.titleKey || 'help.center')}</span></nav>
         <article className="help-document">
-          <header><span className="help-document-category">{categories.find(c => c.id === current.category)?.title}</span><h1>{current.title}</h1><p>{current.summary}</p></header>
+          <header><span className="help-document-category">{t(categories.find(c => c.id === current.category)?.titleKey || 'help.center')}</span><h1>{current.title}</h1><p>{current.summary}</p></header>
           {current.sections.map((section, index) => (
             <section key={`${section.title}-${index}`}>
               <h2>{section.title}</h2>
@@ -93,8 +95,8 @@ export default function Help() {
             </section>
           ))}
         </article>
-        {related.length > 0 && <section className="help-related"><h2>相关文章</h2><ArticleLinks items={related} /></section>}
-        <Link className="help-back" to="/help">← 返回帮助中心</Link>
+        {related.length > 0 && <section className="help-related"><h2>{t('help.related')}</h2><ArticleLinks items={related} /></section>}
+        <Link className="help-back" to="/help">← {t('help.backToCenter')}</Link>
       </div>
     );
   }
@@ -102,60 +104,60 @@ export default function Help() {
   return (
     <div className="help-home">
       <section className="help-hero">
-        <span className="help-eyebrow">AEG 运营端帮助中心</span>
-        <h1>运营支持，需要哪方面帮助？</h1>
-        <p>搜索订单核算、成交、物流、开票或交付问题</p>
+        <span className="help-eyebrow">{t('help.hero.eyebrow')}</span>
+        <h1>{t('help.hero.title')}</h1>
+        <p>{t('help.hero.subtitle')}</p>
         <label className="help-search">
           <span>⌕</span>
-          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索问题或关键字，例如：重新计算、IE、交付文件" aria-label="搜索帮助文章" />
-          {query && <button type="button" onClick={() => setQuery('')} aria-label="清空搜索">×</button>}
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder={t('help.search.placeholder')} aria-label={t('help.search.label')} />
+          {query && <button type="button" onClick={() => setQuery('')} aria-label={t('help.search.clear')}>×</button>}
         </label>
       </section>
 
       {query.trim() ? (
         <section className="help-section">
-          <div className="help-section-heading"><h2>搜索结果</h2><span>找到 {results.length} 篇相关文章</span></div>
-          {results.length ? <ArticleLinks items={results} /> : <div className="help-empty"><h3>没有找到相关内容</h3><p>请尝试“核算”“NF”“回款”等更短的关键字。</p></div>}
+          <div className="help-section-heading"><h2>{t('help.search.title')}</h2><span>{t('help.search.count', { count: results.length })}</span></div>
+          {results.length ? <ArticleLinks items={results} /> : <div className="help-empty"><h3>{t('help.search.empty.title')}</h3><p>{t('help.search.empty.body')}</p></div>}
         </section>
       ) : (
         <>
-          <section className="help-categories" aria-label="帮助分类">
+          <section className="help-categories" aria-label={t('help.categories.label')}>
             {categories.map(category => (
               <a key={category.id} href={`#${category.id}`} className="help-category-card">
-                <span className="help-category-icon">{category.icon}</span><strong>{category.title}</strong><small>{category.description}</small>
+                <span className="help-category-icon">{category.icon}</span><strong>{t(category.titleKey)}</strong><small>{t(category.descriptionKey)}</small>
               </a>
             ))}
           </section>
 
           <section className="help-section" id="start">
-            <div className="help-section-heading"><h2>新手指南</h2><span>从订单处理开始</span></div>
+            <div className="help-section-heading"><h2>{t('help.gettingStarted.title')}</h2><span>{t('help.gettingStarted.subtitle')}</span></div>
             <div className="help-featured-grid">
               {articles.filter(article => article.featured).map(article => (
                 <Link key={article.slug} to={`/help/${article.slug}`} className="help-featured-card">
                   <span className="help-featured-icon">{article.slug === 'order-review-and-publish' ? '📦' : '💰'}</span>
-                  <div><h3>{article.title}</h3><p>{article.summary}</p><span>阅读指南 →</span></div>
+                  <div><h3>{article.title}</h3><p>{article.summary}</p><span>{t('help.read')}</span></div>
                 </Link>
               ))}
             </div>
           </section>
 
           <section className="help-section" id="guide">
-            <div className="help-section-heading"><h2>知识库</h2><span>运营工作指南</span></div>
+            <div className="help-section-heading"><h2>{t('help.kb.title')}</h2><span>{t('help.kb.subtitle')}</span></div>
             <ArticleLinks items={articles.filter(article => article.category !== 'faq' && article.category !== 'invoice')} />
           </section>
 
           <section className="help-section" id="invoice">
-            <div className="help-section-heading"><h2>开票与交付</h2><span>NF 资料与交付文件</span></div>
+            <div className="help-section-heading"><h2>{t('help.invoice.title')}</h2><span>{t('help.invoice.subtitle')}</span></div>
             <ArticleLinks items={articles.filter(article => article.category === 'invoice')} />
           </section>
 
           <section className="help-section" id="faq">
-            <div className="help-section-heading"><h2>常见问题</h2><span>快速排查问题</span></div>
+            <div className="help-section-heading"><h2>{t('help.faq.title')}</h2><span>{t('help.faq.subtitle')}</span></div>
             <ArticleLinks items={articles.filter(article => article.category === 'faq')} />
           </section>
 
           <section className="help-contact">
-            <span>💬</span><div><h2>仍需协助？</h2><p>请联系系统管理员或工作负责人，并提供相关报价号、问题截图和操作时间。</p></div>
+            <span>💬</span><div><h2>{t('help.contact.title')}</h2><p>{t('help.contact.body')}</p></div>
           </section>
         </>
       )}

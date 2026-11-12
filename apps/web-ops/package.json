@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5174",
-    "build": "tsc -b && vite build",
+    "dev": "node ../../scripts/write-version.mjs ops . && vite --port 5174",
+    "build": "node ../../scripts/write-version.mjs ops . && tsc -b && vite build",
     "build:android": "tsc -b && vite build --mode android",
     "android:sync": "pnpm run build:android && cap sync android",
     "android:open": "cap open android",

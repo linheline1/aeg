@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5173",
-    "build": "tsc -b && vite build",
+    "dev": "node ../../scripts/write-version.mjs admin . && vite --port 5173",
+    "build": "node ../../scripts/write-version.mjs admin . && tsc -b && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

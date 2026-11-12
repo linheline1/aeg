@@ -11,6 +11,7 @@ export default {
   'nav.help': '帮助文档',
   'nav.audit': '审计日志',
   'nav.aiConfig': '模型 API',
+  'nav.versions': '版本信息',
   'nav.clientReview': '企业认证审核',
 
   // Login
@@ -633,4 +634,24 @@ export default {
   'aiConfig.err.activateFail': '切换失败',
   'aiConfig.err.deleteFail': '删除失败',
   'aiConfig.confirm.delete': '确认删除配置「{name}」？该操作不可恢复。',
+
+  // Versions
+  'versions.title': '版本信息',
+  'versions.subtitle': '各端构建版本 · 由构建时写入仓库根目录 versions.json',
+  'versions.currentOrigin': '当前访问地址：{{origin}}',
+  'versions.serverTime': '服务端时间：{{time}}',
+  'versions.refresh': '刷新',
+  'versions.loading': '加载中...',
+  'versions.loadFail': '版本信息加载失败',
+  'versions.col.app': '端',
+  'versions.col.version': '版本',
+  'versions.col.commit': 'Git 提交',
+  'versions.col.builtAt': '构建时间',
+  'versions.col.address': '默认本地地址',
+  'versions.notBuilt': '未构建 / 未上报',
+  'versions.app.api': 'API',
+  'versions.app.admin': '管理端',
+  'versions.app.ops': '运营端',
+  'versions.app.client': '客户端',
+  'versions.app.customs': '报关端',
 };

@@ -13,6 +13,7 @@ import AuditLog from './pages/AuditLog';
 import HelpArticles from './pages/HelpArticles';
 import AiConfig from './pages/AiConfig';
 import PartnersAdmin from './pages/PartnersAdmin';
+import Versions from './pages/Versions';
 import Profile from './pages/Profile';
 export default function App() {
   const { user } = useAuth();
@@ -35,6 +36,7 @@ export default function App() {
                 <Route path="audit" element={<RequireAuth allowedRoles={['admin']}><AuditLog /></RequireAuth>} />
                 <Route path="ai-config" element={<RequireAuth allowedRoles={['admin']}><AiConfig /></RequireAuth>} />
                 <Route path="partners" element={<RequireAuth allowedRoles={['admin']}><PartnersAdmin /></RequireAuth>} />
+                <Route path="versions" element={<RequireAuth allowedRoles={['admin']}><Versions /></RequireAuth>} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

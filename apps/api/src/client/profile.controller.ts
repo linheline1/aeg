@@ -29,11 +29,16 @@ export class ProfileController {
     const client: any = await this.clientRepo.findOne({ where: { id: clientId } });
     const user: any = await this.userRepo.findOne({ where: { id: req.user?.sub } });
     if (!client || !user) throw new NotFoundException('账户资料不存在');
+    const sales: any = client.salesperson_id
+      ? await this.userRepo.findOne({ where: { id: client.salesperson_id } }) : null;
     return {
       id: user.id,
       username: user.username,
       status: user.status,
       created_at: user.created_at,
+      salesperson: sales?.role === 'sales' && sales.status === 'active'
+        ? { name: sales.username, avatar_data: sales.avatar_data || null,
+            phone: sales.sales_phone || null, wechat: sales.sales_wechat || null } : null,
       client: {
         id: client.id,
         name: client.name,

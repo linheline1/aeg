@@ -7,6 +7,9 @@ import { roleLabel } from '../lib/roles';
 interface Profile {
   id: string;
   username: string;
+  avatar_data?: string | null;
+  sales_phone?: string | null;
+  sales_wechat?: string | null;
   role: string;
   status: string;
   created_at?: string;
@@ -25,10 +28,37 @@ export default function Profile() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [phone, setPhone] = useState('');
+  const [wechat, setWechat] = useState('');
+  const [contactBusy, setContactBusy] = useState(false);
+  const saveContact = async (event: React.FormEvent) => {
+    event.preventDefault(); setErr(''); setOk(''); setContactBusy(true);
+    try {
+      const response = await api.patch('/api/ops/profile/contact', { phone, wechat });
+      setProfile(current => current ? { ...current, sales_phone: response.data.phone, sales_wechat: response.data.wechat } : current);
+      setOk(t('profile.contact.saved'));
+    } catch (error) { setErr(getApiErrorMessage(error, t('profile.contact.saveFailed'))); }
+    finally { setContactBusy(false); }
+  };
+  const uploadAvatar = async (file?: File) => {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 256 * 1024) {
+      setErr(t('profile.avatar.invalidType')); return;
+    }
+    setAvatarBusy(true); setErr('');
+    try {
+      const form = new FormData(); form.append('avatar', file);
+      const response = await api.post('/api/ops/profile/avatar', form);
+      setProfile(current => current ? { ...current, avatar_data: response.data.avatar_data } : current);
+      setOk(t('profile.avatar.updated'));
+    } catch (error) { setErr(getApiErrorMessage(error, t('profile.avatar.uploadFailed'))); }
+    finally { setAvatarBusy(false); }
+  };
 
   useEffect(() => {
     api.get('/api/ops/profile')
-      .then(r => setProfile(r.data))
+      .then(r => { setProfile(r.data); setPhone(r.data.sales_phone || ''); setWechat(r.data.sales_wechat || ''); })
       .catch(e => setLoadErr(getApiErrorMessage(e, t('profile.loadError'))));
   }, [t]);
 
@@ -66,6 +96,12 @@ export default function Profile() {
       <div className="card">
         <div className="card-title"><h3>👤 {t('profile.accountInfo')}</h3></div>
         {profile ? (
+          <>
+          {profile.role === 'sales' && <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+            {profile.avatar_data ? <img src={profile.avatar_data} alt={t('profile.avatar.alt')} style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover' }} /> : <span aria-hidden="true" style={{ width: 72, height: 72, borderRadius: '50%', display: 'grid', placeItems: 'center', background: '#e7eefc', fontSize: 28 }}>{profile.username.slice(0, 1).toUpperCase()}</span>}
+            <label className="btn btn-ghost">{avatarBusy ? t('profile.avatar.uploading') : t('profile.avatar.upload')}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={avatarBusy} onChange={event => uploadAvatar(event.target.files?.[0])} style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }} /></label>
+            <span className="muted text-sm">{t('profile.avatar.hint')}</span>
+          </div>}
           <div className="profile-grid">
             <div><span className="profile-k">{t('profile.username')}</span><strong>{profile.username}</strong></div>
             <div><span className="profile-k">{t('profile.role')}</span><strong>{roleLabel(profile.role)}</strong></div>
@@ -74,10 +110,20 @@ export default function Profile() {
             <div><span className="profile-k">{t('profile.createdAt')}</span><strong>{fmtTime(profile.created_at)}</strong></div>
             <div><span className="profile-k">{t('profile.updatedAt')}</span><strong>{fmtTime(profile.updated_at)}</strong></div>
           </div>
+          </>
         ) : (
           !loadErr && <p className="muted">{t('common.loading')}</p>
         )}
       </div>
+
+      {profile?.role === 'sales' && <div className="card">
+        <div className="card-title"><h3>{t('profile.contact.visibleTitle')}</h3></div>
+        <form onSubmit={saveContact} className="profile-password-form">
+          <div className="form-row"><label htmlFor="sales-phone">{t('profile.contact.phone')}</label><input id="sales-phone" className="form-input" type="tel" maxLength={30} value={phone} onChange={event => setPhone(event.target.value)} placeholder={t('profile.contact.phonePlaceholder')} /></div>
+          <div className="form-row"><label htmlFor="sales-wechat">{t('profile.contact.wechat')}</label><input id="sales-wechat" className="form-input" maxLength={80} value={wechat} onChange={event => setWechat(event.target.value)} placeholder={t('profile.contact.wechatPlaceholder')} /></div>
+          <button className="btn" type="submit" disabled={contactBusy}>{contactBusy ? t('common.saving') : t('profile.contact.save')}</button>
+        </form>
+      </div>}
 
       <div className="card" id="password">
         <div className="card-title">

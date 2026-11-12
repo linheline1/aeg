@@ -10,6 +10,7 @@ interface ProfileData {
   username: string;
   status: 'active' | 'disabled';
   created_at: string;
+  salesperson: { name: string; avatar_data: string | null; phone: string | null; wechat: string | null } | null;
   client: {
     id: string;
     name: string;
@@ -120,6 +121,16 @@ export default function Profile() {
       {msg && <div className="alert alert-ok">{msg}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+        <div className="card" style={{ margin: 0 }}>
+          <div className="card-title"><h3>{t('profile.salespersonTitle')}</h3></div>
+          {profile.salesperson ? <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {profile.salesperson.avatar_data ? <img src={profile.salesperson.avatar_data} alt="" style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover' }} /> : <span aria-hidden="true" style={{ width: 52, height: 52, borderRadius: '50%', background: '#e7eefc', display: 'grid', placeItems: 'center' }}>{profile.salesperson.name.slice(0, 1).toUpperCase()}</span>}
+            <div><strong>{profile.salesperson.name}</strong>
+              {profile.salesperson.phone && <div><a href={`tel:${profile.salesperson.phone}`}>{t('profile.salesPhone')}：{profile.salesperson.phone}</a></div>}
+              {profile.salesperson.wechat && <div>{t('profile.salesWechat')}：{profile.salesperson.wechat}</div>}
+            </div>
+          </div> : <p className="muted">{t('profile.salespersonUnassigned')}</p>}
+        </div>
         <div className="card" style={{ margin: 0 }}>
           <div className="card-title"><h3>👤 {t('profile.accountInfo')}</h3></div>
           <p><strong>{t('profile.username')}：</strong>{profile.username}</p>
