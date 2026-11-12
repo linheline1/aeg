@@ -87,6 +87,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   const [aiChecked, setAiChecked] = useState(false);
   const [aiCheckNote, setAiCheckNote] = useState('');
   const [pricePaste, setPricePaste] = useState('');
+  const [pasteError, setPasteError] = useState('');
   const [showPricePaste, setShowPricePaste] = useState(false);
   const [ncmPaste, setNcmPaste] = useState('');
   const [showNcmPaste, setShowNcmPaste] = useState(false);
@@ -272,16 +273,17 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   };
 
   const applyPriceColumn = () => {
-    const values = pricePaste.split(/\r?\n|\t/).map(value => value.trim()).filter(Boolean);
-    if (!values.length) { setErr(t('upload.err.priceEmpty')); return; }
-    if (values.length > rows.length) { setErr(t('upload.err.priceTooMany', { pasted: values.length, rows: rows.length })); return; }
-    const invalid = values.find(value => !Number.isFinite(Number(value)) || Number(value) < 0);
-    if (invalid !== undefined) { setErr(t('upload.err.priceInvalid', { value: invalid })); return; }
+    const fail = (message: string) => { setPasteError(message); setErr(message); };
+    const values = pricePaste.replace(/[\r\n]+$/, '').split(/\r?\n|\t/).map(value => value.trim());
+    if (!values.length || !values.some(Boolean)) { fail(t('upload.err.priceEmpty')); return; }
+    if (values.length > rows.length) { fail(t('upload.err.priceTooMany', { pasted: values.length, rows: rows.length })); return; }
+    const invalid = values.find(value => value && (!Number.isFinite(Number(value)) || Number(value) < 0));
+    if (invalid !== undefined) { fail(t('upload.err.priceInvalid', { value: invalid })); return; }
     setRows(current => current.map((row, index) => index < values.length
-      ? { ...row, data: { ...row.data, unit_price: Number(values[index]) } }
+      ? { ...row, data: { ...row.data, unit_price: values[index] ? Number(values[index]) : null } }
       : row));
     setServerErrors(current => current.filter(error => error.field_key !== 'unit_price' && error.field_key !== 'total_price'));
-    setAiChecked(false); setAiCheckNote(t('upload.note.priceUpdated')); setErr('');
+    setAiChecked(false); setAiCheckNote(t('upload.note.priceUpdated')); setErr(''); setPasteError('');
     setShowPricePaste(false); setPricePaste('');
     showToast(t('upload.toast.priceUpdated', { count: values.length }));
   };
@@ -295,15 +297,16 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   };
 
   const applyNcmColumn = () => {
-    const values = ncmPaste.trim().split(/\r?\n|\t/).map(value => value.trim());
-    if (!values.length || !values.some(Boolean)) { setErr(t('upload.err.ncmEmpty')); return; }
-    if (values.length > rows.length) { setErr(t('upload.err.ncmTooMany', { pasted: values.length, rows: rows.length })); return; }
+    const fail = (message: string) => { setPasteError(message); setErr(message); };
+    const values = ncmPaste.replace(/[\r\n]+$/, '').split(/\r?\n|\t/).map(value => value.trim());
+    if (!values.length || !values.some(Boolean)) { fail(t('upload.err.ncmEmpty')); return; }
+    if (values.length > rows.length) { fail(t('upload.err.ncmTooMany', { pasted: values.length, rows: rows.length })); return; }
     const invalid = values.find(value => value && !/^\d{8}$/.test(value));
-    if (invalid) { setErr(t('upload.err.ncmInvalid', { value: invalid })); return; }
+    if (invalid) { fail(t('upload.err.ncmInvalid', { value: invalid })); return; }
     setRows(current => current.map((row, index) => index < values.length
       ? { ...row, data: { ...row.data, hs_code: values[index] } } : row));
     setServerErrors(current => current.filter(error => error.field_key !== 'hs_code'));
-    setAiChecked(false); setAiCheckNote(t('upload.note.ncmUpdated')); setErr('');
+    setAiChecked(false); setAiCheckNote(t('upload.note.ncmUpdated')); setErr(''); setPasteError('');
     setShowNcmPaste(false); setNcmPaste('');
     showToast(t('upload.toast.ncmUpdated', { count: values.length }));
   };
@@ -588,7 +591,8 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
                 <strong>{t('upload.priceTitle')}</strong>
                 <p className="muted text-sm">{t('upload.priceHint')}</p>
               </div>
-              <textarea className="form-input" rows={5} autoFocus placeholder={t('upload.pricePlaceholder')} value={pricePaste} onChange={event => setPricePaste(event.target.value)} />
+              <textarea className="form-input" rows={5} autoFocus placeholder={t('upload.pricePlaceholder')} value={pricePaste} onChange={event => { setPricePaste(event.target.value); setPasteError(''); }} />
+              {pasteError && <div className="alert alert-err" role="alert">{pasteError}</div>}
               <div className="row gap-md">
                 <button type="button" className="btn" onClick={applyPriceColumn}>{t('upload.applyPrice')}</button>
                 <button type="button" className="btn btn-ghost" onClick={() => setShowPricePaste(false)}>{t('common.cancel')}</button>
@@ -597,7 +601,8 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
           )}
           {showNcmPaste && <div ref={ncmPasteRef} className="price-column-paste mt-12">
             <div><strong>{t('upload.ncmTitle')}</strong><p className="muted text-sm">{t('upload.ncmHint')}</p></div>
-            <textarea className="form-input" rows={5} placeholder={t('upload.ncmPlaceholder')} value={ncmPaste} onChange={event => setNcmPaste(event.target.value)} />
+            <textarea className="form-input" rows={5} placeholder={t('upload.ncmPlaceholder')} value={ncmPaste} onChange={event => { setNcmPaste(event.target.value); setPasteError(''); }} />
+            {pasteError && <div className="alert alert-err" role="alert">{pasteError}</div>}
             <div className="row gap-md"><button type="button" className="btn" onClick={applyNcmColumn}>{t('upload.applyNcm')}</button><button type="button" className="btn btn-ghost" onClick={() => setShowNcmPaste(false)}>{t('common.cancel')}</button></div>
           </div>}
           {aiCheckNote && <div className={`alert ${aiChecked ? 'alert-ok' : 'alert-warn'} mt-12`}>{aiCheckNote}</div>}
