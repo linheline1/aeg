@@ -144,6 +144,8 @@ export interface FeeRateRow {
   client_id: string | null;
   ocean_freight_usd: number;
   port_fee_usd: number;
+  /** 巴西本地拖车费（BRL，按柜） */
+  br_trucking_brl: number;
   br_clearance_brl: number;
   fx_rate: number;
   sales_tax_rate: number;
@@ -618,6 +620,7 @@ export async function seedIfEmpty() {
       client_id: null,
       ocean_freight_usd: 1200,
       port_fee_usd: 130,
+      br_trucking_brl: 0,
       br_clearance_brl: 0,
       fx_rate: 5.0,
       sales_tax_rate: 0.065,
@@ -805,6 +808,7 @@ export class AuditRepo {
 const FEE_RATE_FALLBACK = {
   ocean_freight_usd: 1200,
   port_fee_usd: 130,
+  br_trucking_brl: 0,
   br_clearance_brl: 0,
   fx_rate: 5.0,
   sales_tax_rate: 0.065,
@@ -815,6 +819,7 @@ const FEE_RATE_FALLBACK = {
 function normalizeFeeRate(row: FeeRateRow): FeeRateRow {
   return {
     ...row,
+    br_trucking_brl: Number.isFinite(Number(row.br_trucking_brl)) ? Number(row.br_trucking_brl) : FEE_RATE_FALLBACK.br_trucking_brl,
     sales_tax_rate: Number.isFinite(Number(row.sales_tax_rate)) ? Number(row.sales_tax_rate) : FEE_RATE_FALLBACK.sales_tax_rate,
     sales_markup_rate: Number.isFinite(Number(row.sales_markup_rate)) ? Number(row.sales_markup_rate) : FEE_RATE_FALLBACK.sales_markup_rate,
     profit_brl: Number.isFinite(Number(row.profit_brl)) ? Number(row.profit_brl) : FEE_RATE_FALLBACK.profit_brl
@@ -837,7 +842,7 @@ export class FeeRatesRepo {
     return Promise.resolve(db.fee_rates.map(normalizeFeeRate));
   }
   private upsert(scope: 'global' | 'client', clientId: string | null, values: {
-    ocean_freight_usd: number; port_fee_usd: number; br_clearance_brl: number; fx_rate: number;
+    ocean_freight_usd: number; port_fee_usd: number; br_trucking_brl: number; br_clearance_brl: number; fx_rate: number;
     sales_tax_rate: number; sales_markup_rate: number; profit_brl: number;
   }, updatedBy: string): Promise<FeeRateRow> {
     const db = load();
@@ -854,13 +859,13 @@ export class FeeRatesRepo {
     return Promise.resolve(full);
   }
   upsertGlobal(values: {
-    ocean_freight_usd: number; port_fee_usd: number; br_clearance_brl: number; fx_rate: number;
+    ocean_freight_usd: number; port_fee_usd: number; br_trucking_brl: number; br_clearance_brl: number; fx_rate: number;
     sales_tax_rate: number; sales_markup_rate: number; profit_brl: number;
   }, updatedBy: string) {
     return this.upsert('global', null, values, updatedBy);
   }
   upsertClient(clientId: string, values: {
-    ocean_freight_usd: number; port_fee_usd: number; br_clearance_brl: number; fx_rate: number;
+    ocean_freight_usd: number; port_fee_usd: number; br_trucking_brl: number; br_clearance_brl: number; fx_rate: number;
     sales_tax_rate: number; sales_markup_rate: number; profit_brl: number;
   }, updatedBy: string) {
     return this.upsert('client', clientId, values, updatedBy);
@@ -877,7 +882,7 @@ export class FeeRatesRepo {
   async resolve(clientId?: string | null): Promise<{
     source: 'client' | 'global' | 'default';
     rates: {
-      ocean_freight_usd: number; port_fee_usd: number; br_clearance_brl: number; fx_rate: number;
+      ocean_freight_usd: number; port_fee_usd: number; br_trucking_brl: number; br_clearance_brl: number; fx_rate: number;
       sales_tax_rate: number; sales_markup_rate: number; profit_brl: number;
     };
   }> {
@@ -887,6 +892,7 @@ export class FeeRatesRepo {
         source: 'client',
         rates: {
           ocean_freight_usd: c.ocean_freight_usd, port_fee_usd: c.port_fee_usd,
+          br_trucking_brl: Number(c.br_trucking_brl ?? 0),
           br_clearance_brl: c.br_clearance_brl, fx_rate: c.fx_rate,
           sales_tax_rate: c.sales_tax_rate, sales_markup_rate: c.sales_markup_rate, profit_brl: c.profit_brl
         }
@@ -897,6 +903,7 @@ export class FeeRatesRepo {
       source: 'global',
       rates: {
         ocean_freight_usd: g.ocean_freight_usd, port_fee_usd: g.port_fee_usd,
+        br_trucking_brl: Number(g.br_trucking_brl ?? 0),
         br_clearance_brl: g.br_clearance_brl, fx_rate: g.fx_rate,
         sales_tax_rate: g.sales_tax_rate, sales_markup_rate: g.sales_markup_rate, profit_brl: g.profit_brl
       }

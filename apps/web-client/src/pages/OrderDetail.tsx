@@ -74,7 +74,8 @@ const FEE_REF_LABELS: Record<string, string> = {
   OCEAN_FREIGHT: 'ocean', PORT_FEE_ORIGIN: 'port', AI_DI: 'importTax', DI: 'importTax',
   BR_IMPORT_DI: 'importTax', SALES_TAX: 'salesTax', BR_SALES_TAX: 'salesTax',
   ICMS: 'salesTax', PROFIT: 'service', BR_PROFIT: 'service',
-  PROFIT_REFERENCE: 'service', REFERENCE_PROFIT: 'service', BR_CLEARANCE: 'clearance'
+  PROFIT_REFERENCE: 'service', REFERENCE_PROFIT: 'service', BR_CLEARANCE: 'clearance',
+  BR_LOCAL_TRUCKING: 'localTrucking'
 };
 /** 兼容后端新增/历史费用编码：先按编码，再按名称关键字识别 */
 const feeRefLabel = (item: FeeItem, translate: TFunction, isPt: boolean) => {
@@ -83,6 +84,7 @@ const feeRefLabel = (item: FeeItem, translate: TFunction, isPt: boolean) => {
   const name = item.name || '';
   if (/海运费|海运|ocean freight/i.test(name)) return translate('orderDetail.fee.ocean');
   if (/港杂|起运港|port fee/i.test(name)) return translate('orderDetail.fee.port');
+  if (/拖车|trucking|drayage/i.test(name)) return translate('orderDetail.fee.localTrucking');
   if (/利润|服务费|profit|service fee/i.test(name)) return translate('orderDetail.fee.service');
   if (/AI\s*DI|(^|[_\s(（])DI([_\s)）]|$)|进口税|import tax/i.test(name)) return translate('orderDetail.fee.importTax');
   if (/销售税|TAX|ICMS/i.test(name)) return translate('orderDetail.fee.salesTax');

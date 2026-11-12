@@ -450,6 +450,7 @@ export default {
   'orderDetail.referenceDisclaimer': '参考预估，不构成最终报价',
   'orderDetail.fee.ocean': '参考海运费',
   'orderDetail.fee.port': '参考港杂费（起运港）',
+  'orderDetail.fee.localTrucking': '巴西本地拖车费（参考）',
   'orderDetail.fee.importTax': '巴西进口税费预估（参考）',
   'orderDetail.fee.salesTax': '销售税务（参考）',
   'orderDetail.fee.service': '运营服务费用（参考）',

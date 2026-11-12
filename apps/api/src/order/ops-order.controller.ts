@@ -215,6 +215,7 @@ export class OpsOrderController {
     @Body() body: {
       ocean_freight_usd?: number;
       port_fee_usd?: number;
+      br_trucking_brl?: number;
       fx_rate?: number;
       sales_tax_rate?: number;
       sales_markup_rate?: number;

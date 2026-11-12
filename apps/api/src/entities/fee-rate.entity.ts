@@ -25,6 +25,10 @@ export class FeeRateEntity {
   @Column({ type: 'double precision' })
   port_fee_usd!: number;
 
+  /** 巴西本地拖车费（BRL，按柜） */
+  @Column({ type: 'double precision', default: 0 })
+  br_trucking_brl!: number;
+
   @Column({ type: 'double precision' })
   br_clearance_brl!: number;
 

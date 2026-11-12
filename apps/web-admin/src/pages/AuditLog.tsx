@@ -31,8 +31,8 @@ function fmtDetail(a: string, detail: any, t: TFunction): string {
       case 'rates.client.update': {
         const after = detail.after || {};
         const before = detail.before;
-        const seg = t('audit.detail.quoteRateSeg', { ocean: after.ocean_freight_usd, port: after.port_fee_usd, br: after.br_clearance_brl, fx: after.fx_rate });
-        if (before) return t('audit.detail.quoteRateSegTotal', { total: '', orig: t('audit.detail.origRate', { ocean: before.ocean, port: before.port, br: before.br, fx: before.fx }) });
+        const seg = t('audit.detail.quoteRateSeg', { ocean: after.ocean_freight_usd, port: after.port_fee_usd, truck: after.br_trucking_brl, br: after.br_clearance_brl, fx: after.fx_rate });
+        if (before) return t('audit.detail.quoteRateSegTotal', { total: '', orig: t('audit.detail.origRate', { ocean: before.ocean, port: before.port, truck: before.truck, br: before.br, fx: before.fx }) });
         return detail.client_name ? t('audit.detail.quoteRateWithClient', { client: detail.client_name, seg }) : t('audit.detail.quoteRateOnly', { seg });
       }
       case 'rates.client.remove':
@@ -40,7 +40,7 @@ function fmtDetail(a: string, detail: any, t: TFunction): string {
       case 'order.fees': {
         const f = detail.after?.fees;
         const b = detail.before;
-        return `${detail.quote_no} → ${t('audit.detail.quoteRateSeg', { ocean: f?.ocean_freight_usd, port: f?.port_fee_usd, br: f?.br_clearance_brl, fx: f?.fx_rate })}${t('audit.detail.quoteRateSegTotal', { total: detail.after?.total, orig: b?.total != null ? t('audit.detail.origRate', { ocean: b?.ocean, port: b?.port, br: b?.br, fx: b?.fx }) : '' })}`;
+        return `${detail.quote_no} → ${t('audit.detail.quoteRateSeg', { ocean: f?.ocean_freight_usd, port: f?.port_fee_usd, truck: f?.br_trucking_brl, br: f?.br_clearance_brl, fx: f?.fx_rate })}${t('audit.detail.quoteRateSegTotal', { total: detail.after?.total, orig: b?.total != null ? t('audit.detail.origRate', { ocean: b?.ocean, port: b?.port, truck: b?.truck_brl, br: b?.br, fx: b?.fx }) : '' })}`;
       }
       case 'order.compute': {
         const src = detail.rate_source === 'client' ? t('audit.detail.src.client') : detail.rate_source === 'global' ? t('audit.detail.src.global') : t('audit.detail.src.builtin');

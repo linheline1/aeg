@@ -10,6 +10,7 @@ import { DEFAULT_PROFIT_BRL, DEFAULT_SALES_MARKUP_RATE, DEFAULT_SALES_TAX_RATE }
 interface RatesBody {
   ocean_freight_usd?: number;
   port_fee_usd?: number;
+  br_trucking_brl?: number;
   br_clearance_brl?: number;
   fx_rate?: number;
   sales_tax_rate?: number;
@@ -21,6 +22,7 @@ function pickRates(body: RatesBody) {
   const values = {
     ocean_freight_usd: Number(body.ocean_freight_usd),
     port_fee_usd: Number(body.port_fee_usd),
+    br_trucking_brl: Number(body.br_trucking_brl ?? 0),
     br_clearance_brl: Number(body.br_clearance_brl ?? 0),
     fx_rate: Number(body.fx_rate),
     sales_tax_rate: body.sales_tax_rate === undefined ? DEFAULT_SALES_TAX_RATE : Number(body.sales_tax_rate),
@@ -78,11 +80,11 @@ export class RatesController {
       target_id: row.id,
       detail: {
         before: before && {
-          ocean: before.ocean_freight_usd, port: before.port_fee_usd, fx: before.fx_rate,
+          ocean: before.ocean_freight_usd, port: before.port_fee_usd, truck: before.br_trucking_brl, fx: before.fx_rate,
           sales_tax_rate: before.sales_tax_rate, sales_markup_rate: before.sales_markup_rate, profit_brl: before.profit_brl
         },
         after: {
-          ocean: values.ocean_freight_usd, port: values.port_fee_usd, fx: values.fx_rate,
+          ocean: values.ocean_freight_usd, port: values.port_fee_usd, truck: values.br_trucking_brl, fx: values.fx_rate,
           sales_tax_rate: values.sales_tax_rate, sales_markup_rate: values.sales_markup_rate, profit_brl: values.profit_brl
         }
       }
@@ -105,11 +107,11 @@ export class RatesController {
       detail: {
         client_name: client.name,
         before: before && {
-          ocean: before.ocean_freight_usd, port: before.port_fee_usd, fx: before.fx_rate,
+          ocean: before.ocean_freight_usd, port: before.port_fee_usd, truck: before.br_trucking_brl, fx: before.fx_rate,
           sales_tax_rate: before.sales_tax_rate, sales_markup_rate: before.sales_markup_rate, profit_brl: before.profit_brl
         },
         after: {
-          ocean: values.ocean_freight_usd, port: values.port_fee_usd, fx: values.fx_rate,
+          ocean: values.ocean_freight_usd, port: values.port_fee_usd, truck: values.br_trucking_brl, fx: values.fx_rate,
           sales_tax_rate: values.sales_tax_rate, sales_markup_rate: values.sales_markup_rate, profit_brl: values.profit_brl
         }
       }

@@ -14,6 +14,7 @@ import { pendingCustomsReview } from '../order/customs-review';
 type DdpFees = {
   ocean_freight_usd: number;
   port_fee_usd: number;
+  br_trucking_brl: number;
   fx_rate: number;
   sales_tax_rate: number;
   sales_markup_rate: number;
@@ -158,6 +159,7 @@ export class QuoteService {
     return calculateDdpPricing({
       oceanFreightUsd: fees.ocean_freight_usd,
       portFeeUsd: fees.port_fee_usd,
+      brazilTruckingBrl: fees.br_trucking_brl,
       fxRate: fees.fx_rate,
       merchandiseBrl,
       diBrl: Number(di.totals.di_brl),
@@ -180,6 +182,7 @@ export class QuoteService {
     return {
       ocean_freight_usd: overrides.ocean_freight_usd ?? (previousOcean != null ? previousOcean / savedFx : rates.ocean_freight_usd),
       port_fee_usd: overrides.port_fee_usd ?? (previousPort != null ? previousPort / savedFx : rates.port_fee_usd),
+      br_trucking_brl: overrides.br_trucking_brl ?? savedAmount(previous?.br_trucking_brl) ?? savedAmount(rates.br_trucking_brl) ?? 0,
       fx_rate: fxRate,
       sales_tax_rate: overrides.sales_tax_rate ?? savedAmount(previous?.sales_tax_rate) ?? rates.sales_tax_rate,
       sales_markup_rate: overrides.sales_markup_rate ?? savedAmount(previous?.sales_markup_rate) ?? rates.sales_markup_rate,
@@ -212,6 +215,7 @@ export class QuoteService {
       sales_markup_brl: pricing.breakdown.sales_markup_brl,
       tax_base_brl: pricing.breakdown.tax_base_brl,
       sales_tax_brl: pricing.breakdown.sales_tax_brl,
+      br_trucking_brl: pricing.breakdown.br_trucking_brl,
       profit_brl: pricing.breakdown.profit_brl,
       total_brl: pricing.brl
     };
@@ -227,6 +231,7 @@ export class QuoteService {
     overrides?: {
       ocean_freight_usd?: number;
       port_fee_usd?: number;
+      br_trucking_brl?: number;
       fx_rate?: number;
       sales_tax_rate?: number;
       sales_markup_rate?: number;
@@ -443,6 +448,7 @@ export class QuoteService {
     overrides: {
       ocean_freight_usd?: number;
       port_fee_usd?: number;
+      br_trucking_brl?: number;
       fx_rate?: number;
       sales_tax_rate?: number;
       sales_markup_rate?: number;
@@ -462,6 +468,7 @@ export class QuoteService {
     const before = order.pricing_breakdown ? {
       ocean_brl: previous.ocean_freight_brl,
       port_brl: previous.port_fee_brl,
+      truck_brl: previous.br_trucking_brl,
       di_brl: previous.di_brl,
       merchandise_brl: previous.merchandise_brl,
       sales_markup_rate: previous.sales_markup_rate,

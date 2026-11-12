@@ -12,6 +12,7 @@ interface BreakdownMeta {
   is_reference?: boolean;
   merchandise_brl?: number | null;
   di_brl?: number | null;
+  br_trucking_brl?: number | null;
   di_review_version?: number | null;
   sales_markup_rate?: number | null;
   sales_markup_brl?: number | null;
@@ -68,6 +69,7 @@ interface OrderDetail {
 interface EditableFees {
   ocean_freight_usd: number;   // USD 整柜海运费（一口价）
   port_fee_usd: number;
+  br_trucking_brl: number;     // 巴西本地拖车费（BRL/柜）
   fx_rate: number;
   sales_markup_rate: number;   // 税基利润加成，存小数（0.20 = 20%）
   sales_tax_rate: number;      // 销售税率，存小数（0.065 = 6.5%）
@@ -119,7 +121,7 @@ export default function OrderDetail() {
   const [d, setD] = useState<OrderDetail | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [fees, setFees] = useState<EditableFees>({
-    ocean_freight_usd: 1200, port_fee_usd: 130, fx_rate: 5.0,
+    ocean_freight_usd: 1200, port_fee_usd: 130, br_trucking_brl: 0, fx_rate: 5.0,
     sales_markup_rate: DEFAULT_MARKUP_RATE,
     sales_tax_rate: DEFAULT_TAX_RATE, profit_brl: DEFAULT_PROFIT_BRL
   });
@@ -209,10 +211,12 @@ export default function OrderDetail() {
         const amountOf = (code: string) => br.items.find(i => i.code === code)?.amount;
         const ocean = amountOf('OCEAN_FREIGHT');
         const port = amountOf('PORT_FEE_ORIGIN');
+        const trucking = br.br_trucking_brl ?? amountOf('BR_LOCAL_TRUCKING');
         const fx = br.fx_rate ?? 5.0;
         setFees({
           ocean_freight_usd: ocean != null ? Math.round((ocean / fx) * 100) / 100 : 1200,
           port_fee_usd: port != null ? Math.round((port / fx) * 100) / 100 : 130,
+          br_trucking_brl: trucking != null ? Math.round(trucking * 100) / 100 : 0,
           fx_rate: fx,
           sales_markup_rate: meta?.sales_markup_rate ?? DEFAULT_MARKUP_RATE,
           sales_tax_rate: meta?.sales_tax_rate ?? DEFAULT_TAX_RATE,
@@ -238,6 +242,7 @@ export default function OrderDetail() {
           if (rt) setFees({
             ocean_freight_usd: rt.ocean_freight_usd ?? 0,
             port_fee_usd: rt.port_fee_usd ?? 0,
+            br_trucking_brl: rt.br_trucking_brl ?? 0,
             fx_rate: rt.fx_rate ?? 5,
             sales_markup_rate: rt.sales_markup_rate ?? DEFAULT_MARKUP_RATE,
             sales_tax_rate: rt.sales_tax_rate ?? DEFAULT_TAX_RATE,
@@ -338,6 +343,7 @@ export default function OrderDetail() {
       const r = await api.patch(`/api/ops/orders/${id}/fees`, {
         ocean_freight_usd: fees.ocean_freight_usd,
         port_fee_usd: fees.port_fee_usd,
+        br_trucking_brl: fees.br_trucking_brl,
         fx_rate: fees.fx_rate,
         sales_markup_rate: fees.sales_markup_rate,
         sales_tax_rate: fees.sales_tax_rate,
@@ -619,11 +625,12 @@ export default function OrderDetail() {
   const fx = fees.fx_rate;
   const previewOceanBrl = fees.ocean_freight_usd * fx;
   const previewPortBrl = fees.port_fee_usd * fx;
+  const previewTruckingBrl = fees.br_trucking_brl;
   const previewMarkupBrl = ((diBrl ?? 0) + merchandiseBrl) * fees.sales_markup_rate;
   const previewTaxBaseBrl = (diBrl ?? 0) + merchandiseBrl + previewMarkupBrl + previewOceanBrl;
   const previewSalesTaxBrl = previewTaxBaseBrl * fees.sales_tax_rate;
-  const previewBrazilSegment = (diBrl ?? 0) + previewSalesTaxBrl + fees.profit_brl;
-  const previewTotal = Math.round((previewSalesTaxBrl + (diBrl ?? 0) + previewOceanBrl + previewPortBrl + fees.profit_brl) * 100) / 100;
+  const previewBrazilSegment = (diBrl ?? 0) + previewTruckingBrl + previewSalesTaxBrl + fees.profit_brl;
+  const previewTotal = Math.round((previewSalesTaxBrl + (diBrl ?? 0) + previewOceanBrl + previewPortBrl + previewTruckingBrl + fees.profit_brl) * 100) / 100;
   const prevTotal = d.pricing_breakdown?.total ?? d.total_amount_brl ?? 0;
   const diff = Math.round((previewTotal - prevTotal) * 100) / 100;
   const noDiHint = t('orderDetail.di.requiredForDdp');
@@ -841,6 +848,22 @@ export default function OrderDetail() {
                   <td>{fees.port_fee_usd}</td>
                   <td>USD</td>
                   <td className="amt">{previewPortBrl.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td>{t('orderDetail.ddp.localTrucking')}</td>
+                  <td>
+                    <label className="text-sm muted">{t('orderDetail.ddp.localTruckingLabel')}</label>
+                    <input
+                      type="number" step="50" min="0"
+                      className="form-input"
+                      value={fees.br_trucking_brl}
+                      onChange={e => setFees({ ...fees, br_trucking_brl: Number(e.target.value) || 0 })}
+                      disabled={saving}
+                    />
+                  </td>
+                  <td>R$ {fees.br_trucking_brl.toFixed(2)}</td>
+                  <td>BRL</td>
+                  <td className="amt">{previewTruckingBrl.toFixed(2)}</td>
                 </tr>
                 <tr>
                   <td>{t('orderDetail.ddp.importTax')}</td>

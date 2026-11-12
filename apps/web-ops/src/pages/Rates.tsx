@@ -10,6 +10,7 @@ interface FeeRateRow {
   client_name?: string;
   ocean_freight_usd: number;
   port_fee_usd: number;
+  br_trucking_brl: number;
   sales_tax_rate?: number;
   sales_markup_rate?: number;
   profit_brl?: number;
@@ -28,6 +29,8 @@ interface RatesData {
 interface Fees {
   ocean_freight_usd: number;
   port_fee_usd: number;
+  /** 巴西本地拖车费（BRL/柜） */
+  br_trucking_brl: number;
   fx_rate: number;
   /** 税基利润加成，存小数（0.20 = 20%） */
   sales_markup_rate: number;
@@ -51,6 +54,7 @@ const DEFAULT_PROFIT_BRL = 30000;
 const feeOf = (row?: Partial<FeeRateRow> | null): Fees => ({
   ocean_freight_usd: row?.ocean_freight_usd ?? 0,
   port_fee_usd: row?.port_fee_usd ?? 0,
+  br_trucking_brl: row?.br_trucking_brl ?? 0,
   fx_rate: row?.fx_rate ?? 5,
   sales_markup_rate: row?.sales_markup_rate ?? DEFAULT_MARKUP_RATE,
   sales_tax_rate: row?.sales_tax_rate ?? DEFAULT_TAX_RATE,
@@ -62,6 +66,7 @@ const EMPTY_FEES: Fees = feeOf(null);
 const FIELDS: RateField[] = [
   { key: 'ocean_freight_usd', step: '10' },
   { key: 'port_fee_usd', step: '5' },
+  { key: 'br_trucking_brl', step: '50' },
   { key: 'fx_rate', step: '0.1' },
   { key: 'sales_markup_rate', step: '1', percent: true },
   { key: 'sales_tax_rate', step: '0.1', percent: true },
@@ -237,7 +242,7 @@ export default function Rates() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>{t('rates.client')}</th><th className="amt">{t('rates.oceanShort')}</th><th className="amt">{t('rates.portShort')}</th><th className="amt">{t('rates.fxShort')}</th><th className="amt">{t('rates.markupShort')}</th><th className="amt">{t('rates.taxShort')}</th><th className="amt">{t('rates.profitShort')}</th><th>{t('rates.updated')}</th><th>{t('rates.actions')}</th>
+                  <th>{t('rates.client')}</th><th className="amt">{t('rates.oceanShort')}</th><th className="amt">{t('rates.portShort')}</th><th className="amt">{t('rates.truckingShort')}</th><th className="amt">{t('rates.fxShort')}</th><th className="amt">{t('rates.markupShort')}</th><th className="amt">{t('rates.taxShort')}</th><th className="amt">{t('rates.profitShort')}</th><th>{t('rates.updated')}</th><th>{t('rates.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -246,6 +251,7 @@ export default function Rates() {
                     <td><strong>{o.client_name}</strong></td>
                     <td className="amt">{o.ocean_freight_usd}</td>
                     <td className="amt">{o.port_fee_usd}</td>
+                    <td className="amt">{(o.br_trucking_brl ?? 0).toFixed(2)}</td>
                     <td className="amt">{o.fx_rate}</td>
                     <td className="amt">{((o.sales_markup_rate ?? DEFAULT_MARKUP_RATE) * 100).toFixed(2)}%</td>
                     <td className="amt">{((o.sales_tax_rate ?? DEFAULT_TAX_RATE) * 100).toFixed(2)}%</td>

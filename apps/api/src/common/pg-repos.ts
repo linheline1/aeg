@@ -193,7 +193,7 @@ export class PgFeeRatesRepo {
     return (await this.repo.find()).map(e => toRow(e) as FeeRateRow);
   }
   private async upsert(scope: 'global' | 'client', clientId: string | null, values: {
-    ocean_freight_usd: number; port_fee_usd: number; br_clearance_brl: number; fx_rate: number;
+    ocean_freight_usd: number; port_fee_usd: number; br_trucking_brl: number; br_clearance_brl: number; fx_rate: number;
     sales_tax_rate: number; sales_markup_rate: number; profit_brl: number;
   }, updatedBy: string): Promise<FeeRateRow> {
     let e = await this.repo.findOne({ where: { scope, client_id: clientId } as any });
@@ -205,13 +205,13 @@ export class PgFeeRatesRepo {
     return toRow(await this.repo.save(e)) as FeeRateRow;
   }
   upsertGlobal(values: {
-    ocean_freight_usd: number; port_fee_usd: number; br_clearance_brl: number; fx_rate: number;
+    ocean_freight_usd: number; port_fee_usd: number; br_trucking_brl: number; br_clearance_brl: number; fx_rate: number;
     sales_tax_rate: number; sales_markup_rate: number; profit_brl: number;
   }, updatedBy: string) {
     return this.upsert('global', null, values, updatedBy);
   }
   upsertClient(clientId: string, values: {
-    ocean_freight_usd: number; port_fee_usd: number; br_clearance_brl: number; fx_rate: number;
+    ocean_freight_usd: number; port_fee_usd: number; br_trucking_brl: number; br_clearance_brl: number; fx_rate: number;
     sales_tax_rate: number; sales_markup_rate: number; profit_brl: number;
   }, updatedBy: string) {
     return this.upsert('client', clientId, values, updatedBy);
@@ -224,16 +224,17 @@ export class PgFeeRatesRepo {
   async resolve(clientId?: string | null): Promise<{
     source: 'client' | 'global' | 'default';
     rates: {
-      ocean_freight_usd: number; port_fee_usd: number; br_clearance_brl: number; fx_rate: number;
+      ocean_freight_usd: number; port_fee_usd: number; br_trucking_brl: number; br_clearance_brl: number; fx_rate: number;
       sales_tax_rate: number; sales_markup_rate: number; profit_brl: number;
     };
   }> {
     const FALLBACK = {
-      ocean_freight_usd: 1200, port_fee_usd: 130, br_clearance_brl: 0, fx_rate: 5.0,
+      ocean_freight_usd: 1200, port_fee_usd: 130, br_trucking_brl: 0, br_clearance_brl: 0, fx_rate: 5.0,
       sales_tax_rate: 0.065, sales_markup_rate: 0.20, profit_brl: 30000
     };
     const rowRates = (row: FeeRateRow) => ({
       ocean_freight_usd: row.ocean_freight_usd, port_fee_usd: row.port_fee_usd,
+      br_trucking_brl: Number(row.br_trucking_brl ?? 0),
       br_clearance_brl: row.br_clearance_brl, fx_rate: row.fx_rate,
       sales_tax_rate: Number(row.sales_tax_rate ?? 0.065),
       sales_markup_rate: Number(row.sales_markup_rate ?? 0.20),

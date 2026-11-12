@@ -445,6 +445,7 @@ export default {
   'orderDetail.referenceDisclaimer': 'Estimativa de referência, não constitui proposta final',
   'orderDetail.fee.ocean': 'Frete marítimo estimado',
   'orderDetail.fee.port': 'Taxas portuárias na origem (estimativa)',
+  'orderDetail.fee.localTrucking': 'Frete rodoviário local no Brasil (estimativa)',
   'orderDetail.fee.importTax': 'Tributos de importação no Brasil (estimativa)',
   'orderDetail.fee.salesTax': 'Tributos sobre vendas (estimativa)',
   'orderDetail.fee.service': 'Custos operacionais (estimativa)',
