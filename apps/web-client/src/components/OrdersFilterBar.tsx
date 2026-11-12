@@ -138,7 +138,7 @@ export default function OrdersFilterBar({
                 onChange={e => patch({ period: e.target.value as OrderPeriod })}
               >
                 {ORDER_PERIOD_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{t(`filters.period.${o.value}`)}</option>
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                 ))}
               </select>
             </label>
@@ -150,7 +150,7 @@ export default function OrdersFilterBar({
                 onChange={e => patch({ shipment: e.target.value as ShipmentFilter })}
               >
                 {SHIPMENT_FILTER_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{t(`filters.shipment.${o.value}`)}</option>
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                 ))}
               </select>
             </label>
@@ -162,7 +162,7 @@ export default function OrdersFilterBar({
                 onChange={e => patch({ invoice: e.target.value as InvoiceFilter })}
               >
                 {INVOICE_FILTER_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{t(`filters.invoice.${o.value}`)}</option>
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                 ))}
               </select>
             </label>
@@ -174,7 +174,7 @@ export default function OrdersFilterBar({
                 onChange={e => patch({ sort: e.target.value as OrderSort })}
               >
                 {ORDER_SORT_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{t(`filters.sort.${o.value}`)}</option>
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                 ))}
               </select>
             </label>
@@ -251,7 +251,7 @@ export default function OrdersFilterBar({
                 onChange={e => patch({ period: e.target.value as OrderPeriod })}
               >
                 {ORDER_PERIOD_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{t(`filters.period.${o.value}`)}</option>
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                 ))}
               </select>
             </label>
@@ -263,7 +263,7 @@ export default function OrdersFilterBar({
                 onChange={e => patch({ shipment: e.target.value as ShipmentFilter })}
               >
                 {SHIPMENT_FILTER_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{t(`filters.shipment.${o.value}`)}</option>
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                 ))}
               </select>
             </label>
@@ -275,7 +275,7 @@ export default function OrdersFilterBar({
                 onChange={e => patch({ invoice: e.target.value as InvoiceFilter })}
               >
                 {INVOICE_FILTER_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{t(`filters.invoice.${o.value}`)}</option>
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                 ))}
               </select>
             </label>
@@ -287,7 +287,7 @@ export default function OrdersFilterBar({
                 onChange={e => patch({ sort: e.target.value as OrderSort })}
               >
                 {ORDER_SORT_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{t(`filters.sort.${o.value}`)}</option>
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                 ))}
               </select>
             </label>

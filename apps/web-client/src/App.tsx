@@ -1,4 +1,6 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Landing from './pages/Landing';
@@ -16,8 +18,19 @@ import OrderDetail from './pages/OrderDetail';
 import RequireAuth from './components/RequireAuth';
 import { useAuth } from './store/auth';
 
+/** 官网页面由 LandingShell 自行设置标题，这里跳过 */
+const LANDING_PATHS = ['/', '/company', '/partners'];
+
 export default function App() {
   const { user } = useAuth();
+  const { pathname } = useLocation();
+  const { t, i18n } = useTranslation();
+
+  useEffect(() => {
+    if (LANDING_PATHS.includes(pathname) || pathname.startsWith('/lines/')) return;
+    document.title = t('app.docTitle');
+  }, [pathname, t, i18n.language]);
+
   return (
     <Routes>
       <Route path="/" element={<Landing />} />

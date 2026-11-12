@@ -55,26 +55,12 @@ interface ClientOrderDetail {
   created_at: string; updated_at: string;
 }
 
-const STATUS_CN: Record<string, string> = {
-  done: '参考价已生成', computing: '计算中', pending_fee: '待核算',
-  uploaded: '已上传', failed: '失败'
-};
-
-/** M7 物流节点阶段（清关环节细化为三节点） */
-const SHIP_STAGE_CN: Record<string, string> = {
-  booked: '已订舱', loaded: '已装柜', customs_cn: '中国报关', departed: '已开船',
-  on_water: '海运途中', arrived: '已到港', customs_br: '巴西清关中',
-  duty_paid: '关税已缴', cleared: '清关放行', delivered: '已签收'
-};
-
-/** Excel 明细字段中文表头 */
-const FIELD_LABELS: Record<string, string> = {
-  row_no: '行号', carton_no: '箱号', sku: 'SKU', product_cn: '品名 CN',
-  product_en: '品名 EN', hs_code: 'HS Code', cartons: '箱数', pcs_per_carton: '件数/箱',
-  total_pcs: '总件数', nw_per_carton: '净重/箱', gw_per_carton: '毛重/箱', total_gw: '总毛重',
-  length_cm: '长 cm', width_cm: '宽 cm', height_cm: '高 cm', unit_cbm: '体积 CBM',
-  unit_price: '单价 RMB', material: '材质', destination: '目的地', remark: '备注'
-};
+/** Excel 明细字段（是否有对应翻译 key） */
+const FIELD_KEYS = new Set([
+  'row_no', 'carton_no', 'sku', 'product_cn', 'product_en', 'hs_code', 'cartons', 'pcs_per_carton',
+  'total_pcs', 'nw_per_carton', 'gw_per_carton', 'total_gw', 'length_cm', 'width_cm', 'height_cm',
+  'unit_cbm', 'unit_price', 'material', 'destination', 'remark'
+]);
 
 const fmtBRL = (n: number) =>
   'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -100,11 +86,11 @@ const feeRefLabel = (item: FeeItem, translate: TFunction, isPt: boolean) => {
   if (/利润|服务费|profit|service fee/i.test(name)) return translate('orderDetail.fee.service');
   if (/AI\s*DI|(^|[_\s(（])DI([_\s)）]|$)|进口税|import tax/i.test(name)) return translate('orderDetail.fee.importTax');
   if (/销售税|TAX|ICMS/i.test(name)) return translate('orderDetail.fee.salesTax');
-  return isPt ? `${translate('orderDetail.fee.other')} (${item.code || name})` : `${name}（参考）`;
+  return isPt ? `${translate('orderDetail.fee.other')} (${item.code || name})` : `${name}${translate('orderDetail.referenceSuffix')}`;
 };
 /** 费用说明沿用后端文本，但不得出现承诺性措辞 */
-const refFeeNote = (note: string | undefined, isPt: boolean, fallback: string) =>
-  note ? (isPt && /[\u3400-\u9fff]/.test(note) ? fallback : note.replace(/一口价|锁价/g, '参考价')) : null;
+const refFeeNote = (note: string | undefined, isPt: boolean, fallback: string, referencePrice: string) =>
+  note ? (isPt && /[\u3400-\u9fff]/.test(note) ? fallback : note.replace(/一口价|锁价/g, referencePrice)) : null;
 
 
 export default function OrderDetail() {
@@ -273,7 +259,7 @@ export default function OrderDetail() {
         <div className="card-title">
           <h3>💰 {t('orderDetail.amountTitle')}</h3>
           <span className={`status-tag ${d.pricing_processing ? 'status-pending_fee' : `status-${d.status}`}`}>
-            {d.pricing_processing ? t('orderDetail.status.computing') : t(`orderDetail.status.${d.status}`, { defaultValue: STATUS_CN[d.status] || d.status })}
+            {d.pricing_processing ? t('orderDetail.status.computing') : t(`orderDetail.status.${d.status}`, { defaultValue: d.status })}
           </span>
         </div>
         {d.pricing_processing ? (
@@ -315,7 +301,7 @@ export default function OrderDetail() {
           <div className="card-title">
             <h3>🚢 {t('orderDetail.shipping')}</h3>
             {curStage ? (
-              <span className="ship-stage-chip">{t('orderDetail.current')}: {t(`orderDetail.shipStage.${curStage}`, { defaultValue: SHIP_STAGE_CN[curStage] || curStage })}</span>
+              <span className="ship-stage-chip">{t('orderDetail.current')}: {t(`orderDetail.shipStage.${curStage}`, { defaultValue: curStage })}</span>
             ) : <span className="muted text-sm">{t('orderDetail.awaitingOps')}</span>}
           </div>
 
@@ -354,7 +340,7 @@ export default function OrderDetail() {
                   <span className="ship-tl-dot" />
                   <div className="ship-tl-body">
                     <div className="ship-tl-head">
-                      <strong>{t(`orderDetail.shipStage.${ev.stage}`, { defaultValue: SHIP_STAGE_CN[ev.stage] || ev.stage })}</strong>
+                      <strong>{t(`orderDetail.shipStage.${ev.stage}`, { defaultValue: ev.stage })}</strong>
                       <span className="muted text-sm">{ev.happened_at.slice(0, 16).replace('T', ' ')}</span>
                     </div>
                     {ev.note && <div className="muted text-sm" style={{ marginTop: 2 }}>{ev.note}</div>}
@@ -470,7 +456,7 @@ export default function OrderDetail() {
                   <tr key={it.code}>
                     <td><strong>{feeRefLabel(it, t, isPt)}</strong></td>
                     <td className="amt">{fmtBRL(it.amount)}</td>
-                    <td className="muted">{refFeeNote(it.note, isPt, t('orderDetail.serverNote')) || '—'}</td>
+                    <td className="muted">{refFeeNote(it.note, isPt, t('orderDetail.serverNote'), t('orderDetail.referencePrice')) || '—'}</td>
                   </tr>
                 ))}
                 <tr>
@@ -496,7 +482,7 @@ export default function OrderDetail() {
               <thead>
                 <tr>
                   <th>{t('orderDetail.field.row_no')}</th>
-                  {liKeys.map(k => <th key={k}>{k in FIELD_LABELS ? t(`orderDetail.field.${k}`) : k}</th>)}
+                  {liKeys.map(k => <th key={k}>{FIELD_KEYS.has(k) ? t(`orderDetail.field.${k}`) : k}</th>)}
                   <th>🖼 {t('orderDetail.images')}</th>
                 </tr>
               </thead>
