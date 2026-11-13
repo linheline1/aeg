@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Capacitor } from '@capacitor/core';
 import { createAuthenticatedApi } from '@aeg/web-shared/auth';
 import type { Role } from '@aeg/shared-types';
+import { clearListCache } from '../lib/list-cache';
 
 interface User { id: string; username: string; role: Role; client_id?: string; }
 interface AuthState {
@@ -23,11 +24,13 @@ export const useAuth = create<AuthState>((set) => ({
   login: async (username, password) => {
     const res = await axios.post(`${API_BASE_URL}/api/auth/login`, { username, password });
     const { access_token, user } = res.data;
+    clearListCache();
     localStorage.setItem(TOKEN_KEY, access_token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
     set({ token: access_token, user });
   },
   logout: () => {
+    clearListCache();
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     set({ token: null, user: null });

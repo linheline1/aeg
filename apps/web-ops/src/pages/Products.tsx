@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
+import { useAuth } from '../store/auth';
+import { readListCache, writeListCache } from '../lib/list-cache';
 
 interface ProductRow {
   id: string;
@@ -45,6 +47,7 @@ const fmtPrice = (value: number | null) => value == null
 
 export default function Products() {
   const { t } = useTranslation();
+  const userId = useAuth(state => state.user?.id || '');
   const [items, setItems] = useState<ProductRow[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -63,16 +66,20 @@ export default function Products() {
 
   const load = useCallback(async () => {
     const currentRequest = ++requestId.current;
-    setLoading(true);
+    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+    if (q) params.set('q', q);
+    const cacheKey = `products:${userId}:${params}`;
+    const cached = readListCache<ProductListResponse>(cacheKey);
+    setLoading(!cached);
     setError(null);
-    setItems(null);
+    setItems(cached?.items || null);
+    if (cached) setTotal(cached.total);
     setEditingId(null);
     setDraft(null);
     try {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
-      if (q) params.set('q', q);
       const response = await api.get<ProductListResponse>(`/api/ops/products?${params}`);
       if (requestId.current !== currentRequest) return;
+      writeListCache(cacheKey, response.data);
       setItems(response.data.items || []);
       setTotal(response.data.total || 0);
     } catch (e) {
@@ -82,7 +89,7 @@ export default function Products() {
     } finally {
       if (requestId.current === currentRequest) setLoading(false);
     }
-  }, [page, q, t]);
+  }, [page, q, t, userId]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => () => { requestId.current += 1; }, []);

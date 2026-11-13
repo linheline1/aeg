@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { downloadOrShareFile } from '@aeg/web-shared/file-actions';
 import { api, useAuth } from '../store/auth';
+import { readListCache, writeListCache } from '../lib/list-cache';
 
 interface CustomsReview {
   status: 'pending' | 'approved' | 'changes_requested';
@@ -97,16 +98,27 @@ export default function Orders() {
   const [templateUrl, setTemplateUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const listRequest = useRef(0);
   const pageSize = 20;
 
   const reload = () => {
+    const request = ++listRequest.current;
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (status) params.set('status', status);
     if (q) params.set('q', q);
     if (clientFilter) params.set('client_id', clientFilter);
+    const cacheKey = `orders:${user?.id || ''}:${params}`;
+    const cached = readListCache<{ items: OrderRow[]; total: number }>(cacheKey);
+    if (cached) { setList(cached.items); setTotal(cached.total); }
+    else setList(null);
     api.get(`/api/ops/orders?${params}`)
-      .then(r => { setList(r.data.items); setTotal(r.data.total); })
-      .catch(e => setErr(getApiErrorMessage(e, t('orders.loadError'))));
+      .then(r => {
+        if (request !== listRequest.current) return;
+        const value = { items: r.data.items as OrderRow[], total: r.data.total as number };
+        writeListCache(cacheKey, value);
+        setList(value.items); setTotal(value.total); setErr(null);
+      })
+      .catch(e => { if (request === listRequest.current) setErr(getApiErrorMessage(e, t('orders.loadError'))); });
   };
 
   useEffect(() => {
