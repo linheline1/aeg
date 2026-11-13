@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
 import { useAuth } from '../store/auth';
-import { readListCache, writeListCache } from '../lib/list-cache';
+import { invalidateListCache, readListCache, writeListCache } from '../lib/list-cache';
 
 interface ProductRow {
   id: string;
@@ -64,7 +64,7 @@ export default function Products() {
   const [preview, setPreview] = useState<{ url: string; name: string } | null>(null);
   const requestId = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     const currentRequest = ++requestId.current;
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
     if (q) params.set('q', q);
@@ -74,6 +74,7 @@ export default function Products() {
     setError(null);
     setItems(cached?.items || null);
     if (cached) setTotal(cached.total);
+    if (cached && !force) { setLoading(false); return; }
     setEditingId(null);
     setDraft(null);
     try {
@@ -172,6 +173,7 @@ export default function Products() {
         ncm: ncm || null
       });
       setItems(current => current?.map(item => item.id === row.id ? response.data : item) || null);
+      invalidateListCache('products:');
       setEditingId(null);
       setDraft(null);
       setMessage(t('products.saved', { sku: response.data.sku || row.sku }));
@@ -188,8 +190,9 @@ export default function Products() {
     setMessage(null);
     try {
       await api.post('/api/ops/products/sync');
+      invalidateListCache('products:');
       setMessage(t('products.syncSuccess'));
-      await load();
+      await load(true);
     } catch (e) {
       setError(getApiErrorMessage(e, t('products.syncError')));
     } finally {
@@ -251,7 +254,7 @@ export default function Products() {
       {!loading && items === null && (
         <div className="card">
           <p className="muted">{t('products.loadRetryHint')}</p>
-          <button className="btn btn-sm btn-ghost" type="button" onClick={() => void load()}>{t('products.reload')}</button>
+          <button className="btn btn-sm btn-ghost" type="button" onClick={() => void load(true)}>{t('products.reload')}</button>
         </div>
       )}
 

@@ -18,3 +18,7 @@ export function writeListCache<T>(key: string, value: T): void {
 export function clearListCache(): void {
   entries.clear();
 }
+
+export function invalidateListCache(prefix: string): void {
+  for (const key of entries.keys()) if (key.startsWith(prefix)) entries.delete(key);
+}

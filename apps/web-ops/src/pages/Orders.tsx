@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { downloadOrShareFile } from '@aeg/web-shared/file-actions';
 import { api, useAuth } from '../store/auth';
-import { readListCache, writeListCache } from '../lib/list-cache';
+import { invalidateListCache, readListCache, writeListCache } from '../lib/list-cache';
 
 interface CustomsReview {
   status: 'pending' | 'approved' | 'changes_requested';
@@ -101,7 +101,7 @@ export default function Orders() {
   const listRequest = useRef(0);
   const pageSize = 20;
 
-  const reload = () => {
+  const reload = (force = false) => {
     const request = ++listRequest.current;
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (status) params.set('status', status);
@@ -111,6 +111,7 @@ export default function Orders() {
     const cached = readListCache<{ items: OrderRow[]; total: number }>(cacheKey);
     if (cached) { setList(cached.items); setTotal(cached.total); }
     else setList(null);
+    if (cached && !force) return;
     api.get(`/api/ops/orders?${params}`)
       .then(r => {
         if (request !== listRequest.current) return;
@@ -129,23 +130,29 @@ export default function Orders() {
   useEffect(() => {
     // 业务员分配下拉（operator/admin）
     if (!isSales) {
+      const cached = readListCache<Salesperson[]>('orders:options:salespeople');
+      if (cached) { setSalespeople(cached); return; }
       api.get('/api/ops/salespeople')
-        .then(r => setSalespeople(r.data))
+        .then(r => { setSalespeople(r.data); writeListCache('orders:options:salespeople', r.data); })
         .catch(() => {});
     }
   }, [isSales]);
 
   // 客户下拉：运营/管理员用于转客户，业务员用于上传报价
   useEffect(() => {
+    const cached = readListCache<ClientOption[]>('orders:options:clients');
+    if (cached) { setClients(cached); return; }
     api.get('/api/ops/orders/clients/options')
-      .then(r => setClients(r.data || []))
+      .then(r => { const value = r.data || []; setClients(value); writeListCache('orders:options:clients', value); })
       .catch(e => setErr(getApiErrorMessage(e, t('orders.clientsLoadError'))));
   }, []);
 
   useEffect(() => {
     if (!isSales) return;
+    const cached = readListCache<string>('orders:options:template');
+    if (cached) { setTemplateUrl(cached); return; }
     api.get('/api/client/template/current')
-      .then(r => setTemplateUrl(r.data.download_url || ''))
+      .then(r => { const value = r.data.download_url || ''; setTemplateUrl(value); if (value) writeListCache('orders:options:template', value); })
       .catch(() => setTemplateUrl(''));
   }, [isSales]);
 
@@ -173,7 +180,7 @@ export default function Orders() {
       if (r.data.ok) {
         setFile(null);
         setFileKey(k => k + 1);
-        reload();
+        invalidateListCache('orders:'); reload(true);
       }
     } catch (e: any) {
       setErr(getApiErrorMessage(e, t('orders.uploadFailed')));
@@ -196,7 +203,7 @@ export default function Orders() {
         deal_status: next,
         ...(note !== undefined ? { note } : {})
       });
-      reload();
+      invalidateListCache('orders:'); reload(true);
     } catch (e: any) {
       alert(getApiErrorMessage(e, t('orders.actionFailed')));
     } finally {
@@ -211,10 +218,10 @@ export default function Orders() {
       await api.patch(`/api/ops/orders/${o.id}/assign`, {
         salesperson_id: salespersonId === 'inherit' ? null : salespersonId
       });
-      reload();
+      invalidateListCache('orders:'); reload(true);
     } catch (e: any) {
       alert(getApiErrorMessage(e, t('orders.assignFailed')));
-      reload();
+      reload(true);
     } finally {
       setBusyId(null);
     }
@@ -231,10 +238,10 @@ export default function Orders() {
     setBusyId(o.id);
     try {
       await api.patch(`/api/ops/orders/${o.id}/client`, { client_id: nextClientId });
-      reload();
+      invalidateListCache('orders:'); reload(true);
     } catch (e: any) {
       alert(getApiErrorMessage(e, t('orders.clientChangeFailed')));
-      reload();
+      reload(true);
     } finally {
       setBusyId(null);
     }
@@ -244,7 +251,7 @@ export default function Orders() {
     setBusyId(o.id);
     try {
       await api.post(`/api/ops/orders/${o.id}/compute`);
-      reload();
+      invalidateListCache('orders:'); reload(true);
     } catch (e: any) {
       alert(getApiErrorMessage(e, t('orders.computeFailed')));
     } finally {
