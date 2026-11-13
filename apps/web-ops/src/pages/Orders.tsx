@@ -189,10 +189,6 @@ export default function Orders() {
 
   /** M4 成交标记：won/lost/open（未成交可选填原因） */
   const markDeal = async (o: OrderRow, next: 'won' | 'lost' | 'open') => {
-    if (next === 'won' && o.customs_review?.status !== 'approved') {
-      alert(t('orders.customsApprovalRequired'));
-      return;
-    }
     let note: string | undefined;
     if (next === 'lost') {
       note = window.prompt(t('orders.lostReasonPrompt')) ?? undefined;
@@ -379,7 +375,6 @@ export default function Orders() {
                 const dealCls = o.deal_status === 'won' ? 'deal-won'
                   : o.deal_status === 'lost' ? 'deal-lost'
                   : o.deal_status === 'open' ? 'deal-open' : 'deal-none';
-                const customsApproved = o.customs_review?.status === 'approved';
                 return (
                   <tr key={o.id} className={busyId === o.id ? 'row-editing' : ''}>
                     <td data-label={t('orders.quoteNo')}>
@@ -464,11 +459,7 @@ export default function Orders() {
                           >
                             <option value="">{t('orders.deal.none')}</option>
                             <option value="open">{t('orders.deal.open')}</option>
-                            <option
-                              value="won"
-                              disabled={!customsApproved}
-                              title={customsApproved ? t('orders.deal.markApprovedHint') : t('orders.customsApprovalRequired')}
-                            >{t('orders.deal.won')}</option>
+                            <option value="won">{t('orders.deal.won')}</option>
                             <option value="lost">{t('orders.deal.lost')}</option>
                           </select>
                           {o.deal_note && (

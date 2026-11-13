@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../store/auth';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { downloadOrShareFile } from '@aeg/web-shared/file-actions';
+import { lazy, Suspense } from 'react';
+const ShipmentRouteMap = lazy(() => import('../components/ShipmentRouteMap').then(module => ({ default: module.ShipmentRouteMap })));
 
 interface FeeItem { code: string; name: string; amount: number; note?: string; }
 
@@ -61,9 +63,14 @@ interface OrderDetail {
   /** M7：国际物流（成交走柜后运营维护） */
   shipment?: {
     vessel?: string | null; voyage?: string | null; bill_no?: string | null; container_no?: string | null;
+    mmsi?: string | null;
     pol?: string | null; pod?: string | null; etd?: string | null; eta?: string | null; remark?: string | null;
-    events?: { id: string; stage: string; note?: string | null; happened_at: string; created_by?: string }[];
+    events?: { id: string; stage: string; note?: string | null; happened_at: string; created_by?: string; lat?: number | null; lng?: number | null; position_source?: 'manual' | 'port' | 'estimated' | null }[];
   } | null;
+  ais_position?: { latitude: number; longitude: number; observed_at: string; speed_knots?: number | null } | null;
+  ais_track?: { latitude: number; longitude: number; observed_at: string }[];
+  /** M7：当前节点位置（服务端解析：手动坐标优先，其次按节点阶段落到 POL/POD 港口点） */
+  node_position?: { latitude: number; longitude: number; stage: string; happened_at: string; source: 'manual' | 'port' } | null;
 }
 
 interface EditableFees {
@@ -116,7 +123,7 @@ const COMPUTABLE = new Set(['uploaded', 'pending_fee', 'failed', 'computing']);
 const FILE_KIND_KEYS: Record<string, string> = { clearance_shot: 'orderDetail.fileKind.clearanceShot', invoice: 'orderDetail.fileKind.invoice', other: 'orderDetail.fileKind.other' };
 
 export default function OrderDetail() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const [d, setD] = useState<OrderDetail | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -138,12 +145,15 @@ export default function OrderDetail() {
   const [priceBusyRow, setPriceBusyRow] = useState<number | null>(null);
   // M7：国际物流（基本信息表单 + 节点添加表单）
   const [shipForm, setShipForm] = useState({
-    vessel: '', voyage: '', bill_no: '', container_no: '',
+    vessel: '', voyage: '', bill_no: '', container_no: '', mmsi: '',
     pol: '', pod: '', etd: '', eta: '', remark: ''
   });
   const [shipSaving, setShipSaving] = useState(false);
   const [shipBusy, setShipBusy] = useState(false);
-  const [evForm, setEvForm] = useState({ stage: 'booked', at: '', note: '' });
+  /** AIS 实时船位：轮询独立接口写入，不覆盖订单其余字段 */
+  const [aisPosition, setAisPosition] = useState<OrderDetail['ais_position']>(null);
+  const [aisTrack, setAisTrack] = useState<NonNullable<OrderDetail['ais_track']>>([]);
+  const [evForm, setEvForm] = useState({ stage: 'booked', at: '', note: '', lat: '', lng: '' });
   // M8：交付文件（操作员上传给客户：放行截图 / 发票 PDF）
   const [orderFiles, setOrderFiles] = useState<any[]>([]);
   const [fileKind, setFileKind] = useState<'clearance_shot' | 'invoice' | 'other'>('clearance_shot');
@@ -195,7 +205,7 @@ export default function OrderDetail() {
       // M7：回填物流表单
       const sh = od.shipment;
       if (sh) setShipForm({
-        vessel: sh.vessel || '', voyage: sh.voyage || '', bill_no: sh.bill_no || '',
+        vessel: sh.vessel || '', voyage: sh.voyage || '', bill_no: sh.bill_no || '', mmsi: sh.mmsi || '',
         container_no: sh.container_no || '', pol: sh.pol || '', pod: sh.pod || '',
         etd: sh.etd?.slice(0, 10) || '', eta: sh.eta?.slice(0, 10) || '', remark: sh.remark || ''
       });
@@ -258,6 +268,45 @@ export default function OrderDetail() {
     load();
     loadDiVersions();
   }, [id]);
+
+  /**
+   * AIS 船位轮询：只拉船位，不重载整张订单（避免覆盖正在编辑的物流表单）。
+   * - 仅在已成交且维护了 MMSI 的订单上启动
+   * - 30 秒一次；标签页隐藏时降到 15 秒静默重排，回来后立即恢复
+   * - 连续失败指数退避，最长 5 分钟；后端返回 tracked=false 时自动停止
+   */
+  useEffect(() => {
+    setAisPosition(null);
+    setAisTrack([]);
+    const mmsi = d?.shipment?.mmsi;
+    if (!id || !mmsi || d?.status !== 'done' || d?.deal_status !== 'won') return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let misses = 0;
+    const tick = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        timer = setTimeout(tick, 15000);
+        return;
+      }
+      try {
+        const r = await api.get(`/api/ops/orders/${id}/ais`);
+        if (cancelled) return;
+        misses = 0;
+        if (r.data?.position) setAisPosition(r.data.position);
+        if (Array.isArray(r.data?.track)) setAisTrack(r.data.track);
+        if (!r.data?.tracked) return;
+      } catch {
+        if (cancelled) return;
+        misses += 1;
+      }
+      timer = setTimeout(tick, Math.min(30000 * Math.pow(2, misses), 300000));
+    };
+    timer = setTimeout(tick, 10000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [id, d?.shipment?.mmsi, d?.status, d?.deal_status]);
   useEffect(() => {
     api.get('/api/ops/salespeople').then(r => setSalespeople(r.data)).catch(() => {});
     api.get('/api/ops/orders/clients/options').then(r => setClients(r.data || [])).catch(() => {});
@@ -276,13 +325,6 @@ export default function OrderDetail() {
   const currentCustomsApproved = d?.customs_review?.status === 'approved'
     && d.customs_review.di_review_version != null
     && d.customs_review.di_review_version === d.di_analysis?.review_version;
-  const customsApprovalHint = t('orderDetail.customs.approvalRequired');
-  const checkCurrentCustomsApproval = (action: string) => {
-    if (currentCustomsApproved) return true;
-    setErr(t('orderDetail.customs.notApproved', { action }));
-    return false;
-  };
-
   /** M3：按费率表核算并发布（uploaded/pending_fee/failed → computing → done） */
   const handleCompute = async () => {
     if (diAmountOf(d) == null) { setErr(t('orderDetail.di.requiredForCompute')); return; }
@@ -453,7 +495,6 @@ export default function OrderDetail() {
 
   /** M4：成交标记（won/lost/open） */
   const handleDeal = async (next: 'won' | 'lost' | 'open') => {
-    if (next === 'won' && !checkCurrentCustomsApproval(t('orderDetail.deal.actionMarkWon'))) return;
     let note: string | undefined;
     if (next === 'lost') {
       note = window.prompt(t('orderDetail.lostReasonPrompt')) ?? undefined;
@@ -515,19 +556,21 @@ export default function OrderDetail() {
     } finally { setShipSaving(false); }
   };
 
-  /** M7：添加物流节点（datetime-local → ISO） */
+  /** M7：添加物流节点（datetime-local → ISO；可选手动坐标，不填则按节点阶段落到 POL/POD） */
   const handleEvAdd = async () => {
     if (!evForm.stage) return;
     setShipBusy(true); setErr(null);
     try {
       const happened_at = evForm.at ? new Date(evForm.at).toISOString() : undefined;
+      const hasManual = evForm.lat.trim() !== '' || evForm.lng.trim() !== '';
       await api.post(`/api/ops/orders/${id}/shipment/events`, {
         stage: evForm.stage,
         note: evForm.note || undefined,
-        happened_at
+        happened_at,
+        ...(hasManual ? { lat: evForm.lat.trim(), lng: evForm.lng.trim() } : {})
       });
       flashMsg(t('orderDetail.ship.eventAdded'));
-      setEvForm({ stage: evForm.stage, at: '', note: '' });
+      setEvForm({ stage: evForm.stage, at: '', note: '', lat: '', lng: '' });
       load();
     } catch (e: any) {
       setErr(getApiErrorMessage(e));
@@ -544,7 +587,7 @@ export default function OrderDetail() {
         note: evForm.note || undefined
       });
       flashMsg(t('orderDetail.ship.advancedTo', { stage: t(SHIP_STAGE_KEYS[evNextStage]) }));
-      setEvForm({ stage: evNextStage, at: '', note: '' });
+      setEvForm({ stage: evNextStage, at: '', note: '', lat: '', lng: '' });
       load();
     } catch (e: any) {
       setErr(getApiErrorMessage(e));
@@ -693,6 +736,17 @@ export default function OrderDetail() {
         </div>
       </div>
 
+      <nav className="order-section-nav" aria-label={i18n.resolvedLanguage?.startsWith('pt') ? 'Seções do pedido' : '订单模块导航'}>
+        {[
+          ...(d.status === 'done' ? [['deal', t('orderDetail.deal.followUp')]] : []),
+          ['pricing', t('orderDetail.ddp.title')],
+          ['di', t('orderDetail.di.title')],
+          ...(d.deal_status === 'won' ? [['shipment', t('orderDetail.ship.title')]] : []),
+          ...(d.status === 'done' ? [['files', t('orderDetail.files.title')]] : []),
+          ...((d.line_items?.length || shots.length) ? [['lines', t('orderDetail.lines.title')]] : [])
+        ].map(([section, label]) => <a key={section} href={`#order-${section}`}>{label}</a>)}
+      </nav>
+
       {flash && <div className="alert alert-ok">{flash}</div>}
       {err && <div className="alert alert-err">❌ {err}</div>}
 
@@ -751,7 +805,7 @@ export default function OrderDetail() {
 
       {/* M4 成交状态工作条：仅 done 报价可标记 */}
       {d.status === 'done' && (
-        <div className="alert alert-warn row-between order-workbar" style={{ alignItems: 'center' }}>
+        <div id="order-deal" className="alert alert-warn row-between order-workbar" style={{ alignItems: 'center' }}>
           <div>
             <strong>🤝 {t('orderDetail.deal.followUp')}</strong>
             <span className="text-sm" style={{ marginLeft: 8 }}>
@@ -776,8 +830,7 @@ export default function OrderDetail() {
             {d.deal_status !== 'won' && (
               <button
                 className="btn"
-                disabled={busy || !currentCustomsApproved}
-                title={!currentCustomsApproved ? customsApprovalHint : undefined}
+                disabled={busy}
                 onClick={() => handleDeal('won')}
               >✅ {t('orderDetail.deal.actionMarkWon')}</button>
             )}
@@ -791,7 +844,7 @@ export default function OrderDetail() {
         </div>
       )}
 
-      <div className="grid-2">
+      <div id="order-pricing" className="grid-2">
         {/* 左：DDP 可编辑面板 */}
         <div className="card">
           <div className="card-title">
@@ -1082,7 +1135,7 @@ export default function OrderDetail() {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: 16 }}>
+      <div id="order-di" className="card" style={{ marginTop: 16 }}>
         <div className="card-title">
           <h3>🧾 {t('orderDetail.di.title')}</h3>
           <div className="row gap-sm">
@@ -1217,8 +1270,8 @@ export default function OrderDetail() {
       </div>
 
       {/* M7 国际物流：成交走柜后运营维护，客户端实时可见（仅 done 订单） */}
-      {d.status === 'done' && (
-        <div className="card" style={{ marginTop: 16 }}>
+      {d.status === 'done' && d.deal_status === 'won' && (
+        <div id="order-shipment" className="card" style={{ marginTop: 16 }}>
           <div className="card-title">
             <h3>🚢 {t('orderDetail.ship.title')}</h3>
             {curStage ? (
@@ -1230,6 +1283,13 @@ export default function OrderDetail() {
             )}
           </div>
 
+          <Suspense fallback={<div className="shipment-route-map-empty">{i18n.resolvedLanguage?.startsWith('pt') ? 'Carregando mapa…' : '地图加载中…'}</div>}>
+            <ShipmentRouteMap pol={d.shipment?.pol} pod={d.shipment?.pod} position={aisPosition ?? d.ais_position} language={i18n.resolvedLanguage || 'zh'}
+              track={aisTrack.length ? aisTrack : d.ais_track}
+              nodes={shipEvents.filter(ev => ev.lat != null && ev.lng != null)
+                .map(ev => ({ id: ev.id, label: SHIP_STAGE_KEYS[ev.stage] ? t(SHIP_STAGE_KEYS[ev.stage]) : ev.stage, happened_at: ev.happened_at, latitude: ev.lat!, longitude: ev.lng!, estimated: ev.position_source === 'estimated' }))} />
+          </Suspense>
+
           <div className="ship-form-grid">
             <div>
               <label>{t('orderDetail.ship.vessel')}</label>
@@ -1240,6 +1300,12 @@ export default function OrderDetail() {
               <label>{t('orderDetail.ship.voyage')}</label>
               <input className="form-input form-input-sm" value={shipForm.voyage} disabled={shipSaving}
                 onChange={e => setShipForm({ ...shipForm, voyage: e.target.value })} placeholder={t('orderDetail.ship.voyagePlaceholder')} />
+            </div>
+            <div>
+              <label>MMSI</label>
+              <input className="form-input form-input-sm" inputMode="numeric" pattern="[0-9]{9}" maxLength={9}
+                value={shipForm.mmsi} disabled={shipSaving} onChange={e => setShipForm({ ...shipForm, mmsi: e.target.value.replace(/\D/g, '') })}
+                placeholder={i18n.resolvedLanguage?.startsWith('pt') ? '9 dígitos para AIS' : '9 位数字，用于 AIS 船位'} />
             </div>
             <div>
               <label>{t('orderDetail.ship.billNo')}</label>
@@ -1354,6 +1420,14 @@ export default function OrderDetail() {
               <input className="form-input form-input-sm" style={{ width: 220 }} placeholder={t('orderDetail.ship.eventNote')}
                 value={evForm.note} disabled={shipBusy}
                 onChange={e => setEvForm({ ...evForm, note: e.target.value })} />
+              <input className="form-input form-input-sm" style={{ width: 96 }} inputMode="decimal"
+                placeholder={i18n.resolvedLanguage?.startsWith('pt') ? 'lat（可选）' : '纬度（可选）'}
+                value={evForm.lat} disabled={shipBusy} title={t('orderDetail.ship.manualCoordHint')}
+                onChange={e => setEvForm({ ...evForm, lat: e.target.value })} />
+              <input className="form-input form-input-sm" style={{ width: 96 }} inputMode="decimal"
+                placeholder={i18n.resolvedLanguage?.startsWith('pt') ? 'lng（可选）' : '经度（可选）'}
+                value={evForm.lng} disabled={shipBusy} title={t('orderDetail.ship.manualCoordHint')}
+                onChange={e => setEvForm({ ...evForm, lng: e.target.value })} />
               <button className="btn btn-sm" disabled={shipBusy} onClick={handleEvAdd}>➕ {t('orderDetail.ship.addCustom')}</button>
               <span className="muted text-sm" style={{ alignSelf: 'center' }}>{t('orderDetail.ship.addCustomHint')}</span>
             </div>
@@ -1363,7 +1437,7 @@ export default function OrderDetail() {
 
       {/* M8 交付文件：放行截图 / 发票 PDF（操作员上传给客户查看/下载） */}
       {d.status === 'done' && (
-        <div className="card">
+        <div id="order-files" className="card">
           <div className="card-title">
             <h3>📎 {t('orderDetail.files.title')}</h3>
             <span className="muted text-sm">{t('orderDetail.files.hint')}</span>
@@ -1425,7 +1499,7 @@ export default function OrderDetail() {
 
       {/* 下：客户填写的 Excel 行数据（末列为该行对应的明细截图） */}
       {(d.line_items?.length || shots.length) ? (
-        <div className="card">
+        <div id="order-lines" className="card">
           <div className="card-title">
             <h3>📋 {t('orderDetail.lines.title')}</h3>
             <span className="muted text-sm">

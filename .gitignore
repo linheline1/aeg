@@ -51,3 +51,6 @@ artifacts/
 
 # OS
 Thumbs.db
+
+# WorkBuddy workspace memory (local agent notes)
+.workbuddy/

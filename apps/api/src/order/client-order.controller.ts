@@ -1,13 +1,15 @@
 import { Controller, Get, Inject, Param, Req, UseGuards, NotFoundException } from '@nestjs/common';
+import { AisStreamService } from './ais-stream.service';
 import { Request } from 'express';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { QuotesRepo } from '../common/mock-db';
+import { resolveShipment } from '../common/port-geo';
 
 @Controller('client/orders')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('client')
 export class ClientOrderController {
-  constructor(@Inject('QuotesRepo') private readonly repo: QuotesRepo) {}
+  constructor(@Inject('QuotesRepo') private readonly repo: QuotesRepo, private readonly aisStream: AisStreamService) {}
 
   /** 客户端仅查看报价结果与公开费用；内部利润及税基加成不拆分展示。 */
   private publicPricingBreakdown(breakdown: any) {
@@ -79,8 +81,9 @@ export class ClientOrderController {
     const pricingProcessing = q.total_amount_brl == null && (
       q.status === 'computing'
       || ['analyzing', 'calculating', 'draft', 'reviewed'].includes(diStatus)
-      || (q.status === 'uploaded' && recentlyUploaded)
+      ||       (q.status === 'uploaded' && recentlyUploaded)
     );
+    const shipmentResolved = q.shipment ? resolveShipment(q.shipment) : null;
     return {
       id: q.id,
       quote_no: q.quote_no,
@@ -104,7 +107,10 @@ export class ClientOrderController {
       di_analysis: null,
       line_items: q.line_items ?? [],
       deal_status: q.deal_status ?? null,
-      shipment: q.shipment ?? null,
+      shipment: q.shipment && shipmentResolved ? { ...q.shipment, events: shipmentResolved.events } : null,
+      node_position: shipmentResolved?.node_position ?? null,
+      ais_position: q.shipment?.mmsi ? this.aisStream.watch(q.shipment.mmsi) : null,
+      ais_track: q.shipment?.mmsi ? this.aisStream.track(q.shipment.mmsi) : [],
       /** M9：开票 CNPJ 快照（客户选择的开票抬头） */
       invoice_cnpj: q.invoice_cnpj ?? null,
       created_at: q.created_at,

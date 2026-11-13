@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+const ShipmentRouteMap = lazy(() => import('../components/ShipmentRouteMap').then(module => ({ default: module.ShipmentRouteMap })));
 import type { TFunction } from 'i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { api } from '../store/auth';
@@ -47,9 +48,14 @@ interface ClientOrderDetail {
   /** M7：国际物流（运营维护，客户端只读） */
   shipment?: {
     vessel?: string | null; voyage?: string | null; bill_no?: string | null; container_no?: string | null;
+    mmsi?: string | null;
     pol?: string | null; pod?: string | null; etd?: string | null; eta?: string | null; remark?: string | null;
-    events?: { id: string; stage: string; note?: string | null; happened_at: string }[];
+    events?: { id: string; stage: string; note?: string | null; happened_at: string; lat?: number | null; lng?: number | null; position_source?: 'manual' | 'port' | 'estimated' | null }[];
   } | null;
+  ais_position?: { latitude: number; longitude: number; observed_at: string; speed_knots?: number | null } | null;
+  ais_track?: { latitude: number; longitude: number; observed_at: string }[];
+  /** M7：当前节点位置（服务端解析） */
+  node_position?: { latitude: number; longitude: number; stage: string; happened_at: string; source: 'manual' | 'port' } | null;
   /** M9：开票 CNPJ（客户在订单上选择的开票抬头快照） */
   invoice_cnpj?: { id: string; cnpj: string; company_name: string; ie?: string | null } | null;
   created_at: string; updated_at: string;
@@ -115,20 +121,29 @@ export default function OrderDetail() {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
+    let loading = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
+      if (loading) return;
+      loading = true;
       try {
         const response = await api.get(`/api/client/orders/${id}`);
         if (cancelled) return;
         setD(response.data);
+        setErr(null);
         const processing = ['analyzing', 'calculating'].includes(response.data.di_analysis?.status);
-        timer = setTimeout(load, processing ? 2000 : 5000);
+        timer = setTimeout(() => { if (document.visibilityState === 'visible') load(); }, processing ? 3000 : 30000);
       } catch (e: any) {
-        if (!cancelled) setErr(getApiErrorMessage(e, t('orderDetail.loadError')));
-      }
+        if (!cancelled) {
+          setErr(getApiErrorMessage(e, t('orderDetail.loadError')));
+          timer = setTimeout(() => { if (document.visibilityState === 'visible') load(); }, 30000);
+        }
+      } finally { loading = false; }
     };
     load();
-    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    const onVisible = () => { if (document.visibilityState === 'visible') { if (timer) clearTimeout(timer); load(); } };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { cancelled = true; if (timer) clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, [id, t]);
 
   // 拉取该报价单的截图（鉴权 blob → objectURL）
@@ -309,6 +324,11 @@ export default function OrderDetail() {
 
           {d.shipment ? (
             <>
+              <Suspense fallback={<div className="shipment-route-map-empty">{i18n.resolvedLanguage?.startsWith('pt') ? 'Carregando mapa…' : '地图加载中…'}</div>}>
+                <ShipmentRouteMap pol={d.shipment.pol} pod={d.shipment.pod} position={d.ais_position} track={d.ais_track} language={i18n.resolvedLanguage || 'zh'}
+                  nodes={shipEvents.filter(ev => ev.lat != null && ev.lng != null)
+                    .map(ev => ({ id: ev.id, label: t(`orderDetail.shipStage.${ev.stage}`, { defaultValue: ev.stage }), happened_at: ev.happened_at, latitude: ev.lat!, longitude: ev.lng!, estimated: ev.position_source === 'estimated' }))} />
+              </Suspense>
               <div className="ship-grid">
                 <div><span className="ship-k">{t('orderDetail.vessel')}</span><span className="ship-v">{d.shipment.vessel || '—'}</span></div>
                 <div><span className="ship-k">{t('orderDetail.voyage')}</span><span className="ship-v">{d.shipment.voyage || '—'}</span></div>

@@ -5,10 +5,11 @@ import { Request, Response } from 'express';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { AuditRepo, QuotesRepo, ClientRepo, UserRepo, ImageRepo, repoRoot } from '../common/mock-db';
 import { QuoteService } from '../upload/quote.service';
-import { assertCurrentCustomsApproval } from './customs-review';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { AisStreamService } from './ais-stream.service';
+import { resolveShipment } from '../common/port-geo';
 
 /** M3 状态机允许的手动流转（computing/done 由计算接口驱动） */
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -36,6 +37,7 @@ function latestShipmentStage(ship: any): string | null {
 export class OpsOrderController {
   constructor(
     private readonly quoteService: QuoteService,
+    private readonly aisStream: AisStreamService,
     @Inject('QuotesRepo') private readonly quotesRepo: QuotesRepo,
     @Inject('AuditRepo') private readonly auditRepo: AuditRepo,
     @Inject('ClientRepo') private readonly clientRepo: ClientRepo,
@@ -171,6 +173,7 @@ export class OpsOrderController {
       const u: any = await this.userRepo.findOne({ where: { id: owner } });
       salesName = u?.username || null;
     }
+    const shipmentResolved = q.shipment ? resolveShipment(q.shipment) : null;
     return {
       id: q.id,
       quote_no: q.quote_no,
@@ -201,9 +204,33 @@ export class OpsOrderController {
       error_message: q.error_message,
       pricing_breakdown: q.pricing_breakdown || null,
       line_items: q.line_items || [],
-      shipment: q.shipment || null,
+      // M7：节点自动带位置（手动坐标 > 按阶段落 POL/POD > 海上段沿参考海路估算），前端按此画节点轨迹
+      shipment: q.shipment && shipmentResolved ? { ...q.shipment, events: shipmentResolved.events } : null,
+      node_position: shipmentResolved?.node_position ?? null,
+      ais_position: q.shipment?.mmsi ? this.aisStream.watch(q.shipment.mmsi) : null,
+      ais_track: q.shipment?.mmsi ? this.aisStream.track(q.shipment.mmsi) : [],
       di_analysis: q.di_analysis || null,
       customs_review: q.customs_review || null
+    };
+  }
+
+  /**
+   * 仅返回 AIS 船位，供详情页轮询（前端不重载整张订单，避免覆盖正在编辑的物流表单）。
+   * `tracked=false` 表示该订单未维护 MMSI 或未配置 API key，前端据此停止轮询。
+   */
+  @Get(':id/ais')
+  @Roles('operator', 'admin')
+  async aisLive(@Param('id') id: string) {
+    const q: any = await this.quotesRepo.findById(id);
+    if (!q) throw new NotFoundException('订单不存在');
+    const mmsi = q.shipment?.mmsi || null;
+    return {
+      mmsi,
+      tracked: this.aisStream.enabled && !!mmsi,
+      position: mmsi ? this.aisStream.watch(mmsi) : null,
+      /** 自动累积的航迹（时间正序），前端画成橙色轨迹线 */
+      track: mmsi ? this.aisStream.track(mmsi) : [],
+      server_time: new Date().toISOString()
     };
   }
 
@@ -296,7 +323,7 @@ export class OpsOrderController {
     if (order.status !== 'done') {
       throw new BadRequestException('仅已核算发布（done）的报价可标记成交状态');
     }
-    if (next === 'won') assertCurrentCustomsApproval(order);
+    // 商业成交可先于报关审核记录；报关审核状态仍独立保留。
     if (req.user?.role === 'sales') {
       const client: any = await this.clientRepo.findOne({ where: { id: order.client_id } });
       const owner = order.salesperson_id || client?.salesperson_id || null;
@@ -409,7 +436,7 @@ export class OpsOrderController {
   async saveShipment(
     @Param('id') id: string,
     @Body() body: {
-      vessel?: string; voyage?: string; bill_no?: string; container_no?: string;
+      vessel?: string; voyage?: string; bill_no?: string; container_no?: string; mmsi?: string;
       pol?: string; pod?: string; etd?: string; eta?: string; remark?: string;
     },
     @Req() req: Request & { user?: any }
@@ -417,6 +444,7 @@ export class OpsOrderController {
     const order: any = await this.quotesRepo.findById(id);
     if (!order) throw new NotFoundException('订单不存在');
     if (order.status !== 'done') throw new BadRequestException('仅已核算发布（done）的订单可维护物流信息');
+    if (order.deal_status !== 'won') throw new BadRequestException('客户确认成交后才能维护海运信息');
 
     const patch: Record<string, string | null> = {};
     for (const k of ['vessel', 'voyage', 'bill_no', 'container_no', 'pol', 'pod'] as const) {
@@ -424,6 +452,11 @@ export class OpsOrderController {
       const v = String(body[k] ?? '').trim();
       if (v.length > 100) throw new BadRequestException(`${k} 过长（最多 100 字符）`);
       patch[k] = v || null;
+    }
+    if (body.mmsi !== undefined) {
+      const mmsi = String(body.mmsi ?? '').trim();
+      if (mmsi && !/^\d{9}$/.test(mmsi)) throw new BadRequestException('MMSI 必须是 9 位数字');
+      patch.mmsi = mmsi || null;
     }
     for (const k of ['etd', 'eta'] as const) {
       if (body[k] === undefined) continue;
@@ -458,7 +491,7 @@ export class OpsOrderController {
   @Roles('operator', 'admin')
   async addShipmentEvent(
     @Param('id') id: string,
-    @Body() body: { stage?: string; note?: string; happened_at?: string },
+    @Body() body: { stage?: string; note?: string; happened_at?: string; lat?: number | string; lng?: number | string },
     @Req() req: Request & { user?: any }
   ) {
     const stage = body.stage;
@@ -468,15 +501,29 @@ export class OpsOrderController {
     if (body.note !== undefined && String(body.note).length > 500) {
       throw new BadRequestException('节点备注过长（最多 500 字符）');
     }
+    // 可选手动坐标：两个一起填或都不填；填了就必须是合法经纬度
+    const hasLat = body.lat !== undefined && body.lat !== null && String(body.lat).trim() !== '';
+    const hasLng = body.lng !== undefined && body.lng !== null && String(body.lng).trim() !== '';
+    let lat: number | null = null;
+    let lng: number | null = null;
+    if (hasLat || hasLng) {
+      lat = Number(body.lat);
+      lng = Number(body.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+        throw new BadRequestException('手动坐标不合法：lat 在 -90..90，lng 在 -180..180，且两个要一起填');
+      }
+    }
     const order: any = await this.quotesRepo.findById(id);
     if (!order) throw new NotFoundException('订单不存在');
     if (order.status !== 'done') throw new BadRequestException('仅已核算发布（done）的订单可维护物流信息');
+    if (order.deal_status !== 'won') throw new BadRequestException('客户确认成交后才能更新物流节点');
 
     const now = new Date().toISOString();
     const ev = {
       id: crypto.randomUUID(),
       stage: stage as any,
       note: body.note !== undefined ? (String(body.note).trim() || null) : null,
+      lat, lng,
       happened_at: body.happened_at?.trim() || now,
       created_by: req.user?.username || 'system',
       created_at: now

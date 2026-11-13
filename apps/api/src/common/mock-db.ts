@@ -107,6 +107,7 @@ export interface QuoteOrderRow {
     voyage?: string | null;
     bill_no?: string | null;
     container_no?: string | null;
+    mmsi?: string | null;
     pol?: string | null;
     pod?: string | null;
     etd?: string | null;

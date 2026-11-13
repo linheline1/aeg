@@ -10,11 +10,12 @@ import { UploadModule } from '../upload/upload.module';
 import { DiController } from './di.controller';
 import { DiService } from './di.service';
 import { AiNcmService } from './ai-ncm.service';
+import { AisStreamService } from './ais-stream.service';
 
 @Module({
   imports: [AuthModule, UploadModule],
   controllers: [ClientOrderController, OpsOrderController, OpsProductController, DealsController, OpsOrderFilesController, ClientOrderFilesController, ClientCnpjController, DiController],
-  providers: [DiService, AiNcmService],
+  providers: [DiService, AiNcmService, AisStreamService],
   exports: [DiService, AiNcmService]
 })
 export class OrderModule {}

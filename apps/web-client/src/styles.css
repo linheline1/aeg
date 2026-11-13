@@ -851,3 +851,21 @@ code { border-radius: 0; }
 .login-page .remember-password { display: flex; align-items: center; gap: 9px; margin: 2px 0 14px; font-size: 13px; cursor: pointer; }
 .login-page .remember-password input { width: 18px; height: 18px; margin: 0; accent-color: #2563eb; }
 .login-page .remember-password input:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+.shipment-route-map { margin: 12px 0 18px; padding: 14px; border: 1px solid #d7e4ee; border-radius: 14px; background: #f8fbfe; }
+.shipment-route-map-head { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; margin-bottom: 10px; }
+.shipment-route-map-head span { color: #60758b; font-size: 12px; }
+.shipment-route-map-ports { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding-top: 10px; font-size: 13px; font-weight: 600; }
+.shipment-route-map-ports span { min-width: 0; overflow-wrap: anywhere; }
+.shipment-route-map-empty { padding: 36px 12px; text-align: center; color: #60758b; }
+.shipment-route-map-ais { padding-top: 8px; color: #405b75; font-size: 12px; }
+/* 节点记录：地图下方的可读列表（世界级缩放下圆点太小，用列表补足可读性） */
+.shipment-route-map-nodes { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; }
+.shipment-route-map-nodes span { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid #cbe3dd; border-radius: 999px; background: #eefaf6; color: #0f766e; font-size: 12px; }
+.shipment-route-map-nodes span.cur { border-color: #f5c2c2; background: #fdeceb; color: #b91c1c; font-weight: 600; }
+.shipment-route-map-nodes span.est { border-style: dashed; background: #f8fafc; color: #64748b; }
+.shipment-route-map-nodes span.est.cur { border-color: #f5c2c2; background: #fdeceb; color: #b91c1c; }
+.shipment-route-map-nodes i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.shipment-route-map-wrap { position: relative; }
+.shipment-route-map-canvas { width: 100%; height: clamp(320px, 38vw, 460px); border-radius: 12px; z-index: 0; }
+.shipment-route-map-reset { position: absolute; top: 10px; right: 10px; z-index: 400; padding: 7px 11px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; color: #17385c; font-size: 12px; cursor: pointer; box-shadow: 0 1px 5px #0002; }
+.shipment-route-map-reset:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
