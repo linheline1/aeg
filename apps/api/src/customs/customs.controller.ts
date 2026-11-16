@@ -43,6 +43,18 @@ export class CustomsController {
     return this.service.translateProducts(id, this.actor(req));
   }
 
+  @Patch('orders/:id/products/:rowNo/amount')
+  updateProductAmount(@Param('id') id: string, @Param('rowNo') rowNo: string,
+    @Body() body: { amount?: number }, @Req() req: Request & { user?: any }) {
+    return this.service.updateProductAmount(id, Number(rowNo), Number(body?.amount), this.actor(req));
+  }
+
+  @Patch('orders/:id/products/amounts')
+  updateProductAmounts(@Param('id') id: string,
+    @Body() body: { changes?: { row_no: number; amount: number }[] }, @Req() req: Request & { user?: any }) {
+    return this.service.updateProductAmounts(id, body?.changes || [], this.actor(req));
+  }
+
   @Post('orders/:id/di/analyze')
   analyze(@Param('id') id: string, @Body() body: any, @Req() req: Request & { user?: any }) {
     return this.service.analyze(id, body, this.actor(req));

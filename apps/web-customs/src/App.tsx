@@ -5,6 +5,7 @@ import Cnpjs from './pages/Cnpjs';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import OrderDetail from './pages/OrderDetail';
+import ProductSheet from './pages/ProductSheet';
 import Orders from './pages/Orders';
 import Profile from './pages/Profile';
 import { useAuth } from './store/auth';
@@ -19,6 +20,7 @@ export default function App() {
         <Route index element={<Home />} />
         <Route path="orders" element={<Orders />} />
         <Route path="orders/:id" element={<OrderDetail />} />
+        <Route path="orders/:id/products/edit" element={<ProductSheet />} />
         <Route path="cnpjs" element={<Cnpjs />} />
         <Route path="profile" element={<Profile />} />
         <Route path="*" element={<Navigate to="/" replace />} />

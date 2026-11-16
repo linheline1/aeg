@@ -4,6 +4,8 @@ import { AuditRepo, ImageRepo, QuotesRepo } from '../common/mock-db';
 import { DiService } from '../order/di.service';
 import { AiNcmService } from '../order/ai-ncm.service';
 import { DiParameters } from '../order/di-calculation';
+import { calculateDi } from '../order/di-calculation';
+import { pendingCustomsReview } from '../order/customs-review';
 
 const PROGRESS_STAGES = ['customs_br', 'duty_paid', 'cleared'] as const;
 
@@ -151,6 +153,72 @@ export class CustomsService {
 
   async analyze(id: string, parameters: DiParameters, actor: { username: string; role: string }) {
     return this.diService.analyze(id, parameters, actor);
+  }
+
+  async updateProductAmount(id: string, rowNo: number, amount: number, actor: { username: string; role: string }) {
+    return this.updateProductAmounts(id, [{ row_no: rowNo, amount }], actor);
+  }
+
+  async updateProductAmounts(id: string, changes: { row_no: number; product_en?: string; hs_code?: string; total_pcs?: number; unit_price?: number; total_price?: number; total_cbm?: number; total_gw?: number; amount?: number }[], actor: { username: string; role: string }) {
+    const order = await this.order(id);
+    if (!Array.isArray(changes) || !changes.length || changes.length > 500) throw new BadRequestException('Lista de valores inválida');
+    const items = [...(order.line_items || [])];
+    const seen = new Set<number>();
+    const auditChanges: { row_no: number; before: any; after: any }[] = [];
+    let ncmChanged = false;
+    for (const change of changes) {
+      const rowNo = Number(change.row_no);
+      if (!Number.isInteger(rowNo) || rowNo < 1 || seen.has(rowNo)) throw new BadRequestException('Linha inválida ou duplicada');
+      const index = items.findIndex((item: any) => Number(item.row_no) === rowNo);
+      if (index < 0) throw new NotFoundException(`Produto da linha ${rowNo} não encontrado`);
+      const before = items[index];
+      const next = { ...before };
+      if (change.product_en !== undefined) {
+        const name = String(change.product_en).trim();
+        if (!name || name.length > 500) throw new BadRequestException(`Descrição inválida na linha ${rowNo}`);
+        next.product_en = name;
+      }
+      if (change.hs_code !== undefined) {
+        const ncm = String(change.hs_code).replace(/\D/g, '');
+        if (!/^\d{8}$/.test(ncm)) throw new BadRequestException(`NCM inválido na linha ${rowNo}`);
+        ncmChanged ||= ncm !== String(before.hs_code || '').replace(/\D/g, '');
+        next.hs_code = ncm;
+      }
+      for (const field of ['total_pcs', 'unit_price', 'total_price', 'total_cbm', 'total_gw'] as const) {
+        const input = field === 'total_price' && change.amount !== undefined ? change.amount : change[field];
+        if (input === undefined) continue;
+        const value = Number(input);
+        const positive = field === 'total_pcs' || field === 'unit_price' || field === 'total_price';
+        if (!Number.isFinite(value) || value < (positive ? 0.000001 : 0) || value > 1_000_000_000_000 || (field === 'total_pcs' && !Number.isInteger(value))) {
+          throw new BadRequestException(`${field} inválido na linha ${rowNo}`);
+        }
+        next[field] = value;
+      }
+      if (change.total_price !== undefined || change.amount !== undefined) {
+        if (next.total_pcs > 0) next.unit_price = next.total_price / next.total_pcs;
+      } else if (change.unit_price !== undefined || change.total_pcs !== undefined) {
+        next.total_price = Math.round(Number(next.unit_price) * Number(next.total_pcs) * 100) / 100;
+      }
+      if (change.total_price !== undefined || change.amount !== undefined || change.unit_price !== undefined || change.total_pcs !== undefined) {
+        if (!(Number(next.total_price) > 0)) throw new BadRequestException(`Valor inválido na linha ${rowNo}`);
+      }
+      items[index] = next;
+      auditChanges.push({ row_no: rowNo, before, after: next });
+      seen.add(rowNo);
+    }
+    const total = items.reduce((sum: number, item: any) => sum + (Number(item.total_price) || Number(item.unit_price) * Number(item.total_pcs) || 0), 0);
+    const analysis = !ncmChanged && order.di_analysis?.items?.length && order.di_analysis?.parameters
+      ? calculateDi({ ...order, line_items: items }, order.di_analysis.items.map((item: any) => ({ ...item, product_en: items.find((row: any) => Number(row.row_no) === Number(item.row_no))?.product_en || item.product_en })), order.di_analysis.parameters, order.di_analysis.additional_fees)
+      : null;
+    await this.quotesRepo.update(id, {
+      line_items: items, total_amount_rmb: Math.round(total * 100) / 100,
+      di_analysis: analysis,
+      customs_review: pendingCustomsReview(analysis?.totals.di_brl ?? null)
+    } as any);
+    await this.auditRepo.entry({ actor_username: actor.username, actor_role: actor.role,
+      action: 'customs.order.product_amount', target_type: 'quote', target_id: id,
+      detail: { quote_no: order.quote_no, changes: auditChanges } });
+    return this.detail(id);
   }
 
   async review(id: string, body: { parameters: DiParameters; items: any[]; additional_fees?: any[]; note?: string }, actor: { username: string; role: string }) {
