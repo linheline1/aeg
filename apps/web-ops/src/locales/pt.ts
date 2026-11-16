@@ -180,6 +180,7 @@ export default {
   'rates.removed': 'Tarifa exclusiva removida',
   'rates.deleteError': 'Falha ao excluir',
   'rates.title': 'Tabela de tarifas',
+  'rates.sectionNav': 'Navegação da tabela de tarifas',
   'rates.description': 'Gerencie as tarifas globais do cálculo e defina parâmetros exclusivos para clientes específicos.',
   'rates.globalTitle': 'Tarifas globais padrão',
   'rates.updatedBy': 'Atualizado por {{name}} em {{time}}',

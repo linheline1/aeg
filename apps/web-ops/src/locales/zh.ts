@@ -186,6 +186,7 @@ export default {
   'rates.removed': '专属费率已删除',
   'rates.deleteError': '删除失败',
   'rates.title': '费率表',
+  'rates.sectionNav': '费率表模块导航',
   'rates.description': '维护报价计算使用的全局费率，并可为指定客户设置专属参数。',
   'rates.globalTitle': '全局默认费率',
   'rates.updatedBy': '由 {{name}} 更新于 {{time}}',

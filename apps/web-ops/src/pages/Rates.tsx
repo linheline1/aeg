@@ -104,6 +104,7 @@ export default function Rates() {
   const [saving, setSaving] = useState(false);
   const [market, setMarket] = useState<MarketFx | null>(null);
   const [marketError, setMarketError] = useState(false);
+  const [activeSection, setActiveSection] = useState<'global' | 'override' | 'existing'>('global');
 
   const loadMarket = () => {
     api.get('/api/fx/rates', { params: { base: 'USD', symbols: 'BRL' } })
@@ -197,11 +198,20 @@ export default function Rates() {
       <p className="muted text-sm" style={{ margin: '0 0 16px' }}>
         {t('rates.description')}
       </p>
+      <nav className="order-section-nav" aria-label={t('rates.sectionNav')}>
+        {(['global', 'override', 'existing'] as const).map(section => (
+          <button key={section} type="button" className={activeSection === section ? 'active' : ''}
+            aria-current={activeSection === section ? 'page' : undefined}
+            onClick={() => setActiveSection(section)}>
+            {t(section === 'global' ? 'rates.globalTitle' : section === 'override' ? 'rates.overrideTitle' : 'rates.existing')}
+          </button>
+        ))}
+      </nav>
 
       {msg && <div className={`alert ${msg.type === 'ok' ? 'alert-ok' : 'alert-err'}`}>{msg.type === 'ok' ? '✅' : '❌'} {msg.text}</div>}
 
       {/* 全局默认 */}
-      <div className="card">
+      {activeSection === 'global' && <div className="card">
         <div className="card-title">
           <h3>🌍 {t('rates.globalTitle')}</h3>
           {data?.global && <span className="muted text-sm">{t('rates.updatedBy', { name: data.global.updated_by, time: data.global.updated_at?.slice(0, 19).replace('T', ' ') })}</span>}
@@ -222,10 +232,10 @@ export default function Rates() {
         <div className="mt-12">
           <button className="btn" disabled={saving} onClick={saveGlobal}>{saving ? t('common.saving') : `💾 ${t('rates.saveGlobal')}`}</button>
         </div>
-      </div>
+      </div>}
 
       {/* 客户覆盖：新增/编辑表单 */}
-      <div className="card">
+      {activeSection === 'override' && <div className="card">
         <div className="card-title">
           <h3>🎯 {t('rates.overrideTitle')}</h3>
           <span className="muted text-sm">{t(editingId ? 'rates.editingOverride' : 'rates.overrideHint')}</span>
@@ -266,10 +276,10 @@ export default function Rates() {
             </button>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* 覆盖列表 */}
-      <div className="card">
+      {activeSection === 'existing' && <div className="card">
         <div className="card-title">
           <h3>📋 {t('rates.existing')}</h3>
           <span className="muted text-sm">{data ? t('rates.count', { count: data.overrides.length }) : ''}</span>
@@ -297,7 +307,7 @@ export default function Rates() {
                     <td className="text-sm muted">{o.updated_by} · {o.updated_at?.slice(0, 16).replace('T', ' ')}</td>
                     <td>
                       <div className="row gap-sm">
-                        <button className="btn btn-sm btn-ghost" onClick={() => startEdit(o)}>{t('common.edit')}</button>
+                        <button className="btn btn-sm btn-ghost" onClick={() => { startEdit(o); setActiveSection('override'); }}>{t('common.edit')}</button>
                         <button className="btn btn-sm btn-danger" onClick={() => removeOverride(o)}>{t('rates.remove')}</button>
                       </div>
                     </td>
@@ -307,7 +317,7 @@ export default function Rates() {
             </table>
           </div>
         )}
-      </div>
+      </div>}
     </>
   );
 }
