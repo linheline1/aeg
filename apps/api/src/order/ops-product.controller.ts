@@ -2,8 +2,36 @@ import {
   BadRequestException, Body, Controller, Get, Inject, NotFoundException, Param, Patch, Post, Query, Req, UseGuards
 } from '@nestjs/common';
 import { Request } from 'express';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
-import type { ProductCatalogRepo, QuotesRepo, ImageRepo, AuditRepo, ProductCatalogRow } from '../common/mock-db';
+import { repoRoot } from '../common/mock-db';
+import type { ProductCatalogRepo, QuotesRepo, ImageRepo, AuditRepo, ProductCatalogRow, ClientImageRow } from '../common/mock-db';
+
+async function uniqueImages(ids: string[], images: Map<string, ClientImageRow>, hashes: Map<string, string>): Promise<string[]> {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const id of ids) {
+    const image = images.get(id);
+    if (!image) continue;
+    let hash = hashes.get(id);
+    if (!hash) {
+      try {
+        const content = await fs.promises.readFile(path.join(repoRoot(), image.file_path));
+        hash = crypto.createHash('sha256').update(content).digest('hex');
+      } catch {
+        // Keep the reference if its file is temporarily unavailable; never merge it with another image.
+        hash = `missing:${id}`;
+      }
+      hashes.set(id, hash);
+    }
+    if (seen.has(hash)) continue;
+    seen.add(hash);
+    unique.push(id);
+  }
+  return unique;
+}
 
 /**
  * 运营端：产品档案（按 SKU 归档历史订单产品的品名、原单价、NCM 与图片）
@@ -35,11 +63,23 @@ export class OpsProductController {
 
   @Get()
   async list(@Query('q') q?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) {
-    return this.products.list({
+    const result = await this.products.list({
       q: q || undefined,
       page: Number(page) || 1,
       pageSize: Number(pageSize) || 20
     });
+    const activeQuoteIds = new Set((await this.quotes.find()).map(quote => quote.id));
+    const images = new Map((await this.images.findAll())
+      .filter(image => !image.quote_id || activeQuoteIds.has(image.quote_id))
+      .map(image => [image.id, image]));
+    const hashes = new Map<string, string>();
+    return {
+      ...result,
+      items: await Promise.all(result.items.map(async item => ({
+        ...item,
+        image_ids: await uniqueImages(item.image_ids || [], images, hashes)
+      })))
+    };
   }
 
   @Patch(':id')
@@ -83,14 +123,18 @@ export class OpsProductController {
   /**
    * 同步历史订单：遍历全部报价单的产品行，按 SKU 归档
    * 品名/原单价取自订单行；NCM 取行上的 ncm，否则回退 DI 分析结果；
-   * 图片按 quote_id + row_no 关联合并到产品；人工已核验的 NCM/字段不被覆盖
+   * 图片按 quote_id + row_no 关联到产品；已删除报价的图片不再保留；人工已核验的 NCM/字段不被覆盖
    */
   @Post('sync')
   async sync(@Req() req: Request & { user?: any }) {
     const quotes = await this.quotes.find();
-    // 有效图片 id 集合：档案中引用的图片若已被删（如重新提取），合并时自动剔除
+    const activeQuoteIds = new Set(quotes.map(quote => quote.id));
+    // 只保留有效且属于未删除报价的图片；实际文件内容相同的图片合并为一张。
     const allImages = await this.images.findAll();
-    const validImageIds = new Set(allImages.map(img => img.id));
+    const imagesById = new Map(allImages
+      .filter(image => !image.quote_id || activeQuoteIds.has(image.quote_id))
+      .map(image => [image.id, image]));
+    const hashes = new Map<string, string>();
     let synced = 0;
 
     for (const quote of quotes) {
@@ -124,10 +168,7 @@ export class OpsProductController {
           ncm: existing?.ncm_reviewed_at ? existing.ncm : (ncm || existing?.ncm || null),
           ncm_confidence: existing?.ncm_confidence ?? null,
           ncm_sources: existing?.ncm_sources || [],
-          image_ids: Array.from(new Set([
-            ...(existing?.image_ids || []).filter((id: string) => validImageIds.has(id)),
-            ...rowImageIds
-          ])),
+          image_ids: await uniqueImages([...(existing?.image_ids || []), ...rowImageIds], imagesById, hashes),
           last_quote_id: quote.id,
           last_client_id: quote.client_id
         });
@@ -135,8 +176,24 @@ export class OpsProductController {
       }
     }
 
-    const all = await this.products.list({ page: 1, pageSize: 100 });
-    await this.audit(req, 'product.sync', { synced_rows: synced, total_products: all.total });
-    return { ok: true, synced, total: all.total };
+    // 清理只在旧报价中出现的 SKU，及过去同步留下的失效图片引用。
+    let page = 1;
+    let total = 0;
+    const productsToClean: ProductCatalogRow[] = [];
+    while (true) {
+      const batch = await this.products.list({ page, pageSize: 100 });
+      total = batch.total;
+      productsToClean.push(...batch.items);
+      if (page * 100 >= total) break;
+      page++;
+    }
+    for (const product of productsToClean) {
+      const imageIds = await uniqueImages(product.image_ids || [], imagesById, hashes);
+      if (imageIds.length !== (product.image_ids || []).length || imageIds.some((id, index) => id !== product.image_ids[index])) {
+        await this.products.update(product.id, { image_ids: imageIds });
+      }
+    }
+    await this.audit(req, 'product.sync', { synced_rows: synced, total_products: total });
+    return { ok: true, synced, total };
   }
 }

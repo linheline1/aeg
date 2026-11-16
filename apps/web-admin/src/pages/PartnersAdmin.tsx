@@ -114,8 +114,8 @@ export default function PartnersAdmin() {
           <div className="form-row" style={{ margin: 0 }}>
             <label>{t('partner.create.category')}</label>
             <select className="form-input" value={category} onChange={e => setCategory(e.target.value as PartnerItem['category'])}>
-              <option value="carrier">{t('partner.create.categoryCarrier')}</option>
-              <option value="ecosystem">{t('partner.create.categoryEcosystem')}</option>
+              <option value="carrier">{t('partner.category.carrier')}</option>
+              <option value="ecosystem">{t('partner.category.ecosystem')}</option>
             </select>
           </div>
           <div className="form-row" style={{ margin: 0 }}>

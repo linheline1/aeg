@@ -220,6 +220,7 @@ export default function Orders() {
     try {
       await api.delete(`/api/ops/orders/${o.id}`);
       invalidateListCache('orders:');
+      invalidateListCache('products:');
       if (list?.length === 1 && page > 1) setPage(page - 1);
       else reload(true);
     } catch (reason) { setErr(getApiErrorMessage(reason, t('orders.deleteFailed'))); }
