@@ -1568,6 +1568,7 @@ export default function OrderDetail() {
         <div id="order-lines" className="card">
           <div className="card-title">
             <h3>📋 {t('orderDetail.lines.title')}</h3>
+            <Link className="btn btn-sm" to={`/orders/${id}/products/edit`}>{t('orderDetail.sheet.edit')}</Link>
             <span className="muted text-sm">
               {t('orderDetail.lines.summary', { rows: d.line_items?.length || 0, cols: liKeys.length })}{shots.length > 0 ? t('orderDetail.lines.shotsSuffix', { count: shots.length }) : ''}{t('orderDetail.lines.priceHint')}
             </span>

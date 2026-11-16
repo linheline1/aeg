@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import RequireAuth from './components/RequireAuth';
 import Orders from './pages/Orders';
 import OrderDetail from './pages/OrderDetail';
+import OrderProductSheet from './pages/OrderProductSheet';
 import Rates from './pages/Rates';
 import Deals from './pages/Deals';
 import Template from './pages/Template';
@@ -39,6 +40,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+        <Route path="orders/:id/products/edit" element={<RequireAuth allowedRole={['operator', 'admin']}><OrderProductSheet /></RequireAuth>} />
         <Route path="deals" element={<Deals />} />
         <Route path="clients" element={<RequireAuth allowedRole={['sales']}><MyClients /></RequireAuth>} />
         <Route

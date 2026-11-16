@@ -342,6 +342,109 @@ export class QuoteService {
     return result;
   }
 
+  async updateLineItems(
+    quoteId: string,
+    changes: Record<string, unknown>[],
+    actor: { username: string; role: string }
+  ) {
+    const order: any = await this.quotesRepo.findById(quoteId);
+    if (!order) throw new NotFoundException('订单不存在');
+    if (order.status === 'computing') throw new BadRequestException('报价正在核算，请稍后再编辑');
+    if (!Array.isArray(changes) || changes.length < 1 || changes.length > 500) {
+      throw new BadRequestException('请提交 1 至 500 行产品修改');
+    }
+    const textFields = new Set(['sku', 'product_cn', 'product_en', 'material', 'description']);
+    const numberFields = new Set(['total_pcs', 'unit_price', 'total_price', 'total_cbm', 'total_gw']);
+    const items = (order.line_items || []).map((item: any) => ({ ...item }));
+    const seen = new Set<number>();
+    let ncmChanged = false;
+    let financialChanged = false;
+    for (const change of changes) {
+      const rowNo = Number(change?.row_no);
+      if (!Number.isInteger(rowNo) || rowNo < 1 || seen.has(rowNo)) throw new BadRequestException('产品行号无效或重复');
+      const index = items.findIndex((item: any) => Number(item.row_no) === rowNo);
+      if (index < 0) throw new NotFoundException(`第 ${rowNo} 行不存在`);
+      const next = items[index];
+      const before = { ...next };
+      const fields = Object.keys(change).filter(field => field !== 'row_no');
+      if (!fields.length || fields.some(field => !textFields.has(field) && !numberFields.has(field) && field !== 'hs_code')) {
+        throw new BadRequestException(`第 ${rowNo} 行包含不支持的字段`);
+      }
+      for (const field of fields) {
+        if (textFields.has(field)) {
+          const value = String(change[field] ?? '').trim();
+          if (!value || value.length > 500) throw new BadRequestException(`第 ${rowNo} 行 ${field} 不能为空或超过 500 字`);
+          next[field] = value;
+        } else if (field === 'hs_code') {
+          const value = String(change[field] ?? '').trim();
+          if (!/^\d{8}$/.test(value)) throw new BadRequestException(`第 ${rowNo} 行 NCM 必须是 8 位数字`);
+          ncmChanged ||= value !== String(next.hs_code || '');
+          next.hs_code = value;
+        } else {
+          if (change[field] === '' || change[field] === null || change[field] === undefined) {
+            throw new BadRequestException(`第 ${rowNo} 行 ${field} 不能为空`);
+          }
+          const value = Number(change[field]);
+          if (!Number.isFinite(value) || value < 0 || value > 1_000_000_000_000 ||
+            (field === 'total_pcs' && !Number.isInteger(value))) {
+            throw new BadRequestException(`第 ${rowNo} 行 ${field} 数值无效`);
+          }
+          next[field] = value;
+        }
+      }
+      if (fields.includes('total_price')) {
+        if (!(Number(next.total_pcs) > 0) || !(Number(next.total_price) > 0)) {
+          throw new BadRequestException(`第 ${rowNo} 行总金额与数量必须大于 0`);
+        }
+        next.unit_price = Math.round(Number(next.total_price) / Number(next.total_pcs) * 1_000_000) / 1_000_000;
+      } else if (fields.includes('unit_price') || fields.includes('total_pcs')) {
+        if (!(Number(next.unit_price) > 0) || !(Number(next.total_pcs) > 0)) {
+          throw new BadRequestException(`第 ${rowNo} 行单价与数量必须大于 0`);
+        }
+        next.total_price = Math.round(Number(next.unit_price) * Number(next.total_pcs) * 100) / 100;
+      }
+      financialChanged ||= [...numberFields].some(field => Number(next[field]) !== Number(before[field]));
+      seen.add(rowNo);
+    }
+    const totalAmountRmb = Math.round(items.reduce((sum: number, item: any) => sum + (Number(item.total_price) || 0), 0) * 100) / 100;
+    const updatedOrder = { ...order, line_items: items, total_amount_rmb: totalAmountRmb };
+    const previousDi = order.di_analysis;
+    const diItems = previousDi?.items?.map((item: any) => {
+        const line = items.find((row: any) => Number(row.row_no) === Number(item.row_no));
+        return { ...item, product_en: line?.product_en || item.product_en };
+      });
+    const diAnalysis = !ncmChanged && previousDi?.parameters && Array.isArray(diItems) && diItems.length
+      ? financialChanged
+        ? calculateDi(updatedOrder, diItems, previousDi.parameters, previousDi.additional_fees || [])
+        : { ...previousDi, items: diItems }
+      : null;
+    let pricing: DdpPricing | null = null;
+    if (financialChanged && diAnalysis) {
+      const resolved = await this.resolveRates(order.client_id);
+      pricing = this.buildDdpPricing(diAnalysis, this.resolveDdpFees(resolved.rates, order.pricing_breakdown));
+    }
+    await this.quotesRepo.update(quoteId, {
+      line_items: items,
+      total_amount_rmb: totalAmountRmb,
+      total_cbm: items.some((item: any) => item.total_cbm != null)
+        ? items.reduce((sum: number, item: any) => sum + (Number(item.total_cbm) || 0), 0) : order.total_cbm,
+      total_gw_kg: items.some((item: any) => item.total_gw != null)
+        ? items.reduce((sum: number, item: any) => sum + (Number(item.total_gw) || 0), 0) : order.total_gw_kg,
+      di_analysis: diAnalysis,
+      customs_review: ncmChanged || financialChanged
+        ? pendingCustomsReview(diAnalysis?.totals?.di_brl ?? null) : order.customs_review,
+      pricing_breakdown: ncmChanged || financialChanged ? pricing?.breakdown ?? null : order.pricing_breakdown,
+      total_amount_brl: ncmChanged || financialChanged ? pricing?.brl ?? null : order.total_amount_brl,
+      total_amount_usd: ncmChanged || financialChanged ? pricing?.usd ?? null : order.total_amount_usd,
+      status: ncmChanged || financialChanged ? (pricing ? 'done' : 'uploaded') : order.status,
+      error_message: null
+    } as any);
+    await this.auditRepo.entry({ actor_username: actor.username, actor_role: actor.role,
+      action: 'order.line_items.update', target_type: 'quote', target_id: quoteId,
+      detail: { quote_no: order.quote_no, rows: changes.map(change => change.row_no), ncm_changed: ncmChanged, financial_changed: financialChanged } });
+    return { ok: true, quote_id: quoteId, rows_updated: changes.length, needs_di_analysis: (ncmChanged || financialChanged) && !diAnalysis };
+  }
+
   async adjustLineItemPrice(
     quoteId: string,
     rowNo: number,

@@ -276,6 +276,14 @@ export class OpsOrderController {
     return this.quoteService.recomputeBreakdown(id, this.actor(req), body);
   }
 
+  /** 报价员在产品表格中批量编辑；计算与审计由 QuoteService 统一处理。 */
+  @Patch(':id/line-items')
+  @Roles('operator', 'admin')
+  updateLineItems(@Param('id') id: string, @Body() body: { changes?: Record<string, unknown>[] },
+    @Req() req: Request & { user?: any }) {
+    return this.quoteService.updateLineItems(id, body?.changes || [], this.actor(req));
+  }
+
   @Patch(':id/line-items/:rowNo/price')
   @Roles('operator', 'admin')
   async adjustLineItemPrice(
