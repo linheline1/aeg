@@ -89,12 +89,16 @@ const DEFAULT_TAX_RATE = 0.065;
 const DEFAULT_PROFIT_BRL = 30000;
 
 const FIELD_LABEL_KEYS: Record<string, string> = {
-  row_no: 'orderDetail.field.rowNo', carton_no: 'orderDetail.field.cartonNo', sku: 'SKU', product_cn: 'orderDetail.field.productCn',
-  product_en: 'orderDetail.field.productEn', hs_code: 'HS Code', cartons: 'orderDetail.field.cartons', pcs_per_carton: 'orderDetail.field.pcsPerCarton',
+  row_no: 'orderDetail.field.rowNo', carton_no: 'orderDetail.field.cartonNo', sku: 'orderDetail.field.sku', product_cn: 'orderDetail.field.productCn',
+  product_en: 'orderDetail.field.productEn', hs_code: 'orderDetail.field.hsCode', cartons: 'orderDetail.field.cartons', pcs_per_carton: 'orderDetail.field.pcsPerCarton',
   total_pcs: 'orderDetail.field.totalPcs', nw_per_carton: 'orderDetail.field.nwPerCarton', gw_per_carton: 'orderDetail.field.gwPerCarton', total_gw: 'orderDetail.field.totalGw',
   length_cm: 'orderDetail.field.lengthCm', width_cm: 'orderDetail.field.widthCm', height_cm: 'orderDetail.field.heightCm', unit_cbm: 'orderDetail.field.unitCbm',
   unit_price: 'orderDetail.field.unitPrice', base_unit_price: 'orderDetail.field.baseUnitPrice',
-  material: 'orderDetail.field.material', destination: 'orderDetail.field.destination', remark: 'orderDetail.field.remark'
+  material: 'orderDetail.field.material', destination: 'orderDetail.field.destination', remark: 'orderDetail.field.remark',
+  brand: 'orderDetail.field.brand', warehouse_code_line: 'orderDetail.field.warehouseCodeLine',
+  carton_image: 'orderDetail.field.cartonImage', machine_barcode: 'orderDetail.field.machineBarcode',
+  description: 'orderDetail.field.description', product_image: 'orderDetail.field.productImage',
+  total_nw: 'orderDetail.field.totalNw', total_cbm: 'orderDetail.field.totalCbm', total_price: 'orderDetail.field.totalPrice'
 };
 
 const STATUS_KEYS: Record<string, string> = {
@@ -1544,7 +1548,7 @@ export default function OrderDetail() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th style={{ width: 70 }}>Row</th>
+                    <th style={{ width: 70 }}>{t('orderDetail.field.rowNo')}</th>
                     {liKeys.map(k => <th key={k}>{FIELD_LABEL_KEYS[k] ? t(FIELD_LABEL_KEYS[k]) : k}</th>)}
                     {shots.length > 0 && <th style={{ width: 150 }}>🖼 {t('orderDetail.lines.image')}</th>}
                     <th style={{ width: 160 }} title={t('orderDetail.lines.priceColumnHint')}>{t('orderDetail.lines.priceColumn')}</th>

@@ -26,6 +26,15 @@ interface RatesData {
   clients: { id: string; name: string; status: string }[];
 }
 
+/** Frankfurter（欧洲央行）参考汇率 */
+interface MarketFx {
+  base: string;
+  date: string;
+  rates: Record<string, number>;
+  stale: boolean;
+  source: string;
+}
+
 interface Fees {
   ocean_freight_usd: number;
   port_fee_usd: number;
@@ -93,6 +102,14 @@ export default function Rates() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [market, setMarket] = useState<MarketFx | null>(null);
+  const [marketError, setMarketError] = useState(false);
+
+  const loadMarket = () => {
+    api.get('/api/fx/rates', { params: { base: 'USD', symbols: 'BRL' } })
+      .then((r: any) => { setMarket(r.data); setMarketError(false); })
+      .catch(() => setMarketError(true));
+  };
 
   const load = () => {
     api.get('/api/ops/rates').then((r: any) => {
@@ -104,7 +121,26 @@ export default function Rates() {
     }).catch((e: any) => setMsg({ type: 'err', text: getApiErrorMessage(e, '') }));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadMarket(); }, []);
+
+  /** 当前市场参考汇率（USD→BRL），保留 4 位小数 */
+  const marketBrl = market?.rates?.BRL ? Math.round(market.rates.BRL * 10000) / 10000 : null;
+  const marketHint = (apply: () => void) => (
+    <div className="rate-market-hint">
+      {marketBrl != null ? (
+        <>
+          <span>
+            {t('rates.marketRate')} 1 USD = <strong>{marketBrl.toFixed(4)}</strong> BRL
+            {market?.date ? ` · ${market.date}` : ''}
+            {market?.stale ? ` · ${t('rates.marketRateStale')}` : ''}
+          </span>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={apply}>{t('rates.useMarket')}</button>
+        </>
+      ) : (
+        <span>{t(marketError ? 'rates.marketRateFailed' : 'rates.marketRateLoading')}</span>
+      )}
+    </div>
+  );
 
   const flash = (type: 'ok' | 'err', text: string) => {
     setMsg({ type, text });
@@ -179,6 +215,7 @@ export default function Rates() {
                 value={fieldValue(globalFees, f)}
                 onChange={e => setGlobalFees(fieldSet(globalFees, f, Number(e.target.value)))}
               />
+              {f.key === 'fx_rate' && marketHint(() => setGlobalFees(current => ({ ...current, fx_rate: marketBrl! })))}
             </div>
           ))}
         </div>
@@ -215,6 +252,7 @@ export default function Rates() {
                 value={fieldValue(ovFees, f)}
                 onChange={e => setOvFees(fieldSet(ovFees, f, Number(e.target.value)))}
               />
+              {f.key === 'fx_rate' && marketHint(() => setOvFees(current => ({ ...current, fx_rate: marketBrl! })))}
             </div>
           ))}
         </div>

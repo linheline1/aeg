@@ -65,7 +65,9 @@ interface ClientOrderDetail {
 const FIELD_KEYS = new Set([
   'row_no', 'carton_no', 'sku', 'product_cn', 'product_en', 'hs_code', 'cartons', 'pcs_per_carton',
   'total_pcs', 'nw_per_carton', 'gw_per_carton', 'total_gw', 'length_cm', 'width_cm', 'height_cm',
-  'unit_cbm', 'unit_price', 'material', 'destination', 'remark'
+  'unit_cbm', 'unit_price', 'material', 'destination', 'remark',
+  'brand', 'warehouse_code_line', 'carton_image', 'machine_barcode',
+  'description', 'product_image', 'total_nw', 'total_cbm', 'total_price'
 ]);
 
 const fmtBRL = (n: number) =>

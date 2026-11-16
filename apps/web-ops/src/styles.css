@@ -147,8 +147,9 @@ code {
 .table tbody tr:hover .actions-col { background: #fafbfc; }
 .table tbody tr.row-editing .actions-col { background: #fff; }
 
-/* 操作列：查看 / 核算 纵向排列 */
-.row-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+/* 操作列：查看 / 核算 / 删除 统一按钮风格，纵向等宽排列 */
+.row-actions { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.row-actions .btn { width: 100%; }
 
 /* 状态标签 */
 .status-tag { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; line-height: 1.5; }
@@ -191,6 +192,10 @@ code {
 .form-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
 .form-input:disabled { background: var(--chip-bg); color: var(--muted); }
 .form-input-sm { padding: 4px 8px; font-size: 12.5px; width: 100px; }
+
+/* 费率页：实时汇率提示 */
+.rate-market-hint { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.rate-market-hint strong { color: var(--text); font-variant-numeric: tabular-nums; }
 
 /* Alert */
 .alert { padding: 12px 16px; border-radius: var(--radius-sm); font-size: 13px; margin: 10px 0; line-height: 1.5; }
@@ -385,6 +390,22 @@ code {
 }
 .deal-none { background: var(--chip-bg); color: var(--muted); }
 
+/* 成交状态：操作列按钮 + 弹窗 */
+.deal-btn { gap: 6px; }
+.deal-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.deal-dot.deal-won { background: #16a34a; }
+.deal-dot.deal-lost { background: #dc2626; }
+.deal-dot.deal-open { background: #4f46e5; }
+.deal-dot.deal-none { background: #9ca3af; }
+.deal-options { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.deal-option {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 13px; cursor: pointer;
+}
+.deal-option.is-active { border-color: var(--primary); background: #eff6ff; font-weight: 600; }
+.deal-option input { accent-color: var(--primary); margin: 0; }
+
 .img-preview-mask {
   position: fixed; inset: 0; z-index: 100;
   background: rgba(15,23,42,.66);
@@ -400,6 +421,24 @@ code {
 .img-preview-body img {
   max-width: 100%; max-height: 74vh; border-radius: var(--radius-sm); display: block;
 }
+
+/* 居中确认弹窗 */
+.modal-mask {
+  position: fixed; inset: 0; z-index: 120;
+  background: rgba(15,23,42,.5);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.modal-card {
+  width: min(420px, 92vw);
+  background: #fff; border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 22px 24px;
+}
+.modal-card h3 { margin: 0 0 10px; font-size: 16px; }
+.modal-card p { margin: 0 0 18px; color: var(--muted); font-size: 13.5px; line-height: 1.65; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.modal-card .modal-textarea { width: 100%; resize: vertical; margin-bottom: 16px; font-size: 13.5px; }
 /* 明细表格内的截图列（合并单元格内小缩略图，纵向排列） */
 .shot-cell {
   display: flex; flex-direction: column; gap: 8px;
@@ -595,6 +634,7 @@ code {
     width: 100% !important; min-width: 0; max-width: none !important;
   }
   .orders-table .row-actions { display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; }
+  .orders-table .row-actions .btn { width: auto; }
   .orders-table .row-actions a {
     display: inline-flex; align-items: center; justify-content: center;
     min-height: 44px; padding: 8px 14px; border: 1px solid var(--border);

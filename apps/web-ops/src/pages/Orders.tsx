@@ -55,12 +55,6 @@ const STATUS_KEYS: Record<string, string> = {
 };
 
 /** M4 成交状态：null=未标记 open=跟进中 won=已成交 lost=未成交 */
-const DEAL_KEYS: Record<string, string> = {
-  open: 'orders.deal.open',
-  won: 'orders.deal.won',
-  lost: 'orders.deal.lost'
-};
-
 const COMPUTABLE = new Set(['uploaded', 'pending_fee', 'failed', 'computing']);
 const brl = (n?: number | null) => (n == null ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
 
@@ -75,6 +69,8 @@ export default function Orders() {
   const [salespeople, setSalespeople] = useState<Salesperson[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<OrderRow | null>(null);
+  const [dealTarget, setDealTarget] = useState<{ order: OrderRow; status: 'open' | 'won' | 'lost'; note: string } | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState('');
@@ -148,16 +144,12 @@ export default function Orders() {
   };
 
   /** M4 成交标记：won/lost/open（未成交可选填原因） */
-  const markDeal = async (o: OrderRow, next: 'won' | 'lost' | 'open') => {
-    let note: string | undefined;
-    if (next === 'lost') {
-      note = window.prompt(t('orders.lostReasonPrompt')) ?? undefined;
-    }
+  const applyDeal = async (o: OrderRow, next: 'won' | 'lost' | 'open', note?: string) => {
     setBusyId(o.id);
     try {
       await api.patch(`/api/ops/orders/${o.id}/deal`, {
         deal_status: next,
-        ...(note !== undefined ? { note } : {})
+        ...(note ? { note } : {})
       });
       invalidateListCache('orders:'); reload(true);
     } catch (e: any) {
@@ -166,6 +158,13 @@ export default function Orders() {
       setBusyId(null);
     }
   };
+
+  /** 未成交原因改用应用内弹窗：原生 prompt 在沙箱/禁用弹窗环境下会抛错，导致改不了状态 */
+  const openDealDialog = (o: OrderRow) => setDealTarget({
+    order: o,
+    status: (o.deal_status as 'open' | 'won' | 'lost') || 'open',
+    note: o.deal_note || ''
+  });
 
   /** M4 改派业务员（客户归属兜底 + 订单级改派，传空=清除改派回到客户归属） */
   const assign = async (o: OrderRow, salespersonId: string) => {
@@ -216,7 +215,7 @@ export default function Orders() {
   };
 
   const deleteQuote = async (o: OrderRow) => {
-    if (!window.confirm(t('orders.deleteConfirm', { quote: o.quote_no }))) return;
+    setPendingDelete(null);
     setBusyId(o.id);
     try {
       await api.delete(`/api/ops/orders/${o.id}`);
@@ -291,19 +290,18 @@ export default function Orders() {
                 <th className="text-nowrap">{t('orders.status')}</th>
                 <th>{t('orders.customsReview')}</th>
                 <th>{t('orders.amountBrl')}</th>
-                <th>{t('orders.dealStatus')}</th>
                 {!isSales && <th>{t('orders.salesperson')}</th>}
                 <th className="actions-col">{t('orders.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {list.map(o => {
-                const dealLabel = o.deal_status
-                  ? (DEAL_KEYS[o.deal_status] ? t(DEAL_KEYS[o.deal_status]) : o.deal_status)
-                  : t('orders.deal.none');
                 const dealCls = o.deal_status === 'won' ? 'deal-won'
                   : o.deal_status === 'lost' ? 'deal-lost'
                   : o.deal_status === 'open' ? 'deal-open' : 'deal-none';
+                const dealLabel = o.deal_status === 'won' ? t('orders.deal.won')
+                  : o.deal_status === 'lost' ? t('orders.deal.lost')
+                  : o.deal_status === 'open' ? t('orders.deal.open') : t('orders.deal.none');
                 return (
                   <tr key={o.id} className={busyId === o.id ? 'row-editing' : ''}>
                     <td data-label={t('orders.quoteNo')}>
@@ -371,36 +369,6 @@ export default function Orders() {
                       ) : <span className="muted" style={{ fontSize: 12 }}>{t('orders.customs.notSubmitted')}</span>}
                     </td>
                     <td data-label={t('orders.amountBrl')} className="amt">R$ {brl(o.total_amount_brl)}</td>
-                    <td data-label={t('orders.dealStatus')}>
-                      {o.status === 'done' ? (
-                        <div>
-                          <span className={`deal-tag ${dealCls}`}>{dealLabel}</span>
-                          <select
-                            className="form-input form-input-sm"
-                            style={{ marginTop: 4, width: 104 }}
-                            value={o.deal_status || ''}
-                            disabled={busyId === o.id}
-                            onChange={e => {
-                              const v = e.target.value as '' | 'won' | 'lost' | 'open';
-                              if (v === '') return; // 「未标记」仅展示，不重复提交
-                              markDeal(o, v);
-                            }}
-                          >
-                            <option value="">{t('orders.deal.none')}</option>
-                            <option value="open">{t('orders.deal.open')}</option>
-                            <option value="won">{t('orders.deal.won')}</option>
-                            <option value="lost">{t('orders.deal.lost')}</option>
-                          </select>
-                          {o.deal_note && (
-                            <div className="muted" style={{ fontSize: 11, maxWidth: 130, marginTop: 2 }} title={o.deal_note}>
-                              {o.deal_note}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="muted" style={{ fontSize: 12 }}>{t('orders.deal.afterCompute')}</span>
-                      )}
-                    </td>
                     {!isSales && (
                       <td data-label={t('orders.salesperson')}>
                         <select
@@ -421,11 +389,17 @@ export default function Orders() {
                     {(
                       <td data-label={t('orders.actions')} className="actions-col">
                         <div className="row-actions">
-                          {!isSales && <Link to={`/orders/${o.id}`}>{t('orders.view')}</Link>}
+                          {!isSales && <Link className="btn btn-sm btn-ghost" to={`/orders/${o.id}`}>{t('orders.view')}</Link>}
                           {!isSales && COMPUTABLE.has(o.status) && (
-                            <a href="#compute" onClick={e => { e.preventDefault(); compute(o); }}>{t('orders.compute')}</a>
+                            <a className="btn btn-sm btn-ghost" href="#compute" onClick={e => { e.preventDefault(); compute(o); }}>{t('orders.compute')}</a>
                           )}
-                          {(o.can_delete ?? (o.deal_status !== 'won' && !o.shipment_stage && o.status !== 'computing')) && <button type="button" className="btn btn-sm btn-ghost" disabled={busyId === o.id} onClick={() => void deleteQuote(o)}>{t('orders.deleteQuote')}</button>}
+                          {o.status === 'done' && (
+                            <button type="button" className="btn btn-sm btn-ghost deal-btn" disabled={busyId === o.id} title={o.deal_note || t('orders.dealStatus')} onClick={() => openDealDialog(o)}>
+                              <span className={`deal-dot ${dealCls}`} aria-hidden="true" />
+                              {dealLabel}
+                            </button>
+                          )}
+                          {(o.can_delete ?? (o.deal_status !== 'won' && !o.shipment_stage && o.status !== 'computing')) && <button type="button" className="btn btn-sm btn-ghost" disabled={busyId === o.id} onClick={() => setPendingDelete(o)}>{t('orders.deleteQuote')}</button>}
                         </div>
                       </td>
                     )}
@@ -450,6 +424,61 @@ export default function Orders() {
           >
             {t('products.next')}
           </button>
+        </div>
+      )}
+      {pendingDelete && (
+        <div className="modal-mask" onClick={() => setPendingDelete(null)}>
+          <div className="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-quote-title" onClick={event => event.stopPropagation()}>
+            <h3 id="delete-quote-title">{t('orders.deleteQuote')}</h3>
+            <p>{t('orders.deleteConfirm', { quote: pendingDelete.quote_no })}</p>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-sm btn-ghost" autoFocus onClick={() => setPendingDelete(null)}>{t('common.cancel')}</button>
+              <button type="button" className="btn btn-sm btn-danger" disabled={busyId === pendingDelete.id} onClick={() => void deleteQuote(pendingDelete)}>{t('common.confirm')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {dealTarget && (
+        <div className="modal-mask" onClick={() => setDealTarget(null)}>
+          <div className="modal-card" role="dialog" aria-modal="true" aria-labelledby="deal-dialog-title" onClick={event => event.stopPropagation()}>
+            <h3 id="deal-dialog-title">{t('orders.dealStatus')} · {dealTarget.order.quote_no}</h3>
+            <div className="deal-options">
+              {(['open', 'won', 'lost'] as const).map(value => (
+                <label key={value} className={`deal-option${dealTarget.status === value ? ' is-active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="deal-status"
+                    value={value}
+                    checked={dealTarget.status === value}
+                    onChange={() => setDealTarget({ ...dealTarget, status: value })}
+                  />
+                  {t(`orders.deal.${value}`)}
+                </label>
+              ))}
+            </div>
+            <textarea
+              className="form-input modal-textarea"
+              rows={3}
+              placeholder={t('orders.dealNote')}
+              value={dealTarget.note}
+              onChange={event => setDealTarget({ ...dealTarget, note: event.target.value })}
+            />
+            <div className="modal-actions">
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDealTarget(null)}>{t('common.cancel')}</button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={busyId === dealTarget.order.id}
+                onClick={() => {
+                  const target = dealTarget;
+                  setDealTarget(null);
+                  void applyDeal(target.order, target.status, target.note.trim() || undefined);
+                }}
+              >
+                {t('common.confirm')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </>
