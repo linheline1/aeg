@@ -292,7 +292,7 @@ export default {
   'workbench.imageRelation': '关联 {{quote}}{{row}}',
   'workbench.row': '行',
   'workbench.unlinked': '未关联报价单',
-  'workbench.noImages': '暂无截图，上传后将展示在这里。',
+  'workbench.noImages': '暂无补传截图。Excel 自动提取的产品图片可在对应报价详情查看。',
   'workbench.process': '流程',
   'workbench.step1Title': '下载模板',
   'workbench.step1': '按列名填写装箱清单',

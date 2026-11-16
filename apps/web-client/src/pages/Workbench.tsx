@@ -34,7 +34,10 @@ export default function Workbench() {
   const loadImages = async () => {
     try {
       const r = await api.get('/api/client/images');
-      const list: any[] = r.data || [];
+      // Excel 内嵌图片已经按行显示在报价详情；这里仅列出手动补传的截图。
+      const list: any[] = (r.data || []).filter((img: any) =>
+        !/^excel-(?:cell|dispimg|embedded)-/i.test(String(img.file_path || '').split('/').pop() || '')
+      );
       setImgList(list);
       // 逐张鉴权拉取缩略图（<img src> 无法带 Bearer token）
       const map: Record<string, string> = {};

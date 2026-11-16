@@ -127,12 +127,11 @@ export class ClientImageController {
     if (!clientId) throw new BadRequestException('当前用户缺少 client_id');
     const rows = await this.imageRepo.findByClient(clientId);
     // 附带关联报价号（工作台展示）
-    const withNo = await Promise.all(rows.map(async r => {
-      if (!r.quote_id) return { ...r, quote_no: null };
-      const q = await this.quotesRepo.findById(r.quote_id);
-      return { ...r, quote_no: q?.quote_no || null };
-    }));
-    return withNo;
+    const quotes = new Map((await this.quotesRepo.find({ where: { client_id: clientId } }))
+      .map(quote => [quote.id, quote.quote_no]));
+    return rows
+      .filter(row => !row.quote_id || quotes.has(row.quote_id))
+      .map(row => ({ ...row, quote_no: row.quote_id ? quotes.get(row.quote_id) || null : null }));
   }
 
   @Get(':id/file')

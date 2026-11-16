@@ -287,7 +287,7 @@ export default {
   'workbench.imageRelation': 'Vinculada a {{quote}}{{row}}',
   'workbench.row': 'linha',
   'workbench.unlinked': 'Sem cotação vinculada',
-  'workbench.noImages': 'Nenhuma imagem. As imagens enviadas aparecerão aqui.',
+  'workbench.noImages': 'Nenhuma imagem adicional. As imagens extraídas do Excel aparecem nos detalhes da cotação.',
   'workbench.process': 'Como funciona',
   'workbench.step1Title': 'Baixe o modelo',
   'workbench.step1': 'preencha a lista conforme os nomes das colunas',
