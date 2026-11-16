@@ -83,6 +83,12 @@ interface EditableFees {
   profit_brl: number;          // 每票利润（BRL）
 }
 
+interface MarketFx {
+  date: string;
+  rates: Record<string, number>;
+  stale: boolean;
+}
+
 /** 加成、税率和利润的默认值：全局费率未配置或接口未返回时使用 */
 const DEFAULT_MARKUP_RATE = 0.20;
 const DEFAULT_TAX_RATE = 0.065;
@@ -173,6 +179,8 @@ export default function OrderDetail() {
   const [pickFiles, setPickFiles] = useState<File[]>([]);
   const [di, setDi] = useState<any>(null);
   const [diParams, setDiParams] = useState({ rmb_brl: '', insurance_brl: 0, uf: 'SP', icms_rate: 0.18 });
+  const [rmbMarket, setRmbMarket] = useState<MarketFx | null>(null);
+  const [rmbMarketError, setRmbMarketError] = useState(false);
   const [diBusy, setDiBusy] = useState(false);
   const [diVersions, setDiVersions] = useState<any[]>([]);
   const [diHistory, setDiHistory] = useState<any>(null);
@@ -295,6 +303,23 @@ export default function OrderDetail() {
     setDiHistory(null);
     load();
     loadDiVersions();
+  }, [id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRmbMarket(null);
+    setRmbMarketError(false);
+    setDiParams({ rmb_brl: '', insurance_brl: 0, uf: 'SP', icms_rate: 0.18 });
+    api.get<MarketFx>('/api/fx/rates', { params: { base: 'CNY', symbols: 'BRL' } })
+      .then(({ data }) => {
+        if (cancelled) return;
+        const rate = Number(data.rates?.BRL);
+        if (!Number.isFinite(rate) || rate <= 0) throw new Error('Invalid CNY/BRL rate');
+        setRmbMarket(data);
+        setDiParams(current => current.rmb_brl ? current : { ...current, rmb_brl: rate.toFixed(6) });
+      })
+      .catch(() => { if (!cancelled) setRmbMarketError(true); });
+    return () => { cancelled = true; };
   }, [id]);
 
   /**
@@ -1247,7 +1272,11 @@ export default function OrderDetail() {
           </div>
         )}
         <div className="row gap-md di-params" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div className="form-row" style={{ margin: 0 }}><label>{t('orderDetail.di.rmbRate')}</label><input className="form-input form-input-sm" style={{ width: 150 }} type="number" min="0" step="0.0001" value={diParams.rmb_brl} onChange={e => setDiParams({ ...diParams, rmb_brl: e.target.value })} placeholder={t('orderDetail.di.rmbRatePlaceholder')} /></div>
+          <div className="form-row" style={{ margin: 0 }}><label>{t('orderDetail.di.rmbRate')}</label><input className="form-input form-input-sm" style={{ width: 150 }} type="number" min="0" step="0.000001" value={diParams.rmb_brl} onChange={e => setDiParams({ ...diParams, rmb_brl: e.target.value })} placeholder={t('orderDetail.di.rmbRatePlaceholder')} />
+            <div className="rate-market-hint">
+              {rmbMarket ? <><span>{t('orderDetail.di.marketRate', { rate: Number(rmbMarket.rates.BRL).toFixed(6), date: rmbMarket.date })}{rmbMarket.stale ? ` · ${t('orderDetail.di.marketRateStale')}` : ''}</span><button type="button" className="btn btn-sm btn-ghost" onClick={() => setDiParams(current => ({ ...current, rmb_brl: Number(rmbMarket.rates.BRL).toFixed(6) }))}>{t('orderDetail.di.useMarketRate')}</button></> : <span>{t(rmbMarketError ? 'orderDetail.di.marketRateFailed' : 'orderDetail.di.marketRateLoading')}</span>}
+            </div>
+          </div>
           <div className="form-row" style={{ margin: 0 }}><label>{t('orderDetail.di.insurance')}</label><input className="form-input form-input-sm" style={{ width: 140 }} type="number" min="0" step="0.01" value={diParams.insurance_brl} onChange={e => setDiParams({ ...diParams, insurance_brl: Number(e.target.value) })} /></div>
           <div className="form-row" style={{ margin: 0 }}><label>{t('orderDetail.di.uf')}</label><input className="form-input form-input-sm" style={{ width: 80 }} maxLength={2} value={diParams.uf} onChange={e => setDiParams({ ...diParams, uf: e.target.value.toUpperCase() })} /></div>
           <div className="form-row" style={{ margin: 0 }}><label>{t('orderDetail.di.icms')}</label><input className="form-input form-input-sm" style={{ width: 100 }} type="number" min="0" max="99" step="0.01" value={diParams.icms_rate * 100} onChange={e => setDiParams({ ...diParams, icms_rate: Number(e.target.value) / 100 })} /></div>
