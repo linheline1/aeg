@@ -94,6 +94,8 @@ export default function Orders() {
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [clientId, setClientId] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [draggingFile, setDraggingFile] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [fileKey, setFileKey] = useState(0);
   const [templateUrl, setTemplateUrl] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -185,6 +187,16 @@ export default function Orders() {
     } catch (e: any) {
       setErr(getApiErrorMessage(e, t('orders.uploadFailed')));
     } finally { setUploading(false); }
+  };
+
+  const selectExcel = (next: File | null) => {
+    if (next && !next.name.toLowerCase().endsWith('.xlsx')) {
+      setErr(t('orders.invalidExcel'));
+      return;
+    }
+    setErr(null);
+    setUploadResult(null);
+    setFile(next);
   };
 
   /** M4 成交标记：won/lost/open（未成交可选填原因） */
@@ -289,11 +301,21 @@ export default function Orders() {
                   <option value="">{t('rates.selectClient')}</option>
                   {clients.map(c => <option key={c.id} value={c.id}>{c.china_company_name || c.name}</option>)}
                 </select>
-                <input key={fileKey} type="file" accept=".xlsx" disabled={uploading}
-                  onChange={e => setFile(e.target.files?.[0] || null)} />
                 <button className="btn" disabled={uploading || !clientId || !file}>
                   {uploading ? t('orders.uploading') : t('orders.uploadSubmit')}
                 </button>
+              </div>
+              <input key={fileKey} ref={fileInput} type="file" accept=".xlsx" disabled={uploading}
+                className="order-upload-file-input" onChange={e => selectExcel(e.target.files?.[0] || null)} />
+              <div className={`order-upload-dropzone${draggingFile ? ' is-dragging' : ''}${uploading ? ' is-disabled' : ''}`}
+                role="button" tabIndex={uploading ? -1 : 0} aria-label={t('orders.dropExcel')}
+                onClick={() => { if (!uploading) fileInput.current?.click(); }}
+                onKeyDown={e => { if (!uploading && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); fileInput.current?.click(); } }}
+                onDragOver={e => { e.preventDefault(); if (!uploading) setDraggingFile(true); }}
+                onDragLeave={e => { e.preventDefault(); setDraggingFile(false); }}
+                onDrop={e => { e.preventDefault(); setDraggingFile(false); if (!uploading) selectExcel(e.dataTransfer.files[0] || null); }}>
+                <strong>{file ? file.name : t('orders.dropExcel')}</strong>
+                <span>{file ? t('orders.changeExcel') : t('orders.dropExcelHint')}</span>
               </div>
               <p className="muted text-sm">{t('orders.uploadHint')}</p>
             </form>
