@@ -49,6 +49,28 @@ export class OpsOrderController {
     return { username: req.user?.username || 'system', role: req.user?.role || 'system' };
   }
 
+  @Delete(':id')
+  @Roles('operator', 'admin', 'sales')
+  async archive(@Param('id') id: string, @Req() req: Request & { user?: any }) {
+    const order: any = await this.quotesRepo.findById(id);
+    if (!order) throw new NotFoundException('订单不存在');
+    if (req.user?.role === 'sales') {
+      const client: any = await this.clientRepo.findOne({ where: { id: order.client_id } });
+      const owner = order.salesperson_id || client?.salesperson_id || null;
+      if (owner !== req.user.sub) throw new ForbiddenException('只能删除归属自己的报价单');
+    }
+    if (order.deal_status === 'won' || order.shipment?.events?.length || order.status === 'computing') {
+      throw new BadRequestException('已成交、已有物流节点或正在核算的报价不能删除');
+    }
+    await this.quotesRepo.update(id, { status: 'deleted' } as any);
+    await this.auditRepo.entry({
+      actor_username: req.user?.username || 'system', actor_role: req.user?.role || 'system',
+      action: 'order.archive', target_type: 'quote', target_id: id,
+      detail: { quote_no: order.quote_no, previous_status: order.status }
+    });
+    return { ok: true, id, quote_no: order.quote_no };
+  }
+
   /** 报价列表（服务端分页 + 筛选）：operator/admin 看全部；sales 只看归属自己的（订单改派优先，未改派的按客户归属兜底） */
   @Get()
   async list(
@@ -117,6 +139,7 @@ export class OpsOrderController {
         has_breakdown: !!q.pricing_breakdown,
         shipment_stage: latestShipmentStage(q.shipment),
         shipment_eta: q.shipment?.eta || null,
+        can_delete: q.deal_status !== 'won' && !q.shipment?.events?.length && q.status !== 'computing',
         has_file: !!q.input_file_path && fs.existsSync(path.join(repoRoot(), q.input_file_path))
       };
     });

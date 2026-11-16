@@ -5,6 +5,7 @@ import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { downloadOrShareFile } from '@aeg/web-shared/file-actions';
 import { api, useAuth } from '../store/auth';
 import { invalidateListCache, readListCache, writeListCache } from '../lib/list-cache';
+import OpsExcelUpload from '../components/OpsExcelUpload';
 
 interface CustomsReview {
   status: 'pending' | 'approved' | 'changes_requested';
@@ -31,6 +32,8 @@ interface OrderRow {
   salesperson_name: string | null;
   deal_status: 'open' | 'won' | 'lost' | null;
   deal_note: string | null;
+  shipment_stage?: string | null;
+  can_delete?: boolean;
   created_at: string;
   has_file: boolean;
   customs_review: CustomsReview | null;
@@ -43,20 +46,6 @@ interface Salesperson {
 }
 
 interface ClientOption { id: string; name: string; china_company_name: string | null; }
-interface UploadResult {
-  ok: boolean;
-  quote_id?: string;
-  quote_no?: string;
-  status?: string;
-  message?: string;
-  total_amount_brl?: number;
-  total_amount_usd?: number;
-  total_amount_rmb?: number;
-  pricing_breakdown?: { items: { code: string; name: string; amount: number }[]; total: number };
-  error_summary?: string;
-  errors?: { row: number; col_letter: string; reason: string }[];
-}
-
 const STATUS_KEYS: Record<string, string> = {
   uploaded: 'orders.status.uploaded',
   pending_fee: 'orders.status.pendingFee',
@@ -92,14 +81,7 @@ export default function Orders() {
   const [q, setQ] = useState('');
   const [keyword, setKeyword] = useState('');
   const [clients, setClients] = useState<ClientOption[]>([]);
-  const [clientId, setClientId] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [draggingFile, setDraggingFile] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
-  const [fileKey, setFileKey] = useState(0);
   const [templateUrl, setTemplateUrl] = useState('');
-  const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const listRequest = useRef(0);
   const pageSize = 20;
 
@@ -150,13 +132,12 @@ export default function Orders() {
   }, []);
 
   useEffect(() => {
-    if (!isSales) return;
     const cached = readListCache<string>('orders:options:template');
     if (cached) { setTemplateUrl(cached); return; }
     api.get('/api/client/template/current')
       .then(r => { const value = r.data.download_url || ''; setTemplateUrl(value); if (value) writeListCache('orders:options:template', value); })
       .catch(() => setTemplateUrl(''));
-  }, [isSales]);
+  }, []);
 
   const downloadTemplate = async () => {
     if (!templateUrl) return;
@@ -164,39 +145,6 @@ export default function Orders() {
       const r = await api.get(templateUrl, { responseType: 'blob' });
       await downloadOrShareFile(r.data, `${t('template.fileName')}.xlsx`);
     } catch { setErr(t('orders.templateDownloadFailed')); }
-  };
-
-  const uploadQuote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErr(null);
-    setUploadResult(null);
-    if (!clientId) { setErr(t('rates.selectClientError')); return; }
-    if (!file) { setErr(t('orders.fileRequired')); return; }
-    setUploading(true);
-    try {
-      const data = new FormData();
-      data.append('client_id', clientId);
-      data.append('file', file);
-      const r = await api.post('/api/ops/orders/upload', data);
-      setUploadResult(r.data);
-      if (r.data.ok) {
-        setFile(null);
-        setFileKey(k => k + 1);
-        invalidateListCache('orders:'); reload(true);
-      }
-    } catch (e: any) {
-      setErr(getApiErrorMessage(e, t('orders.uploadFailed')));
-    } finally { setUploading(false); }
-  };
-
-  const selectExcel = (next: File | null) => {
-    if (next && !next.name.toLowerCase().endsWith('.xlsx')) {
-      setErr(t('orders.invalidExcel'));
-      return;
-    }
-    setErr(null);
-    setUploadResult(null);
-    setFile(next);
   };
 
   /** M4 成交标记：won/lost/open（未成交可选填原因） */
@@ -267,6 +215,18 @@ export default function Orders() {
     }
   };
 
+  const deleteQuote = async (o: OrderRow) => {
+    if (!window.confirm(t('orders.deleteConfirm', { quote: o.quote_no }))) return;
+    setBusyId(o.id);
+    try {
+      await api.delete(`/api/ops/orders/${o.id}`);
+      invalidateListCache('orders:');
+      if (list?.length === 1 && page > 1) setPage(page - 1);
+      else reload(true);
+    } catch (reason) { setErr(getApiErrorMessage(reason, t('orders.deleteFailed'))); }
+    finally { setBusyId(null); }
+  };
+
   return (
     <>
       <div className="page-title">
@@ -285,61 +245,8 @@ export default function Orders() {
 
       {err && <p className="err">❌ {err}</p>}
 
-      {isSales && (
-        <div className="card">
-          <div className="card-title">
-            <h3>📤 {t('orders.uploadTitle')}</h3>
-            <button className="btn btn-ghost btn-sm" type="button" disabled={!templateUrl} onClick={downloadTemplate}>{t('orders.downloadTemplate')}</button>
-          </div>
-          {clients.length === 0 ? (
-            <p className="muted">{t('orders.noClients')}</p>
-          ) : (
-            <form onSubmit={uploadQuote}>
-              <div className="row gap-md order-upload-controls" style={{ flexWrap: 'wrap' }}>
-                <select className="form-input" style={{ width: 260 }} value={clientId} disabled={uploading}
-                  onChange={e => setClientId(e.target.value)}>
-                  <option value="">{t('rates.selectClient')}</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>{c.china_company_name || c.name}</option>)}
-                </select>
-                <button className="btn" disabled={uploading || !clientId || !file}>
-                  {uploading ? t('orders.uploading') : t('orders.uploadSubmit')}
-                </button>
-              </div>
-              <input key={fileKey} ref={fileInput} type="file" accept=".xlsx" disabled={uploading}
-                className="order-upload-file-input" onChange={e => selectExcel(e.target.files?.[0] || null)} />
-              <div className={`order-upload-dropzone${draggingFile ? ' is-dragging' : ''}${uploading ? ' is-disabled' : ''}`}
-                role="button" tabIndex={uploading ? -1 : 0} aria-label={t('orders.dropExcel')}
-                onClick={() => { if (!uploading) fileInput.current?.click(); }}
-                onKeyDown={e => { if (!uploading && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); fileInput.current?.click(); } }}
-                onDragOver={e => { e.preventDefault(); if (!uploading) setDraggingFile(true); }}
-                onDragLeave={e => { e.preventDefault(); setDraggingFile(false); }}
-                onDrop={e => { e.preventDefault(); setDraggingFile(false); if (!uploading) selectExcel(e.dataTransfer.files[0] || null); }}>
-                <strong>{file ? file.name : t('orders.dropExcel')}</strong>
-                <span>{file ? t('orders.changeExcel') : t('orders.dropExcelHint')}</span>
-              </div>
-              <p className="muted text-sm">{t('orders.uploadHint')}</p>
-            </form>
-          )}
-          {uploadResult?.error_summary && <div className="alert alert-err">❌ {uploadResult.error_summary}</div>}
-          {uploadResult?.errors && uploadResult.errors.length > 0 && (
-            <ul className="muted text-sm">
-              {uploadResult.errors.slice(0, 10).map((error, i) => <li key={i}>{t('orders.rowError', { row: error.row, col: error.col_letter, reason: error.reason })}</li>)}
-            </ul>
-          )}
-          {uploadResult?.ok && (
-            <div className="alert alert-ok">
-              <strong>{t('orders.uploadSuccess', { quote: uploadResult.quote_no })}</strong>
-              {uploadResult.total_amount_rmb != null && <div style={{ marginTop: 6 }}>{t('orders.declaredAmount', { amount: brl(uploadResult.total_amount_rmb) })}</div>}
-              <div style={{ marginTop: 8, fontSize: 18 }}>{t('orders.ddpTotal', { amount: brl(uploadResult.total_amount_brl) })}</div>
-              <div>{t('orders.oceanFreight', { amount: brl(uploadResult.total_amount_usd) })}</div>
-              {uploadResult.pricing_breakdown && <div className="text-sm" style={{ marginTop: 6 }}>
-                {uploadResult.pricing_breakdown.items.map(item => <div key={item.code}>{item.name}: R$ {brl(item.amount)}</div>)}
-              </div>}
-              {uploadResult.message && <div style={{ marginTop: 6 }}>{uploadResult.message}</div>}
-              <div className="text-sm" style={{ marginTop: 6 }}>{t('orders.referenceNote')}</div>
-            </div>
-          )}
-        </div>
+      {(
+        <><div className="row gap-md" style={{ marginBottom: 8 }}><button className="btn btn-ghost btn-sm" type="button" disabled={!templateUrl} onClick={downloadTemplate}>{t('orders.downloadTemplate')}</button></div>{clients.length ? <OpsExcelUpload clients={clients} onConfirmed={() => { invalidateListCache('orders:'); reload(true); }} /> : <div className="card">{t('orders.noClients')}</div>}</>
       )}
 
       <div className="card" style={{ marginBottom: 12, padding: 12 }}>
@@ -386,7 +293,7 @@ export default function Orders() {
                 <th>{t('orders.amountBrl')}</th>
                 <th>{t('orders.dealStatus')}</th>
                 {!isSales && <th>{t('orders.salesperson')}</th>}
-                {!isSales && <th className="actions-col">{t('orders.actions')}</th>}
+                <th className="actions-col">{t('orders.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -511,13 +418,14 @@ export default function Orders() {
                         </select>
                       </td>
                     )}
-                    {!isSales && (
+                    {(
                       <td data-label={t('orders.actions')} className="actions-col">
                         <div className="row-actions">
-                          <Link to={`/orders/${o.id}`}>{t('orders.view')}</Link>
-                          {COMPUTABLE.has(o.status) && (
+                          {!isSales && <Link to={`/orders/${o.id}`}>{t('orders.view')}</Link>}
+                          {!isSales && COMPUTABLE.has(o.status) && (
                             <a href="#compute" onClick={e => { e.preventDefault(); compute(o); }}>{t('orders.compute')}</a>
                           )}
+                          {(o.can_delete ?? (o.deal_status !== 'won' && !o.shipment_stage && o.status !== 'computing')) && <button type="button" className="btn btn-sm btn-ghost" disabled={busyId === o.id} onClick={() => void deleteQuote(o)}>{t('orders.deleteQuote')}</button>}
                         </div>
                       </td>
                     )}

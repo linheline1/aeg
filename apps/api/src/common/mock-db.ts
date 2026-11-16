@@ -60,7 +60,7 @@ export interface QuoteOrderRow {
   client_id: string;
   template_code: string;
   template_version: string;
-  status: 'uploaded' | 'validating' | 'pending_fee' | 'computing' | 'done' | 'failed';
+  status: 'uploaded' | 'validating' | 'pending_fee' | 'computing' | 'done' | 'failed' | 'deleted';
   total_amount_brl: number | null;
   total_amount_usd: number | null;
   input_file_name: string | null;
@@ -916,7 +916,7 @@ export class FeeRatesRepo {
 export class QuotesRepo {
   find(opts: { where?: { client_id?: string; salesperson_id?: string } } = {}) {
     const db = load();
-    let rows = db.quotes.slice();
+    let rows = db.quotes.filter(q => q.status !== 'deleted');
     if (opts.where?.client_id) rows = rows.filter(q => q.client_id === opts.where!.client_id);
     if (opts.where?.salesperson_id) rows = rows.filter(q => q.salesperson_id === opts.where!.salesperson_id);
     rows.sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -924,7 +924,7 @@ export class QuotesRepo {
   }
   findById(id: string) {
     const db = load();
-    return Promise.resolve(db.quotes.find(q => q.id === id) || null);
+    return Promise.resolve(db.quotes.find(q => q.id === id && q.status !== 'deleted') || null);
   }
 
   /** 服务端分页 + 筛选（status/client_id 精确；q 匹配报价号/文件名；sales 归属过滤） */
@@ -936,7 +936,7 @@ export class QuotesRepo {
     pageSize?: number;
   } = {}): Promise<{ items: QuoteOrderRow[]; total: number }> {
     const db = load();
-    let rows = db.quotes.slice();
+    let rows = db.quotes.filter(q => q.status !== 'deleted');
     if (opts.where?.client_id) rows = rows.filter(q => q.client_id === opts.where!.client_id);
     if (opts.where?.salesperson_id) rows = rows.filter(q => q.salesperson_id === opts.where!.salesperson_id);
     if (opts.where?.status) rows = rows.filter(q => q.status === opts.where!.status);
@@ -966,7 +966,7 @@ export class QuotesRepo {
   update(id: string, patch: Partial<QuoteOrderRow>) {
     const db = load();
     const idx = db.quotes.findIndex(q => q.id === id);
-    if (idx < 0) return Promise.resolve(null);
+    if (idx < 0 || db.quotes[idx].status === 'deleted') return Promise.resolve(null);
     db.quotes[idx] = { ...db.quotes[idx], ...patch, updated_at: new Date().toISOString() };
     save(db);
     return Promise.resolve(db.quotes[idx]);

@@ -152,6 +152,8 @@ code {
 .table th.actions-col { z-index: 3; background: var(--surface-2); }
 .table tbody tr:hover .actions-col { background: #fafbfc; }
 a.quote-card { display: block; color: inherit; text-decoration: none; }
+.quote-card-content { display: block; color: inherit; text-decoration: none; }
+.quote-delete { position: relative; z-index: 1; margin-top: 8px; }
 .quote-more { color: var(--primary); font-weight: 600; }
 
 /* 明细行截图（行级对应） */

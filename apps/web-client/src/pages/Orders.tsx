@@ -36,6 +36,8 @@ interface QuoteOrder {
   shipment_stage?: string | null;
   shipment_eta?: string | null;
   invoice_cnpj?: { id?: string; cnpj?: string; company_name?: string } | null;
+  can_delete?: boolean;
+  deal_status?: 'open' | 'won' | 'lost' | null;
   created_at: string;
   updated_at?: string;
 }
@@ -66,6 +68,7 @@ export default function Orders() {
   const { t } = useTranslation();
   const [list, setList] = useState<QuoteOrder[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -102,6 +105,16 @@ export default function Orders() {
   const applyFilters = (next: OrderFilterState, replace = false) => {
     const params = toOrderSearchParams(next);
     setSearchParams(params, { replace });
+  };
+
+  const deleteQuote = async (order: QuoteOrder) => {
+    if (!window.confirm(t('orders.deleteConfirm', { quote: order.quote_no }))) return;
+    setDeletingId(order.id); setErr(null);
+    try {
+      await api.delete(`/api/client/orders/${order.id}`);
+      setList(current => current?.filter(item => item.id !== order.id) ?? null);
+    } catch (reason) { setErr(getApiErrorMessage(reason, t('orders.deleteFailed'))); }
+    finally { setDeletingId(null); }
   };
 
   const latest = list && list.length > 0
@@ -161,7 +174,7 @@ export default function Orders() {
           ) : isMobile ? (
             <div className="quote-grid">
               {visible.map(o => (
-                <Link className="quote-card" to={`/orders/${o.id}`} key={o.id}>
+                <div className="quote-card" key={o.id}><Link className="quote-card-content" to={`/orders/${o.id}`}>
                   <div className="quote-head">
                     <strong>{o.quote_no}</strong>
                     <span className={`status-tag status-${o.status}`}>{t(`status.${o.status}`, { defaultValue: o.status })}</span>
@@ -186,7 +199,7 @@ export default function Orders() {
                     <span>{fmtTime(o.created_at)}</span>
                     <span>{o.shipment_stage ? t(`shipment.${o.shipment_stage}`, { defaultValue: o.shipment_stage }) : ''}</span>
                   </div>
-                </Link>
+                </Link>{(o.can_delete ?? (o.deal_status !== 'won' && !o.shipment_stage && o.status !== 'computing')) && <button type="button" className="btn btn-sm btn-ghost quote-delete" disabled={deletingId === o.id} onClick={() => void deleteQuote(o)}>{t('orders.deleteQuote')}</button>}</div>
               ))}
             </div>
           ) : (
@@ -231,7 +244,7 @@ export default function Orders() {
                             </>
                           ) : '—'}
                         </td>
-                        <td className="actions-col"><Link className="btn btn-sm btn-ghost" to={`/orders/${o.id}`}>{t('orders.viewDetails')}</Link></td>
+                        <td className="actions-col"><Link className="btn btn-sm btn-ghost" to={`/orders/${o.id}`}>{t('orders.viewDetails')}</Link> {(o.can_delete ?? (o.deal_status !== 'won' && !o.shipment_stage && o.status !== 'computing')) && <button type="button" className="btn btn-sm btn-ghost" disabled={deletingId === o.id} onClick={() => void deleteQuote(o)}>{t('orders.deleteQuote')}</button>}</td>
                       </tr>
                     ))}
                   </tbody>

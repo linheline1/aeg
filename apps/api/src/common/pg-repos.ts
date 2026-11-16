@@ -259,11 +259,11 @@ export class PgQuotesRepo {
     if (opts.where?.client_id) where.client_id = opts.where.client_id;
     if (opts.where?.salesperson_id) where.salesperson_id = opts.where.salesperson_id;
     const rows = await this.repo.find({ where, order: { created_at: 'DESC' } });
-    return rows.map(e => toRow(e) as QuoteOrderRow);
+    return rows.filter(e => e.status !== 'deleted').map(e => toRow(e) as QuoteOrderRow);
   }
   async findById(id: string): Promise<QuoteOrderRow | null> {
     const e = await this.repo.findOne({ where: { id } });
-    return e ? (toRow(e) as QuoteOrderRow) : null;
+    return e && e.status !== 'deleted' ? (toRow(e) as QuoteOrderRow) : null;
   }
 
   /** 服务端分页 + 筛选（status/client_id 精确；q 匹配报价号/文件名；sales 归属过滤） */
@@ -276,7 +276,7 @@ export class PgQuotesRepo {
   } = {}): Promise<{ items: QuoteOrderRow[]; total: number }> {
     const page = Math.max(1, opts.page || 1);
     const pageSize = Math.min(100, Math.max(1, opts.pageSize || 20));
-    const qb = this.repo.createQueryBuilder('q').orderBy('q.created_at', 'DESC');
+    const qb = this.repo.createQueryBuilder('q').where('q.status <> :deleted', { deleted: 'deleted' }).orderBy('q.created_at', 'DESC');
     if (opts.where?.client_id) qb.andWhere('q.client_id = :cid', { cid: opts.where.client_id });
     if (opts.where?.salesperson_id) qb.andWhere('q.salesperson_id = :sid', { sid: opts.where.salesperson_id });
     if (opts.where?.status) qb.andWhere('q.status = :status', { status: opts.where.status });
@@ -304,7 +304,7 @@ export class PgQuotesRepo {
   }
   async update(id: string, patch: Partial<QuoteOrderRow>): Promise<QuoteOrderRow | null> {
     const e = await this.repo.findOne({ where: { id } });
-    if (!e) return null;
+    if (!e || e.status === 'deleted') return null;
     Object.assign(e, stripUndefined(patch));
     return toRow(await this.repo.save(e)) as QuoteOrderRow;
   }

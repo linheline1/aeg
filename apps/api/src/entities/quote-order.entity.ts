@@ -4,7 +4,7 @@ import {
 } from 'typeorm';
 import * as crypto from 'crypto';
 
-export type QuoteStatus = 'uploaded' | 'validating' | 'pending_fee' | 'computing' | 'done' | 'failed';
+export type QuoteStatus = 'uploaded' | 'validating' | 'pending_fee' | 'computing' | 'done' | 'failed' | 'deleted';
 
 /** 报价订单（核心业务表：客户上传清单 → 运营核算 → 发布 → 成交/物流/交付文件） */
 @Entity('quote_order')

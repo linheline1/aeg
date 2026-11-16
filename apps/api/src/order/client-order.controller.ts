@@ -1,15 +1,30 @@
-import { Controller, Get, Inject, Param, Req, UseGuards, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Controller, Delete, Get, Inject, Param, Req, UseGuards, NotFoundException } from '@nestjs/common';
 import { AisStreamService } from './ais-stream.service';
 import { Request } from 'express';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
-import { QuotesRepo } from '../common/mock-db';
+import { AuditRepo, QuotesRepo } from '../common/mock-db';
 import { resolveShipment } from '../common/port-geo';
 
 @Controller('client/orders')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('client')
 export class ClientOrderController {
-  constructor(@Inject('QuotesRepo') private readonly repo: QuotesRepo, private readonly aisStream: AisStreamService) {}
+  constructor(@Inject('QuotesRepo') private readonly repo: QuotesRepo, @Inject('AuditRepo') private readonly auditRepo: AuditRepo,
+    private readonly aisStream: AisStreamService) {}
+
+  @Delete(':id')
+  async archive(@Param('id') id: string, @Req() req: Request & { user?: any }) {
+    const order = await this.repo.findById(id);
+    if (!order || order.client_id !== req.user?.client_id) throw new NotFoundException('报价单不存在');
+    if (order.deal_status === 'won' || order.shipment?.events?.length || order.status === 'computing') {
+      throw new BadRequestException('已成交、已有物流节点或正在核算的报价不能删除');
+    }
+    await this.repo.update(id, { status: 'deleted' });
+    await this.auditRepo.entry({ actor_username: req.user?.username || 'client', actor_role: 'client',
+      action: 'order.archive', target_type: 'quote', target_id: id,
+      detail: { quote_no: order.quote_no, previous_status: order.status } });
+    return { ok: true, id };
+  }
 
   /** 客户端仅查看报价结果与公开费用；内部利润及税基加成不拆分展示。 */
   private publicPricingBreakdown(breakdown: any) {
@@ -60,6 +75,8 @@ export class ClientOrderController {
         invoice_cnpj: r.invoice_cnpj || null,
         shipment_stage: r.shipment?.events?.length ? r.shipment.events[r.shipment.events.length - 1].stage : null,
         shipment_eta: r.shipment?.eta || null,
+        can_delete: r.deal_status !== 'won' && !r.shipment?.events?.length && r.status !== 'computing',
+        deal_status: r.deal_status ?? null,
         price_is_reference: true,
         error_message: r.error_message,
         created_at: r.created_at,

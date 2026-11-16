@@ -1,6 +1,6 @@
 import {
   BadRequestException, Body, Controller, ForbiddenException, Inject, NotFoundException,
-  Post, Req, UploadedFile, UseGuards, UseInterceptors
+  Delete, Param, Post, Req, UploadedFile, UseGuards, UseInterceptors
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
@@ -22,6 +22,60 @@ export class OpsUploadController {
     private readonly quoteService: QuoteService,
     @Inject('ClientRepo') private readonly clientRepo: ClientRepo
   ) {}
+
+  private async allowedClient(clientId: string, user: any) {
+    if (!clientId) throw new BadRequestException('请选择客户');
+    const client: any = await this.clientRepo.findOne({ where: { id: clientId } });
+    if (!client) throw new NotFoundException('客户不存在');
+    if (client.status !== 'active') throw new BadRequestException('该客户已禁用，不能上传报价');
+    if (user?.role === 'sales' && client.salesperson_id !== user.sub) throw new ForbiddenException('只能为归属自己的客户上传报价');
+    return clientId;
+  }
+
+  @Post('upload/preview')
+  @UseInterceptors(FileInterceptor('file', {
+    storage: multer.diskStorage({ destination: (_req, _file, cb) => { fs.mkdirSync(TMP_DIR, { recursive: true }); cb(null, TMP_DIR); },
+      filename: (_req, file, cb) => cb(null, `${Date.now()}-${crypto.randomUUID()}${path.extname(file.originalname) || '.xlsx'}`) }),
+    limits: { fileSize: 20 * 1024 * 1024, files: 1 },
+    fileFilter: (_req, file, cb) => /\.xlsx$/i.test(file.originalname) ? cb(null, true) : cb(new BadRequestException('清单文件仅支持 .xlsx 格式'), false)
+  }))
+  async preview(@UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: { client_id?: string }, @Req() req: Request & { user?: any }) {
+    if (!file) throw new BadRequestException('未收到清单文件');
+    try {
+      const clientId = await this.allowedClient(String(body.client_id || '').trim(), req.user);
+      return await this.quoteService.previewUpload(file.path, file.originalname, clientId, '2.0');
+    } catch (error) { try { fs.unlinkSync(file.path); } catch { /* already moved */ } throw error; }
+  }
+
+  private async allowedDraft(draftId: string, user: any) {
+    const draft = await this.quoteService.getUploadDraftForOps(draftId);
+    await this.allowedClient(draft.client_id, user);
+    return draft;
+  }
+
+  @Post('upload/ai-check')
+  async aiCheck(@Body() body: { draft_id?: string; rows?: any[] }, @Req() req: Request & { user?: any }) {
+    const draft = await this.allowedDraft(String(body.draft_id || ''), req.user);
+    return this.quoteService.aiCheckUpload(draft.id, draft.client_id, body.rows as any);
+  }
+
+  @Post('upload/confirm')
+  async confirm(@Body() body: { draft_id?: string; rows?: any[]; declared_currency?: string }, @Req() req: Request & { user?: any }) {
+    const draft = await this.allowedDraft(String(body.draft_id || ''), req.user);
+    const actor = { username: req.user?.username || 'system', role: req.user?.role || 'system' };
+    const result = await this.quoteService.confirmUpload(draft.id, draft.client_id, body.rows as any, String(body.declared_currency || ''), actor);
+    if (result.ok && result.quote_id) {
+      void (async () => { const di = await this.quoteService.runAutoDi(result.quote_id!); if (di.ok) await this.quoteService.computeOrder(result.quote_id!, actor); })().catch(() => undefined);
+    }
+    return result;
+  }
+
+  @Delete('upload/:draftId')
+  async cancel(@Req() req: Request & { user?: any }, @Param('draftId') draftId: string) {
+    const draft = await this.allowedDraft(draftId, req.user);
+    return this.quoteService.cancelUpload(draft.id, draft.client_id);
+  }
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', {

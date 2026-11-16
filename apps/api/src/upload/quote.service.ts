@@ -701,6 +701,12 @@ export class QuoteService {
     return draft;
   }
 
+  async getUploadDraftForOps(draftId: string) {
+    const draft = await this.uploadDraftsRepo.findById(draftId);
+    if (!draft) throw new NotFoundException('识别草稿不存在');
+    return draft;
+  }
+
   /** 提交前复用系统 AI 配置检查产品信息，并为每行建议巴西 NCM。 */
   async aiCheckUpload(draftId: string, clientId: string, submittedRows: ParsedRow[]): Promise<AiUploadCheckResult> {
     const draft = await this.getUploadDraft(draftId, clientId);
