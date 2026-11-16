@@ -121,11 +121,18 @@ const FLOW_SHORT_KEYS: Record<string, string> = {
 const COMPUTABLE = new Set(['uploaded', 'pending_fee', 'failed', 'computing']);
 /** M8 交付文件类型 */
 const FILE_KIND_KEYS: Record<string, string> = { clearance_shot: 'orderDetail.fileKind.clearanceShot', invoice: 'orderDetail.fileKind.invoice', other: 'orderDetail.fileKind.other' };
+type OrderSection = 'deal' | 'pricing' | 'di' | 'shipment' | 'files' | 'lines';
+const ORDER_SECTIONS: OrderSection[] = ['deal', 'pricing', 'di', 'shipment', 'files', 'lines'];
+function sectionFromHash(): OrderSection | null {
+  const section = window.location.hash.replace(/^#order-/, '') as OrderSection;
+  return ORDER_SECTIONS.includes(section) ? section : null;
+}
 
 export default function OrderDetail() {
   const { t, i18n } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const [d, setD] = useState<OrderDetail | null>(null);
+  const [activeSection, setActiveSection] = useState<OrderSection>(() => sectionFromHash() || 'deal');
   const [err, setErr] = useState<string | null>(null);
   const [fees, setFees] = useState<EditableFees>({
     ocean_freight_usd: 1200, port_fee_usd: 130, br_trucking_brl: 0, fx_rate: 5.0,
@@ -165,6 +172,23 @@ export default function OrderDetail() {
   const [diBusy, setDiBusy] = useState(false);
   const [diVersions, setDiVersions] = useState<any[]>([]);
   const [diHistory, setDiHistory] = useState<any>(null);
+
+  useEffect(() => {
+    const syncSection = () => setActiveSection(sectionFromHash() || 'deal');
+    window.addEventListener('popstate', syncSection);
+    window.addEventListener('hashchange', syncSection);
+    return () => {
+      window.removeEventListener('popstate', syncSection);
+      window.removeEventListener('hashchange', syncSection);
+    };
+  }, []);
+
+  const selectSection = (section: OrderSection) => {
+    setActiveSection(section);
+    setShotPreview(null);
+    window.history.pushState(null, '', `#order-${section}`);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  };
 
   // 拉取该订单的明细截图（鉴权 blob → objectURL）
   useEffect(() => {
@@ -658,6 +682,16 @@ export default function OrderDetail() {
   if (err && !d) return <div className="card"><p className="err-msg">❌ {err}</p><Link to="/orders">← {t('orderDetail.backToList')}</Link></div>;
   if (!d) return <div className="card"><p>{t('common.loading')}</p></div>;
 
+  const sections: { id: OrderSection; label: string }[] = [
+    ...(d.status === 'done' ? [{ id: 'deal' as const, label: t('orderDetail.deal.followUp') }] : []),
+    { id: 'pricing', label: t('orderDetail.ddp.title') },
+    { id: 'di', label: t('orderDetail.di.title') },
+    ...(d.deal_status === 'won' ? [{ id: 'shipment' as const, label: t('orderDetail.ship.title') }] : []),
+    ...(d.status === 'done' ? [{ id: 'files' as const, label: t('orderDetail.files.title') }] : []),
+    ...((d.line_items?.length || shots.length) ? [{ id: 'lines' as const, label: t('orderDetail.lines.title') }] : []),
+  ];
+  const visibleSection = sections.some(section => section.id === activeSection) ? activeSection : sections[0].id;
+
   // 前端本地预演：税基=(DI+货值)×(1+20%)+国际运费；税务=税基×6.5%
   // 参考 DDP = 税务 + DI + 国际运费 + 其他成本 + 每票利润
   const meta: BreakdownMeta | null = d.pricing_breakdown?.meta || d.pricing_breakdown || null;
@@ -737,20 +771,19 @@ export default function OrderDetail() {
       </div>
 
       <nav className="order-section-nav" aria-label={i18n.resolvedLanguage?.startsWith('pt') ? 'Seções do pedido' : '订单模块导航'}>
-        {[
-          ...(d.status === 'done' ? [['deal', t('orderDetail.deal.followUp')]] : []),
-          ['pricing', t('orderDetail.ddp.title')],
-          ['di', t('orderDetail.di.title')],
-          ...(d.deal_status === 'won' ? [['shipment', t('orderDetail.ship.title')]] : []),
-          ...(d.status === 'done' ? [['files', t('orderDetail.files.title')]] : []),
-          ...((d.line_items?.length || shots.length) ? [['lines', t('orderDetail.lines.title')]] : [])
-        ].map(([section, label]) => <a key={section} href={`#order-${section}`}>{label}</a>)}
+        {sections.map(section => <button
+          key={section.id}
+          type="button"
+          className={visibleSection === section.id ? 'active' : undefined}
+          aria-pressed={visibleSection === section.id}
+          onClick={() => selectSection(section.id)}
+        >{section.label}</button>)}
       </nav>
 
       {flash && <div className="alert alert-ok">{flash}</div>}
       {err && <div className="alert alert-err">❌ {err}</div>}
 
-      <div className={`alert ${currentCustomsApproved ? 'alert-ok' : 'alert-warn'}`}>
+      {visibleSection === 'di' && <div className={`alert ${currentCustomsApproved ? 'alert-ok' : 'alert-warn'}`}>
         <strong>
           {t('orderDetail.customs.title')}{!d.customs_review
             ? t('orderDetail.customs.notSubmitted')
@@ -772,10 +805,10 @@ export default function OrderDetail() {
         {d.customs_review?.status === 'changes_requested' && d.customs_review.note && (
           <div style={{ marginTop: 4 }}>{t('orderDetail.customs.changesNote', { note: d.customs_review.note })}</div>
         )}
-      </div>
+      </div>}
 
       {/* M3 状态机工作条 */}
-      {COMPUTABLE.has(d.status) && (
+      {visibleSection === 'pricing' && COMPUTABLE.has(d.status) && (
         <div className="alert alert-warn row-between order-workbar" style={{ alignItems: 'center' }}>
           <div>
             <strong>{d.status === 'failed' ? t('orderDetail.workbar.failed') : t('orderDetail.workbar.pending')}</strong>
@@ -804,7 +837,7 @@ export default function OrderDetail() {
       )}
 
       {/* M4 成交状态工作条：仅 done 报价可标记 */}
-      {d.status === 'done' && (
+      {visibleSection === 'deal' && d.status === 'done' && (
         <div id="order-deal" className="alert alert-warn row-between order-workbar" style={{ alignItems: 'center' }}>
           <div>
             <strong>🤝 {t('orderDetail.deal.followUp')}</strong>
@@ -844,7 +877,7 @@ export default function OrderDetail() {
         </div>
       )}
 
-      <div id="order-pricing" className="grid-2">
+      {visibleSection === 'pricing' && <div id="order-pricing" className="grid-2">
         {/* 左：DDP 可编辑面板 */}
         <div className="card">
           <div className="card-title">
@@ -1133,9 +1166,9 @@ export default function OrderDetail() {
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
 
-      <div id="order-di" className="card" style={{ marginTop: 16 }}>
+      {visibleSection === 'di' && <div id="order-di" className="card" style={{ marginTop: 16 }}>
         <div className="card-title">
           <h3>🧾 {t('orderDetail.di.title')}</h3>
           <div className="row gap-sm">
@@ -1267,10 +1300,10 @@ export default function OrderDetail() {
             {di.reviewed_by && <p className="muted text-sm">{t('orderDetail.di.savedBy', { name: di.reviewed_by, time: di.reviewed_at?.slice(0, 16).replace('T', ' ') })}</p>}
           </>
         )}
-      </div>
+      </div>}
 
       {/* M7 国际物流：成交走柜后运营维护，客户端实时可见（仅 done 订单） */}
-      {d.status === 'done' && d.deal_status === 'won' && (
+      {visibleSection === 'shipment' && d.status === 'done' && d.deal_status === 'won' && (
         <div id="order-shipment" className="card" style={{ marginTop: 16 }}>
           <div className="card-title">
             <h3>🚢 {t('orderDetail.ship.title')}</h3>
@@ -1436,7 +1469,7 @@ export default function OrderDetail() {
       )}
 
       {/* M8 交付文件：放行截图 / 发票 PDF（操作员上传给客户查看/下载） */}
-      {d.status === 'done' && (
+      {visibleSection === 'files' && d.status === 'done' && (
         <div id="order-files" className="card">
           <div className="card-title">
             <h3>📎 {t('orderDetail.files.title')}</h3>
@@ -1498,7 +1531,7 @@ export default function OrderDetail() {
       )}
 
       {/* 下：客户填写的 Excel 行数据（末列为该行对应的明细截图） */}
-      {(d.line_items?.length || shots.length) ? (
+      {visibleSection === 'lines' && (d.line_items?.length || shots.length) ? (
         <div id="order-lines" className="card">
           <div className="card-title">
             <h3>📋 {t('orderDetail.lines.title')}</h3>
