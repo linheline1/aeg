@@ -218,6 +218,7 @@ export default {
   'detail.versionHistory': '版本历史',
   'detail.requestChanges': '要求修改',
   'detail.summaryLabel': '订单概览',
+  'detail.sectionNav': '订单模块导航',
   'detail.invoiceValue': 'Invoice 金额',
   'detail.ddpValue': 'DDP 金额',
   'detail.totalVolume': '总体积',

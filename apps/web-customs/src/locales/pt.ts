@@ -206,6 +206,7 @@ export default {
   'detail.versionHistory': 'Histórico de versões',
   'detail.requestChanges': 'Solicitar alterações',
   'detail.summaryLabel': 'Resumo do pedido',
+  'detail.sectionNav': 'Navegação pelas seções do pedido',
   'detail.invoiceValue': 'Valor da invoice',
   'detail.ddpValue': 'Valor DDP',
   'detail.totalVolume': 'Volume total',
