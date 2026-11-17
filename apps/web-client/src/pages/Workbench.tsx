@@ -94,8 +94,9 @@ export default function Workbench() {
   const handleDownload = async () => {
     setDlLoading(true); setDlMsg(null);
     try {
-      const r = await api.get('/api/client/template/2.0/download', { responseType: 'blob' });
-      await downloadOrShareFile(new Blob([r.data as any]), `${t('workbench.templateFile')}_v2.0.xlsx`);
+      const current = tpl || (await api.get('/api/client/template/current')).data;
+      const r = await api.get(current.download_url, { responseType: 'blob' });
+      await downloadOrShareFile(new Blob([r.data as any]), `${t('workbench.templateFile')}_v${current.version_no}.xlsx`);
       setDlMsg(t('workbench.downloadSuccess')); setTimeout(() => setDlMsg(null), 3000);
     } catch (e: any) {
       setDlMsg('❌ ' + getApiErrorMessage(e, t('workbench.downloadError')));

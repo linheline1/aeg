@@ -201,7 +201,7 @@ export default function CnpjManager() {
               onChange={e => setCnpjForm({ ...cnpjForm, company_name: e.target.value })} />
           </div>
           <div className="form-row">
-            <label>Nome Fantasia</label>
+            <label>{t('cnpj.tradeName')}</label>
             <input className="form-input" value={cnpjForm.nome_fantasia} disabled={busy} maxLength={200}
               onChange={e => setCnpjForm({ ...cnpjForm, nome_fantasia: e.target.value })} />
           </div>
@@ -211,7 +211,7 @@ export default function CnpjManager() {
               onChange={e => setCnpjForm({ ...cnpjForm, situacao_cadastral: e.target.value })} />
           </div>
           <div className="form-row cnpj-field-wide">
-            <label>Logradouro / Número</label>
+            <label>{t('cnpj.streetNumber')}</label>
             <div className="cnpj-address-pair">
               <input className="form-input" placeholder={t('cnpj.street')} value={cnpjForm.endereco.logradouro} disabled={busy}
                 onChange={e => updateAddress('logradouro', e.target.value)} />
@@ -220,26 +220,26 @@ export default function CnpjManager() {
             </div>
           </div>
           <div className="form-row">
-            <label>Complemento</label>
+            <label>{t('cnpj.complement')}</label>
             <input className="form-input" value={cnpjForm.endereco.complemento} disabled={busy}
               onChange={e => updateAddress('complemento', e.target.value)} />
           </div>
           <div className="form-row">
-            <label>Bairro</label>
+            <label>{t('cnpj.district')}</label>
             <input className="form-input" value={cnpjForm.endereco.bairro} disabled={busy}
               onChange={e => updateAddress('bairro', e.target.value)} />
           </div>
           <div className="form-row">
-            <label>Município / UF</label>
+            <label>{t('cnpj.cityState')}</label>
             <div className="cnpj-address-pair">
               <input className="form-input" value={cnpjForm.endereco.municipio} disabled={busy}
                 onChange={e => updateAddress('municipio', e.target.value)} />
-              <input className="form-input" placeholder="UF" value={cnpjForm.endereco.uf} disabled={busy} maxLength={2}
+              <input className="form-input" placeholder={t('cnpj.stateCode')} value={cnpjForm.endereco.uf} disabled={busy} maxLength={2}
                 onChange={e => updateAddress('uf', e.target.value.toUpperCase())} />
             </div>
           </div>
           <div className="form-row">
-            <label>CEP</label>
+            <label>{t('cnpj.postalCode')}</label>
             <input className="form-input" value={cnpjForm.endereco.cep} disabled={busy}
               onChange={e => updateAddress('cep', e.target.value)} />
           </div>

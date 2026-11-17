@@ -16,6 +16,7 @@ import { FIELD_DICTIONARY, TEMPLATE_MAX_ROWS, DATA_START_ROW } from '../../../..
 import { repoRoot } from '../common/mock-db';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { generateTemplate } from '../../../../packages/excel-utils/dist/excel-utils/src/scripts/generate-template.js';
 
 @Controller('client/template')
 @UseGuards(AuthGuard, RolesGuard)
@@ -56,6 +57,9 @@ export class ClientTemplateController {
   ) {
     const v = await this.service.getByVersion(version);
     const filePath = join(repoRoot(), v.file_path);
+    if (!existsSync(filePath) && v.version_no === '2.0') {
+      await generateTemplate(filePath);
+    }
     if (!existsSync(filePath)) {
       throw new NotFoundException('模板文件丢失，请联系管理员');
     }

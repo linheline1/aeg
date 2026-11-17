@@ -70,6 +70,10 @@ export const api = createAuthenticatedApi({
 api.defaults.baseURL = API_BASE_URL;
 
 export function errorMessage(error: unknown, fallback = 'Não foi possível concluir a operação.') {
-  if (axios.isAxiosError(error)) return fallback;
+  if (axios.isAxiosError(error)) {
+    if (!error.response) return error.message;
+    if (error.response.status === 401) return fallback;
+    return String(error.response.data?.message || `${error.response.status} ${error.message}`);
+  }
   return error instanceof Error ? error.message : fallback;
 }

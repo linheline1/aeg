@@ -11,6 +11,7 @@ const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', '
 const MAX_ADDITIONAL_FEES = 30;
 type ParameterStrings = Record<keyof DiParameters, string>;
 type FeeDraft = { name: string; amount: string; note: string };
+type MarketFx = { date: string; rates: Record<string, number>; stale: boolean };
 const emptyParameters: ParameterStrings = { rmb_brl: '', insurance_brl: '0', uf: '', icms_rate: '', freight_brl: '0' };
 const emptyFeeDraft: FeeDraft = { name: '', amount: '', note: '' };
 
@@ -28,6 +29,8 @@ export default function DiPanel({ orderId, initialAnalysis, onUpdated }: { order
   const [busy, setBusy] = useState<'analyze' | 'approve' | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [market, setMarket] = useState<MarketFx | null>(null);
+  const [marketError, setMarketError] = useState(false);
 
   useEffect(() => {
     setAnalysis(initialAnalysis); setItems(initialAnalysis?.items || []);
@@ -41,6 +44,21 @@ export default function DiPanel({ orderId, initialAnalysis, onUpdated }: { order
       freight_brl: String(parameterValue(initialAnalysis, 'freight_brl') || '0')
     });
   }, [initialAnalysis]);
+
+  useEffect(() => {
+    let active = true;
+    setMarket(null); setMarketError(false);
+    api.get<MarketFx>('/api/fx/rates', { params: { base: 'CNY', symbols: 'BRL' } })
+      .then(({ data }) => {
+        const rate = Number(data.rates?.BRL);
+        if (!Number.isFinite(rate) || rate <= 0) throw new Error('Invalid CNY/BRL rate');
+        if (!active) return;
+        setMarket(data);
+        if (!initialAnalysis) setParameters(current => current.rmb_brl ? current : { ...current, rmb_brl: rate.toFixed(6) });
+      })
+      .catch(() => { if (active) setMarketError(true); });
+    return () => { active = false; };
+  }, [orderId, initialAnalysis]);
 
   const values = (): DiParameters | null => {
     const icmsPercent = Number(parameters.icms_rate.replace(',', '.'));
@@ -126,6 +144,9 @@ export default function DiPanel({ orderId, initialAnalysis, onUpdated }: { order
   return <div className="di-workspace">
     <section className="di-parameters" aria-labelledby="parameters-title"><div className="subsection-heading"><div><h3 id="parameters-title">{t('di.parametersTitle')}</h3><p>{t('di.parametersDescription')}</p></div><button className="btn btn-ghost" type="button" onClick={analyze} disabled={busy !== null}>{busy === 'analyze' ? <><span className="spinner" />{t('di.calculating')}</> : <><Icon name="refresh" size={17} />{analysis ? t('di.recalculate') : t('di.calculate')}</>}</button></div><div className="parameter-grid"><div className="field"><label htmlFor="di-exchange">{t('di.exchange')}</label><input id="di-exchange" className="form-input" type="number" min="0.000001" step="0.000001" value={parameters.rmb_brl} onChange={(event) => setParameters({ ...parameters, rmb_brl: event.target.value })} disabled={busy !== null} required /></div><div className="field"><label htmlFor="di-insurance">{t('di.insurance')}</label><input id="di-insurance" className="form-input" type="number" min="0" step="0.01" value={parameters.insurance_brl} onChange={(event) => setParameters({ ...parameters, insurance_brl: event.target.value })} disabled={busy !== null} required /></div><div className="field"><label htmlFor="di-freight">{t('di.freight')}</label><input id="di-freight" className="form-input" type="number" min="0" step="0.01" value={parameters.freight_brl} onChange={(event) => setParameters({ ...parameters, freight_brl: event.target.value })} disabled={busy !== null} required /></div><div className="field"><label htmlFor="di-uf">{t('di.clearanceUf')}</label><select id="di-uf" className="form-input" value={parameters.uf} onChange={(event) => setParameters({ ...parameters, uf: event.target.value })} disabled={busy !== null} required><option value="">{t('di.select')}</option>{UFS.map((uf) => <option key={uf}>{uf}</option>)}</select></div><div className="field"><label htmlFor="di-icms">{t('di.icmsRate')}</label><input id="di-icms" className="form-input" type="number" min="0" max="100" step="0.0001" value={parameters.icms_rate} onChange={(event) => setParameters({ ...parameters, icms_rate: event.target.value })} disabled={busy !== null} required /></div></div></section>
     {error && <ErrorMessage message={error} />}{success && <SuccessMessage>{success}</SuccessMessage>}
+    <div className="di-market-hint" aria-live="polite">
+      {market ? <><span>{t('di.marketRate', { rate: Number(market.rates.BRL).toFixed(6), date: market.date })}{market.stale ? ` · ${t('di.marketRateStale')}` : ''}</span><button className="btn btn-ghost" type="button" disabled={busy !== null} onClick={() => setParameters(current => ({ ...current, rmb_brl: Number(market.rates.BRL).toFixed(6) }))}>{t('di.useMarketRate')}</button></> : <span>{t(marketError ? 'di.marketRateFailed' : 'di.marketRateLoading')}</span>}
+    </div>
     {!analysis ? <Empty title={t('di.emptyTitle')} description={t('di.emptyDescription')} /> : <>
       <div className="subsection-heading items-heading"><div><h3>{t('di.itemsTitle')}</h3><p>{t('di.itemsDescription')}</p></div><span className="badge badge-info">{t('di.items', { count: items.length })}</span></div>
       <div className="table-wrap"><table className="table di-table"><thead><tr><th>{t('products.row')}</th><th>{t('di.product')}</th><th>NCM</th><th className="amount">II (%)</th><th className="amount">IPI (%)</th><th className="amount">PIS (%)</th><th className="amount">COFINS (%)</th><th className="amount">CIF</th><th className="amount">II</th><th className="amount">IPI</th><th className="amount">PIS</th><th className="amount">COFINS</th><th className="amount">ICMS</th><th className="amount">{t('products.total')}</th></tr></thead><tbody>{items.map((item, index) => <tr key={String(item.id ?? item.row_no ?? index)}><td>{text(item, ['row_no', 'line_no'])}</td><td className="di-product">{text(item, ['product_name', 'product_en', 'description', 'goods_description'])}</td><td><input className="form-input table-input ncm-input" aria-label={t('di.ncmAria', { row: index + 1 })} value={String(item.ncm ?? item.ncm_code ?? '')} onChange={(event) => updateItem(index, 'ncm', event.target.value)} disabled={busy !== null} /></td>{(['ii_rate', 'ipi_rate', 'pis_rate', 'cofins_rate'] as const).map((key) => <td className="amount" key={key}><input className="form-input table-input rate-input" aria-label={t('di.rateAria', { tax: key.replace('_rate', '').toUpperCase(), row: index + 1 })} type="number" min="0" max="99.9999" step="0.0001" value={Number(item[key] ?? 0) * 100} onChange={(event) => updateItem(index, key, event.target.value)} disabled={busy !== null} /></td>)}<td className="amount">{brl(Number(item.cif_brl ?? 0))}</td><td className="amount">{brl(Number(item.ii_brl ?? 0))}</td><td className="amount">{brl(Number(item.ipi_brl ?? 0))}</td><td className="amount">{brl(Number(item.pis_brl ?? 0))}</td><td className="amount">{brl(Number(item.cofins_brl ?? 0))}</td><td className="amount">{brl(Number(item.icms_brl ?? 0))}</td><td className="amount strong">{brl(Number(item.di_brl ?? item.total_brl ?? item.di_total_brl ?? 0))}</td></tr>)}</tbody></table></div>

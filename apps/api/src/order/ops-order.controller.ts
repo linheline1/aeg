@@ -50,15 +50,10 @@ export class OpsOrderController {
   }
 
   @Delete(':id')
-  @Roles('operator', 'admin', 'sales')
+  @Roles('operator', 'admin')
   async archive(@Param('id') id: string, @Req() req: Request & { user?: any }) {
     const order: any = await this.quotesRepo.findById(id);
     if (!order) throw new NotFoundException('订单不存在');
-    if (req.user?.role === 'sales') {
-      const client: any = await this.clientRepo.findOne({ where: { id: order.client_id } });
-      const owner = order.salesperson_id || client?.salesperson_id || null;
-      if (owner !== req.user.sub) throw new ForbiddenException('只能删除归属自己的报价单');
-    }
     if (order.deal_status === 'won' || order.shipment?.events?.length || order.status === 'computing') {
       throw new BadRequestException('已成交、已有物流节点或正在核算的报价不能删除');
     }
@@ -183,14 +178,17 @@ export class OpsOrderController {
     }).sort((a: any, b: any) => a.name.localeCompare(b.name));
   }
 
-  /** 订单详情（含 line_items + pricing_breakdown）—— 报价员/管理员专用 */
+  /** 订单详情：业务员仅可读取自己名下的报价。 */
   @Get(':id')
-  @Roles('operator', 'admin')
-  async detail(@Param('id') id: string) {
+  @Roles('operator', 'admin', 'sales')
+  async detail(@Param('id') id: string, @Req() req: Request & { user?: any }) {
     const q: any = await this.quotesRepo.findById(id);
     if (!q) throw new NotFoundException('订单不存在');
     const client: any = await this.clientRepo.findOne({ where: { id: q.client_id } });
     const owner = q.salesperson_id || client?.salesperson_id || null;
+    if (req.user?.role === 'sales' && owner !== req.user.sub) {
+      throw new ForbiddenException('只能查看归属自己的报价单');
+    }
     let salesName: string | null = null;
     if (owner) {
       const u: any = await this.userRepo.findOne({ where: { id: owner } });

@@ -307,11 +307,7 @@ export default function Orders() {
                   <tr key={o.id} className={busyId === o.id ? 'row-editing' : ''}>
                     <td data-label={t('orders.quoteNo')}>
                       <div className="text-nowrap">
-                        {isSales ? (
-                          <strong>{o.quote_no}</strong>
-                        ) : (
-                          <Link to={`/orders/${o.id}`}><strong>{o.quote_no}</strong></Link>
-                        )}
+                        <Link to={`/orders/${o.id}`}><strong>{o.quote_no}</strong></Link>
                       </div>
                       {o.has_file && (
                         <a
@@ -390,7 +386,7 @@ export default function Orders() {
                     {(
                       <td data-label={t('orders.actions')} className="actions-col">
                         <div className="row-actions">
-                          {!isSales && <Link className="btn btn-sm btn-ghost" to={`/orders/${o.id}`}>{t('orders.view')}</Link>}
+                          <Link className="btn btn-sm btn-ghost" to={`/orders/${o.id}`}>{t('orders.view')}</Link>
                           {!isSales && COMPUTABLE.has(o.status) && (
                             <a className="btn btn-sm btn-ghost" href="#compute" onClick={e => { e.preventDefault(); compute(o); }}>{t('orders.compute')}</a>
                           )}
@@ -400,7 +396,7 @@ export default function Orders() {
                               {dealLabel}
                             </button>
                           )}
-                          {(o.can_delete ?? (o.deal_status !== 'won' && !o.shipment_stage && o.status !== 'computing')) && <button type="button" className="btn btn-sm btn-ghost" disabled={busyId === o.id} onClick={() => setPendingDelete(o)}>{t('orders.deleteQuote')}</button>}
+                          {!isSales && (o.can_delete ?? (o.deal_status !== 'won' && !o.shipment_stage && o.status !== 'computing')) && <button type="button" className="btn btn-sm btn-ghost" disabled={busyId === o.id} onClick={() => setPendingDelete(o)}>{t('orders.deleteQuote')}</button>}
                         </div>
                       </td>
                     )}

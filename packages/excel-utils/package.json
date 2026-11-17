@@ -10,6 +10,7 @@
     "gen:template": "tsx src/scripts/generate-template.ts"
   },
   "dependencies": {
+    "@aeg/shared-types": "workspace:*",
     "exceljs": "^4.4.0",
     "crypto-js": "^4.2.0"
   },
