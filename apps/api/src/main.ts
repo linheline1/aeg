@@ -10,6 +10,10 @@ async function bootstrap() {
     Logger.error('生产环境必须设置 JWT_SECRET 环境变量，拒绝启动', 'Bootstrap');
     process.exit(1);
   }
+  if (process.env.NODE_ENV === 'production' && (!process.env.HCAPTCHA_SECRET || !process.env.HCAPTCHA_SITEKEY || process.env.HCAPTCHA_SITEKEY === '10000000-ffff-ffff-ffff-000000000001' || process.env.HCAPTCHA_SECRET === '0x0000000000000000000000000000000000000000')) {
+    Logger.error('生产环境必须配置正式的 HCAPTCHA_SITEKEY 和 HCAPTCHA_SECRET', 'Bootstrap');
+    process.exit(1);
+  }
   const port = parseInt(process.env.PORT || '5000', 10);
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log']

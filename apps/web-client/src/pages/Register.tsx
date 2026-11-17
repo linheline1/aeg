@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
-import { api, useAuth } from '../store/auth';
+import { api } from '../store/auth';
 import logo from '../assets/logo.png';
 import { useTranslation } from 'react-i18next';
 
@@ -13,7 +13,6 @@ export default function Register() {
   const [license, setLicense] = useState<File | null>(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const { login } = useAuth();
   const nav = useNavigate();
   const update = (key: keyof typeof form, value: string) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -31,8 +30,7 @@ export default function Register() {
       data.append('password', form.password);
       data.append('license', license);
       await api.post('/api/auth/register', data);
-      await login(form.username, form.password);
-      nav('/home');
+      nav('/login', { state: { registered: true } });
     } catch (res: any) {
       setErr(getApiErrorMessage(res, t('register.failed')));
     } finally { setBusy(false); }

@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { LoginCaptcha } from '../../../web-client/src/components/LoginCaptcha';
+import { captchaErrorMessage } from '@aeg/web-shared/login-captcha-error';
 import { loadRememberedPassword, rememberedUsername, saveRememberedPassword, shouldRememberPassword } from '@aeg/web-shared/remember-password';
 import logo from '../assets/logo.png';
 import Icon from '../components/Icon';
 import { errorMessage, useAuth } from '../store/auth';
 
 export default function Login() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaReset, setCaptchaReset] = useState(0);
   const [username, setUsername] = useState(rememberedUsername);
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(shouldRememberPassword);
@@ -29,18 +33,21 @@ export default function Login() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
+    if (!captchaToken) { setError(t('login.captchaRequired')); return; }
     if (!username.trim() || !password) {
       setError(t('login.invalid'));
       return;
     }
     setBusy(true);
     try {
-      await login(username.trim(), password);
+      await login(username.trim(), password, captchaToken);
       await saveRememberedPassword(username.trim(), password, remember);
       const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
       navigate(from || '/', { replace: true });
     } catch (reason) {
-      setError(errorMessage(reason, t('login.wrong')));
+      setCaptchaToken('');
+      setCaptchaReset(value => value + 1);
+      setError(captchaErrorMessage(reason, t) || errorMessage(reason, t('login.wrong')));
     } finally {
       setBusy(false);
     }
@@ -72,6 +79,7 @@ export default function Login() {
             <input id="password" className="form-input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required disabled={busy} />
           </div>
           <label className="remember-password"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} disabled={busy} />{t('login.rememberPassword')}</label>
+          <LoginCaptcha language={i18n.language} onChange={setCaptchaToken} resetKey={captchaReset} />
           {error && <div className="form-error" role="alert"><Icon name="alert" size={18} />{error}</div>}
           <button className="btn btn-lg login-submit" type="submit" disabled={busy}>
             {busy ? <><span className="spinner spinner-light" />{t('login.busy')}</> : <>{t('login.submit')}<Icon name="arrow" size={18} /></>}

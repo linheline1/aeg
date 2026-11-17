@@ -1,19 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { LoginCaptcha } from '../components/LoginCaptcha';
+import { captchaErrorMessage } from '@aeg/web-shared/login-captcha-error';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
 import { loadRememberedPassword, rememberedUsername, saveRememberedPassword, shouldRememberPassword } from '@aeg/web-shared/remember-password';
 import { useAuth } from '../store/auth';
 import logo from '../assets/logo.png';
 
 export default function Login() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaReset, setCaptchaReset] = useState(0);
   const [username, setUsername] = useState(rememberedUsername);
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(shouldRememberPassword);
   const [err, setErr] = useState('');
   const { login } = useAuth();
   const nav = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     void loadRememberedPassword().then((saved) => {
@@ -27,12 +32,15 @@ export default function Login() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr('');
+    if (!captchaToken) { setErr(t('login.captchaRequired')); return; }
     try {
-      await login(username, password);
+      await login(username, password, captchaToken);
       await saveRememberedPassword(username, password, remember);
       nav('/home');
     } catch (res: any) {
-      setErr(getApiErrorMessage(res, t('login.failed')));
+      setCaptchaToken('');
+      setCaptchaReset(value => value + 1);
+      setErr(captchaErrorMessage(res, t) || getApiErrorMessage(res, t('login.failed')));
     }
   };
 
@@ -44,6 +52,7 @@ export default function Login() {
         </div>
         <h1>AEG DDP</h1>
         <p className="sub">{t('login.subtitle')}</p>
+        {(location.state as { registered?: boolean } | null)?.registered && <p role="status">{t('login.registered')}</p>}
         <form onSubmit={onSubmit} autoComplete={remember ? 'on' : 'off'}>
           <div className="form-row">
             <label>{t('login.username')}</label>
@@ -68,6 +77,7 @@ export default function Login() {
             />
           </div>
           <label className="remember-password"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />{t('login.rememberPassword')}</label>
+          <LoginCaptcha language={i18n.language} onChange={setCaptchaToken} resetKey={captchaReset} />
           {err && <p className="err-msg" style={{ textAlign: 'center' }}>❌ {err}</p>}
           <button type="submit" className="btn btn-lg">{t('login.submit')}</button>
         </form>

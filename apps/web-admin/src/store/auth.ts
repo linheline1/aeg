@@ -14,7 +14,7 @@ interface User {
 interface AuthState {
   token: string | null;
   user: User | null;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, captchaToken: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -32,8 +32,8 @@ export const useAuth = create<AuthState>((set) => ({
     return s ? (JSON.parse(s) as User) : null;
   })(),
 
-  login: async (username, password) => {
-    const res = await axios.post(`${API_BASE_URL}/api/auth/login`, { username, password });
+  login: async (username, password, captchaToken) => {
+    const res = await axios.post(`${API_BASE_URL}/api/auth/login`, { username, password, captchaToken });
     const { access_token, user } = res.data;
     localStorage.setItem(TOKEN_KEY, access_token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));

@@ -16,6 +16,7 @@ import Help from './pages/Help';
 import Orders from './pages/Orders';
 import OrderDetail from './pages/OrderDetail';
 import RequireAuth from './components/RequireAuth';
+import InquiryWidget from './components/InquiryWidget';
 import { useAuth } from './store/auth';
 
 /** 官网页面由 LandingShell 自行设置标题，这里跳过 */
@@ -31,7 +32,7 @@ export default function App() {
     document.title = t('app.docTitle');
   }, [pathname, t, i18n.language]);
 
-  return (
+  return (<>
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/company" element={<Company />} />
@@ -53,5 +54,6 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-  );
+    <InquiryWidget />
+  </>);
 }

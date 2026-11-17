@@ -15,6 +15,7 @@ import { HelpModule } from './help/help.module';
 import { CustomsModule } from './customs/customs.module';
 import { PartnerModule } from './partner/partner.module';
 import { VersionModule } from './version/version.module';
+import { InquiryModule } from './inquiry/inquiry.module';
 import { DatabaseModule } from './common/database.module';
 import { ALL_ENTITIES } from './data-source';
 import { seedIfEmpty } from './common/mock-db';
@@ -26,7 +27,7 @@ import { seedIfEmpty } from './common/mock-db';
  */
 const MODE = (process.env.APP_MODULE_MODE || 'mock') as 'mock' | 'postgres';
 
-const imports: any[] = [DatabaseModule, AuthModule, UserModule, TemplateModule, ClientModule, StaffModule, AuditModule, OrderModule, CustomsModule, UploadModule, RatesModule, FxModule, AdminStatsModule, FinanceModule, HelpModule, PartnerModule, VersionModule];
+const imports: any[] = [DatabaseModule, AuthModule, UserModule, TemplateModule, ClientModule, StaffModule, AuditModule, OrderModule, CustomsModule, UploadModule, RatesModule, FxModule, AdminStatsModule, FinanceModule, HelpModule, PartnerModule, VersionModule, InquiryModule];
 
 // VPS 部署时启用 TypeORM
 if (MODE === 'postgres') {

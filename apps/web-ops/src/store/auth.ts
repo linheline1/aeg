@@ -8,7 +8,7 @@ import { clearListCache } from '../lib/list-cache';
 interface User { id: string; username: string; role: Role; client_id?: string; }
 interface AuthState {
   token: string | null; user: User | null;
-  login: (u: string, p: string) => Promise<void>; logout: () => void;
+  login: (u: string, p: string, captchaToken: string) => Promise<void>; logout: () => void;
 }
 
 const TOKEN_KEY = 'aeg_ops_token';
@@ -21,8 +21,8 @@ const API_BASE_URL = (
 export const useAuth = create<AuthState>((set) => ({
   token: localStorage.getItem(TOKEN_KEY),
   user: (() => { const s = localStorage.getItem(USER_KEY); return s ? JSON.parse(s) : null; })(),
-  login: async (username, password) => {
-    const res = await axios.post(`${API_BASE_URL}/api/auth/login`, { username, password });
+  login: async (username, password, captchaToken) => {
+    const res = await axios.post(`${API_BASE_URL}/api/auth/login`, { username, password, captchaToken });
     const { access_token, user } = res.data;
     clearListCache();
     localStorage.setItem(TOKEN_KEY, access_token);

@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import { Public } from '../common/guards/auth.guard';
 import { decodeLicenseFileName, licenseUploadOptions } from '../common/license-upload';
 import { AuthService } from './auth.service';
+import { LoginCaptchaService } from './login-captcha.service';
 import { AuditService } from '../audit/audit.service';
 
 @Controller('auth')
@@ -17,13 +18,15 @@ export class AuthController {
   constructor(
     private readonly jwtService: JwtService,
     private readonly authService: AuthService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly captcha: LoginCaptchaService
   ) {}
 
   @Public()
   @Post('login')
   @HttpCode(200)
-  async login(@Body() dto: { username: string; password: string }) {
+  async login(@Body() dto: { username: string; password: string; captchaToken: string }) {
+    await this.captcha.verify(dto.captchaToken);
     const user = await this.authService.findByUsername(dto.username);
     if (!user || user.status !== 'active') {
       throw new UnauthorizedException('用户名或密码错误');

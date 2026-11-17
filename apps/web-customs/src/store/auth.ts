@@ -24,7 +24,7 @@ function storedUser(): CustomsUser | null {
 interface AuthState {
   token: string | null;
   user: CustomsUser | null;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, captchaToken: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -38,8 +38,8 @@ if (!initialUser) {
 export const useAuth = create<AuthState>((set) => ({
   token: initialToken,
   user: initialUser,
-  login: async (username, password) => {
-    const response = await axios.post(`${API_BASE_URL}/api/auth/login`, { username, password });
+  login: async (username, password, captchaToken) => {
+    const response = await axios.post(`${API_BASE_URL}/api/auth/login`, { username, password, captchaToken });
     const { access_token, user } = response.data as { access_token: string; user: CustomsUser };
     if (user.role !== 'customs') {
       throw new Error('Esta conta não tem acesso ao portal de despacho aduaneiro.');

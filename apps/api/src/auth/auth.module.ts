@@ -5,6 +5,7 @@ import { AuthGuard, RolesGuard } from '../common/guards/auth.guard';
 import { ClientScopeInterceptor } from '../common/interceptors/client-scope.interceptor';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { LoginCaptchaService } from './login-captcha.service';
 import { AuditService } from '../audit/audit.service';
 import { UserService } from '../user/user.service';
 
@@ -18,6 +19,7 @@ import { UserService } from '../user/user.service';
   controllers: [AuthController],
   providers: [
     AuthService,
+    LoginCaptchaService,
     AuditService,
     UserService,
     // 全局 Guard / Interceptor
