@@ -66,7 +66,7 @@ function validate(row: Row, t: TFunction): RowError[] {
   }
   if (Number(d.gw_per_carton) < Number(d.nw_per_carton)) errors.push({ row: row.row_no, field_key: 'gw_per_carton', reason: t('upload.errors.gwLtNw') });
   if (d.carton_no && !/^\d+(-\d+)?$/.test(String(d.carton_no))) errors.push({ row: row.row_no, field_key: 'carton_no', reason: t('upload.errors.cartonNoFormat') });
-  if (d.hs_code && !/^\d{8}$/.test(String(d.hs_code))) errors.push({ row: row.row_no, field_key: 'hs_code', reason: t('upload.errors.ncm8') });
+  if (d.hs_code && !/^(?:\d{6}|\d{8})$/.test(String(d.hs_code).trim())) errors.push({ row: row.row_no, field_key: 'hs_code', reason: t('upload.errors.ncm8') });
   const source = row.source_totals || {};
   if (source.total_pcs != null && Math.abs(Number(source.total_pcs) - d.total_pcs) > 0.000001) {
     errors.push({ row: row.row_no, field_key: 'total_pcs', reason: t('upload.errors.totalPcsMismatch', { source: source.total_pcs, computed: d.total_pcs }) });
@@ -93,6 +93,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   const [aiNotes, setAiNotes] = useState('');
   const [serverErrors, setServerErrors] = useState<RowError[]>([]);
   const [busy, setBusy] = useState(false);
+  const aiInFlight = useRef(false);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [uploadStage, setUploadStage] = useState<'uploading' | 'recognizing' | null>(null);
   const [err, setErr] = useState('');
@@ -118,6 +119,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
 
   const fieldLabel = (key: string) => t(`upload.field.${key}`, { defaultValue: key });
   const computedRows = useMemo(() => rows.map(calculate), [rows]);
+  const needsNcmCompletion = computedRows.some(row => !String(row.data.hs_code || '').trim() || /^\d{6}$/.test(String(row.data.hs_code).trim()));
   const localErrors = useMemo(() => computedRows.flatMap(row => validate(row, t)), [computedRows, t]);
   const remainingServerErrors = serverErrors.filter(error => !localErrors.some(item => item.row === error.row && item.field_key === error.field_key));
   const errors = [...localErrors, ...remainingServerErrors];
@@ -267,12 +269,17 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
         setErr(response.data.error_summary || t('upload.err.recognizeFailed'));
         return;
       }
+      const previewRows: Row[] = response.data.rows || [];
       setDraftId(response.data.draft_id);
-      setRows(response.data.rows || []);
+      setRows(previewRows);
       setCurrency(response.data.declared_currency || 'RMB');
       setConvertedByAi(!!response.data.converted_by_ai);
       setAiNotes(response.data.ai_notes || '');
       setServerErrors(response.data.errors || []);
+      if (previewRows.some(row => /^\d{6}$/.test(String(row.data.hs_code || '').trim()))) {
+        setUploadStage(null);
+        await runAiCheck(response.data.draft_id, previewRows);
+      }
     } catch (e: any) {
       const serverMessage = e?.response?.data?.message || e?.response?.data?.error_summary;
       if (serverMessage) setErr(serverMessage);
@@ -296,6 +303,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   };
 
   const applyPriceColumn = () => {
+    if (busy || aiInFlight.current) return;
     const fail = (message: string) => { setPasteError(message); setErr(message); };
     const values = pricePaste.replace(/[\r\n]+$/, '').split(/\r?\n|\t/).map(value => value.trim());
     if (!values.length || !values.some(Boolean)) { fail(t('upload.err.priceEmpty')); return; }
@@ -320,21 +328,25 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   };
 
   const applyNcmColumn = () => {
+    if (busy || aiInFlight.current) return;
     const fail = (message: string) => { setPasteError(message); setErr(message); };
     const values = ncmPaste.replace(/[\r\n]+$/, '').split(/\r?\n|\t/).map(value => value.trim());
     if (!values.length || !values.some(Boolean)) { fail(t('upload.err.ncmEmpty')); return; }
     if (values.length > rows.length) { fail(t('upload.err.ncmTooMany', { pasted: values.length, rows: rows.length })); return; }
-    const invalid = values.find(value => value && !/^\d{8}$/.test(value));
+    const invalid = values.find(value => value && !/^(?:\d{6}|\d{8})$/.test(value));
     if (invalid) { fail(t('upload.err.ncmInvalid', { value: invalid })); return; }
-    setRows(current => current.map((row, index) => index < values.length
-      ? { ...row, data: { ...row.data, hs_code: values[index] } } : row));
+    const nextRows = rows.map((row, index) => index < values.length
+      ? { ...row, data: { ...row.data, hs_code: values[index] } } : row);
+    setRows(nextRows);
     setServerErrors(current => current.filter(error => error.field_key !== 'hs_code'));
     setAiChecked(false); setAiCheckNote(t('upload.note.ncmUpdated')); setErr(''); setPasteError('');
     setShowNcmPaste(false); setNcmPaste('');
     showToast(t('upload.toast.ncmUpdated', { count: values.length }));
+    if (values.some(value => /^\d{6}$/.test(value))) void runAiCheck(draftId, nextRows);
   };
 
   const applyRowPaste = () => {
+    if (busy || aiInFlight.current) return;
     const targetIndex = rows.findIndex(row => row.row_no === rowPasteTarget);
     if (targetIndex < 0) { setErr(t('upload.err.rowGone')); return; }
     const lines = rowPaste.replace(/(?:\r?\n)+$/, '').split(/\r?\n/).filter(line => line.trim());
@@ -348,11 +360,11 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
         const key = pasteFields[index];
         const value = cells[index].trim();
         if (numericFields.has(key) && value && !Number.isFinite(Number(value))) { setErr(t('upload.err.fieldNotNumber', { field: fieldLabel(key), value })); return; }
-        if (key === 'hs_code' && value && !/^\d{8}$/.test(value)) { setErr(t('upload.err.ncm8Short', { value })); return; }
+        if (key === 'hs_code' && value && !/^(?:\d{6}|\d{8})$/.test(value)) { setErr(t('upload.err.ncm8Short', { value })); return; }
       }
     }
     const affected = new Set(rows.slice(targetIndex, targetIndex + values.length).map(row => row.row_no));
-    setRows(current => current.map((row, index) => {
+    const nextRows = rows.map((row, index) => {
       if (index < targetIndex || index >= targetIndex + values.length) return row;
       const data = { ...row.data };
       pasteFields.forEach((key, fieldIndex) => {
@@ -360,39 +372,49 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
         data[key] = numericFields.has(key) ? (value === '' ? null : Number(value)) : value;
       });
       return { ...row, data };
-    }));
+    });
+    setRows(nextRows);
     setServerErrors(current => current.filter(error => !affected.has(error.row)));
     setNcmSuggestions(current => current.filter(item => !affected.has(item.row_no)));
     setAiChecked(false); setAiCheckNote(t('upload.note.dataChanged')); setErr('');
     setRowPasteTarget(null); setRowPaste('');
     showToast(t('upload.toast.rowPasted', { count: values.length }));
+    if (values.some(cells => /^\d{6}$/.test(cells[pasteFields.indexOf('hs_code')].trim()))) void runAiCheck(draftId, nextRows);
   };
 
-  const aiCheck = async () => {
-    if (!draftId || !rows.length || errors.length > 0) return;
+  const runAiCheck = async (id: string, candidateRows: Row[]) => {
+    if (!id || !candidateRows.length || aiInFlight.current) return;
+    aiInFlight.current = true;
     setBusy(true); setErr(''); setMessage(''); setAiCheckNote('');
     try {
       const response = await api.post('/api/client/orders/upload/ai-check', {
-        draft_id: draftId, rows: computedRows
-      }, { timeout: 180_000 });
-      setRows(response.data.rows || computedRows);
+        draft_id: id, rows: candidateRows.map(calculate)
+      }, { timeout: 290_000 });
+      setRows(response.data.rows || candidateRows);
       setNcmSuggestions(response.data.suggestions || []);
       setServerErrors(response.data.issues || []);
+      const completed = Number(response.data.ncm_count || 0);
+      const low = Number(response.data.low_confidence_count || 0);
+      if (completed) setAiCheckNote(!response.data.ok
+        ? t('upload.note.aiPartial', { count: completed })
+        : low ? t('upload.note.aiDoneLow', { count: completed, low })
+          : t('upload.note.aiDone', { count: completed }));
       if (!response.data.ok) {
         setAiChecked(false);
         setErr(t('upload.err.aiIssues', { count: response.data.issues?.length || 0 }));
         return;
       }
       setAiChecked(true);
-      const low = Number(response.data.low_confidence_count || 0);
-      setAiCheckNote(low
-        ? t('upload.note.aiDoneLow', { count: response.data.ncm_count || 0, low })
-        : t('upload.note.aiDone', { count: response.data.ncm_count || 0 }));
+      if (!completed) setAiCheckNote(t('upload.note.aiDone', { count: 0 }));
       showToast(t('upload.toast.aiPassed'));
     } catch (e: any) {
       setAiChecked(false);
       setErr(getApiErrorMessage(e, t('upload.err.aiFailed')));
-    } finally { setBusy(false); }
+    } finally { aiInFlight.current = false; setBusy(false); }
+  };
+  const aiCheck = async () => {
+    if (!draftId || !rows.length || (errors.length > 0 && !needsNcmCompletion)) return;
+    await runAiCheck(draftId, rows);
   };
 
   const cancel = async () => {
@@ -403,7 +425,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   };
 
   const confirm = async () => {
-    if (!draftId || !rows.length || errors.length > 0 || (!aiChecked && !computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim())))) return;
+    if (!draftId || !rows.length || errors.length > 0 || !computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim()))) return;
     setBusy(true); setErr(''); setMessage('');
     try {
       const response = await api.post('/api/client/orders/upload/confirm', {
@@ -432,8 +454,10 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       type={type}
       step={type === 'number' ? 'any' : undefined}
       value={row.data[key] ?? ''}
+      disabled={busy}
       title={errors.filter(error => error.row === row.row_no && error.field_key === key).map(error => error.reason).join(t('upload.fieldSeparator'))}
       onChange={event => update(index, key, event.target.value)}
+      onBlur={event => { if (key === 'hs_code' && /^\d{6}$/.test(event.currentTarget.value.trim())) void runAiCheck(draftId, rows); }}
     />
   );
 
@@ -639,8 +663,8 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
           </div>}
           {aiCheckNote && <div className={`alert ${aiChecked ? 'alert-ok' : 'alert-warn'} mt-12`}>{aiCheckNote}</div>}
           <div className="row gap-md mt-12">
-            {!computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim())) && <button className="btn btn-lg" disabled={busy || !rows.length || errors.length > 0} onClick={aiCheck}>{busy ? t('upload.aiChecking') : t('upload.aiCheck')}</button>}
-            <button className="btn btn-lg btn-success" disabled={busy || !rows.length || errors.length > 0 || (!aiChecked && !computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim())))} onClick={confirm}>{busy ? t('upload.creating') : t('upload.submit')}</button>
+            {!computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim())) && <button className="btn btn-lg" disabled={busy || !rows.length || (errors.length > 0 && !needsNcmCompletion)} onClick={aiCheck}>{busy ? t('upload.aiChecking') : t('upload.aiCheck')}</button>}
+            <button className="btn btn-lg btn-success" disabled={busy || !rows.length || errors.length > 0 || !computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim()))} onClick={confirm}>{busy ? t('upload.creating') : t('upload.submit')}</button>
             <button className="btn btn-ghost" disabled={busy} onClick={cancel}>{t('upload.cancelAndReselect')}</button>
           </div>
         </div>

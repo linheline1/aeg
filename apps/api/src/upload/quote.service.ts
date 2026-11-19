@@ -686,7 +686,7 @@ export class QuoteService {
     try { fs.unlinkSync(filePath); } catch { /* ignore */ }
 
     const previewRows: ParsedRow[] = JSON.parse(JSON.stringify(parsed.rows));
-    const errors = previewRows.flatMap(row => this.validateAndComputeRow(row, parsed.warehouseCode || ''));
+    const errors = previewRows.flatMap(row => this.validateAndComputeRow(row, parsed.warehouseCode || '', true));
     const summary = this.computeSummary(previewRows);
     await this.uploadDraftsRepo.insert({
       id: draftId,
@@ -827,26 +827,26 @@ export class QuoteService {
       seen.add(rowNo);
       return { row_no: rowNo, data: { ...row.data }, source_totals: row.source_totals };
     });
-    const issues = rows.flatMap(row => this.validateAndComputeRow(row, draft.warehouse_code || ''));
-    if (issues.length) return { ok: false, rows, issues, ncm_count: 0, low_confidence_count: 0 };
+    const issues = rows.flatMap(row => this.validateAndComputeRow(row, draft.warehouse_code || '', true));
 
-    const missingNcm = rows.filter(row => !String(row.data.hs_code || '').trim());
-    const images = (draft.screenshots || []).filter((image: any) => missingNcm.some(row => Number(row.row_no) === Number(image.row_no)))
+    const needsNcm = rows.filter(row => !String(row.data.hs_code || '').trim() || /^\d{6}$/.test(String(row.data.hs_code).trim()));
+    const images = (draft.screenshots || []).filter((image: any) => needsNcm.some(row => Number(row.row_no) === Number(image.row_no)))
       .map((image: any) => ({ row_no: image.row_no, file_path: image.file_path, mime_type: image.mimetype, size_bytes: image.size }));
-    const suggestions = missingNcm.length ? await this.aiNcm.suggest({
-      line_items: missingNcm.map(row => ({ row_no: row.row_no, ...row.data })), images
+    const suggestions = needsNcm.length ? await this.aiNcm.suggest({
+      line_items: needsNcm.map(row => ({ row_no: row.row_no, ...row.data })), images
     }) : [];
     const byRow = new Map(suggestions.map(item => [Number(item.row_no), item]));
     let ncmCount = 0;
     let lowConfidenceCount = 0;
-    for (const row of missingNcm) {
+    for (const row of needsNcm) {
       const suggestion = byRow.get(Number(row.row_no));
       const ncm = String(suggestion?.ncm || '').replace(/\D/g, '').slice(0, 8);
-      if (/^\d{8}$/.test(ncm)) {
+      const prefix = String(row.data.hs_code || '').trim();
+      if (/^\d{8}$/.test(ncm) && (!prefix || ncm.startsWith(prefix))) {
         row.data.hs_code = ncm;
         ncmCount += 1;
       } else {
-        issues.push({ row: row.row_no, col_letter: '', field_key: 'hs_code', reason: 'AI 未能识别有效的 8 位 NCM' });
+        issues.push({ row: row.row_no, col_letter: '', field_key: 'hs_code', reason: prefix ? `AI 未能找到以 ${prefix} 开头的有效 8 位巴西 NCM，请人工确认后修改` : 'AI 未能识别有效的 8 位 NCM' });
       }
       if (Number(suggestion?.confidence) < 0.5) {
         lowConfidenceCount += 1;
@@ -1208,7 +1208,7 @@ export class QuoteService {
   }
 
   /** 行校验 + 重算公式列；返回该行的错误列表 */
-  private validateAndComputeRow(row: ParsedRow, warehouseB2: string): RowError[] {
+  private validateAndComputeRow(row: ParsedRow, warehouseB2: string, allowSixDigitNcm = false): RowError[] {
     const errs: RowError[] = [];
     const d = row.data;
 
@@ -1248,7 +1248,7 @@ export class QuoteService {
         }
       }
       if (f.validation_pattern) {
-        const re = new RegExp(f.validation_pattern);
+        const re = f.field_key === 'hs_code' && allowSixDigitNcm ? /^(?:\d{6}|\d{8})$/ : new RegExp(f.validation_pattern);
         if (!re.test(String(v))) {
           errs.push({ row: row.row_no, col_letter: f.col_letter, field_key: f.field_key, reason: `格式不符（${f.validation_pattern}）` });
         }

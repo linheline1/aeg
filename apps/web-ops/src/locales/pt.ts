@@ -694,6 +694,8 @@ export default {
   'orders.previewExcel': 'Ler Excel e editar',
   'orders.reviewRows': '{{count}} linhas identificadas; confira e edite',
   'orders.aiCheckExcel': 'Verificar com IA / completar NCM',
+  'orders.sixDigitNcmHint': '{{count}} linhas têm código HS de 6 dígitos. Clique em “Verificar com IA / completar NCM” para obter o NCM brasileiro de 8 dígitos e revise a sugestão antes de enviar.',
+  'orders.autoCompletingNcm': 'A IA está completando os códigos HS de 6 dígitos para NCM brasileiro de 8 dígitos. Aguarde…',
   'orders.confirmExcel': 'Confirmar e criar cotação',
   'orders.reviewIssues': 'Corrija os problemas de validação das linhas',
   'orders.pasteOverflow': 'A colagem excede as linhas ou colunas editáveis',
