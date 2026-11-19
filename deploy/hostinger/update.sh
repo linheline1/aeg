@@ -29,6 +29,7 @@ echo "=== 5. 发布四端静态页面 ==="
 # Nginx 从 /opt/aeg-ddp-current 读取前端文件，不能只构建在 APP_ROOT。
 # 先准备完整发布目录，再一次性切换符号链接，避免四端出现不同版本。
 release_dir="$(mktemp -d "/opt/aeg-ddp-release-$(git rev-parse --short HEAD)-XXXXXX")"
+chmod 755 "$release_dir"
 for app in web-client web-ops web-admin web-customs; do
   mkdir -p "$release_dir/apps/$app"
   cp -a "$APP_ROOT/apps/$app/dist" "$release_dir/apps/$app/"
