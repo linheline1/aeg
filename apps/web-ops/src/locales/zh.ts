@@ -700,6 +700,8 @@ export default {
   'orders.previewExcel': '识别 Excel 并编辑',
   'orders.reviewRows': '识别到 {{count}} 行，请核对修改',
   'orders.aiCheckExcel': 'AI 检查 / 补全 NCM',
+  'orders.aiCheckPartial': '已补全 {{completed}} 行，另有 {{remaining}} 行仍需处理；请查看各行原因并重试。',
+  'orders.aiCompletedCount': '本次 AI 已补全 {{count}} 行 NCM。',
   'orders.sixDigitNcmHint': '检测到 {{count}} 行 6 位 HS 编码。点击“AI 检查 / 补全 NCM”补齐巴西 8 位 NCM；请核对建议后再提交。',
   'orders.autoCompletingNcm': '正在用 AI 将 6 位 HS 编码补全为巴西 8 位 NCM，请稍候…',
   'orders.confirmExcel': '确认并生成报价',

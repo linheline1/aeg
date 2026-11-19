@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import type { ClipboardEvent as ReactClipboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -94,27 +95,19 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   const [serverErrors, setServerErrors] = useState<RowError[]>([]);
   const [busy, setBusy] = useState(false);
   const aiInFlight = useRef(false);
+  const [selection, setSelection] = useState<{ startRow: number; startCol: number; endRow: number; endCol: number } | null>(null);
+  const selecting = useRef(false);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [uploadStage, setUploadStage] = useState<'uploading' | 'recognizing' | null>(null);
   const [err, setErr] = useState('');
   const [message, setMessage] = useState('');
   const [aiChecked, setAiChecked] = useState(false);
   const [aiCheckNote, setAiCheckNote] = useState('');
-  const [pricePaste, setPricePaste] = useState('');
-  const [pasteError, setPasteError] = useState('');
-  const [showPricePaste, setShowPricePaste] = useState(false);
-  const [ncmPaste, setNcmPaste] = useState('');
-  const [showNcmPaste, setShowNcmPaste] = useState(false);
   const [rowPasteTarget, setRowPasteTarget] = useState<number | null>(null);
   const [rowPaste, setRowPaste] = useState('');
   const [ncmSuggestions, setNcmSuggestions] = useState<NcmSuggestion[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const ncmPasteRef = useRef<HTMLDivElement | null>(null);
-  const openNcmPaste = () => {
-    setShowNcmPaste(value => !value);
-    if (!showNcmPaste) window.setTimeout(() => ncmPasteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
-  };
   const dragDepth = useRef(0);
 
   const fieldLabel = (key: string) => t(`upload.field.${key}`, { defaultValue: key });
@@ -132,7 +125,8 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
 
   const reset = () => {
     setDraftId(''); setRows([]); setServerErrors([]); setErr(''); setMessage(''); setConvertedByAi(false); setAiNotes('');
-    setAiChecked(false); setAiCheckNote(''); setPricePaste(''); setShowPricePaste(false); setNcmPaste(''); setShowNcmPaste(false); setRowPasteTarget(null); setRowPaste(''); setNcmSuggestions([]);
+    setAiChecked(false); setAiCheckNote(''); setRowPasteTarget(null); setRowPaste(''); setNcmSuggestions([]);
+    setSelection(null);
   };
 
   /**
@@ -302,47 +296,12 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     setAiCheckNote(t('upload.note.dataChanged'));
   };
 
-  const applyPriceColumn = () => {
-    if (busy || aiInFlight.current) return;
-    const fail = (message: string) => { setPasteError(message); setErr(message); };
-    const values = pricePaste.replace(/[\r\n]+$/, '').split(/\r?\n|\t/).map(value => value.trim());
-    if (!values.length || !values.some(Boolean)) { fail(t('upload.err.priceEmpty')); return; }
-    if (values.length > rows.length) { fail(t('upload.err.priceTooMany', { pasted: values.length, rows: rows.length })); return; }
-    const invalid = values.find(value => value && parsePastedPrice(value) === null);
-    if (invalid !== undefined) { fail(t('upload.err.priceInvalid', { value: invalid })); return; }
-    setRows(current => current.map((row, index) => index < values.length
-      ? { ...row, data: { ...row.data, unit_price: parsePastedPrice(values[index]) } }
-      : row));
-    setServerErrors(current => current.filter(error => error.field_key !== 'unit_price' && error.field_key !== 'total_price'));
-    setAiChecked(false); setAiCheckNote(t('upload.note.priceUpdated')); setErr(''); setPasteError('');
-    setShowPricePaste(false); setPricePaste('');
-    showToast(t('upload.toast.priceUpdated', { count: values.length }));
-  };
-
   const removeRow = (rowNo: number) => {
     setRows(current => current.filter(row => row.row_no !== rowNo));
     setServerErrors(current => current.filter(error => error.row !== rowNo));
     setAiChecked(false);
     setNcmSuggestions(current => current.filter(item => item.row_no !== rowNo));
     setAiCheckNote(t('upload.note.rowDeleted'));
-  };
-
-  const applyNcmColumn = () => {
-    if (busy || aiInFlight.current) return;
-    const fail = (message: string) => { setPasteError(message); setErr(message); };
-    const values = ncmPaste.replace(/[\r\n]+$/, '').split(/\r?\n|\t/).map(value => value.trim());
-    if (!values.length || !values.some(Boolean)) { fail(t('upload.err.ncmEmpty')); return; }
-    if (values.length > rows.length) { fail(t('upload.err.ncmTooMany', { pasted: values.length, rows: rows.length })); return; }
-    const invalid = values.find(value => value && !/^(?:\d{6}|\d{8})$/.test(value));
-    if (invalid) { fail(t('upload.err.ncmInvalid', { value: invalid })); return; }
-    const nextRows = rows.map((row, index) => index < values.length
-      ? { ...row, data: { ...row.data, hs_code: values[index] } } : row);
-    setRows(nextRows);
-    setServerErrors(current => current.filter(error => error.field_key !== 'hs_code'));
-    setAiChecked(false); setAiCheckNote(t('upload.note.ncmUpdated')); setErr(''); setPasteError('');
-    setShowNcmPaste(false); setNcmPaste('');
-    showToast(t('upload.toast.ncmUpdated', { count: values.length }));
-    if (values.some(value => /^\d{6}$/.test(value))) void runAiCheck(draftId, nextRows);
   };
 
   const applyRowPaste = () => {
@@ -447,6 +406,50 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     } finally { setBusy(false); }
   };
 
+  const selectedBounds = selection && {
+    top: Math.min(selection.startRow, selection.endRow), bottom: Math.max(selection.startRow, selection.endRow),
+    left: Math.min(selection.startCol, selection.endCol), right: Math.max(selection.startCol, selection.endCol)
+  };
+  const selectedCell = (row: number, col: number) => selectedBounds && row >= selectedBounds.top && row <= selectedBounds.bottom && col >= selectedBounds.left && col <= selectedBounds.right ? 'upload-grid-selected' : undefined;
+  const copyGrid = (event: ReactClipboardEvent<HTMLElement>) => {
+    if (!selectedBounds || (selectedBounds.top === selectedBounds.bottom && selectedBounds.left === selectedBounds.right)) return;
+    event.preventDefault();
+    event.clipboardData.setData('text/plain', Array.from({ length: selectedBounds.bottom - selectedBounds.top + 1 }, (_, offset) =>
+      pasteFields.slice(selectedBounds.left, selectedBounds.right + 1).map(key => String(computedRows[selectedBounds.top + offset]?.data[key] ?? '')).join('\t')).join('\n'));
+  };
+  const pasteGrid = (event: ReactClipboardEvent<HTMLElement>, startRow: number, startCol: number) => {
+    const raw = event.clipboardData.getData('text/plain');
+    if (!/[\t\r\n]/.test(raw)) return;
+    event.preventDefault();
+    const cells = raw.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n').map(line => line.split('\t'));
+    if (startRow + cells.length > rows.length || cells.some(line => startCol + line.length > pasteFields.length)) {
+      setErr(t('upload.err.gridPasteOverflow')); return;
+    }
+    for (const line of cells) for (let offset = 0; offset < line.length; offset++) {
+      const key = pasteFields[startCol + offset];
+      const value = line[offset].trim();
+      if (numericFields.has(key) && value && parsePastedPrice(value) === null) { setErr(t('upload.err.fieldNotNumber', { field: fieldLabel(key), value })); return; }
+      if (key === 'hs_code' && value && !/^(?:\d{6}|\d{8})$/.test(value)) { setErr(t('upload.err.ncm8Short', { value })); return; }
+    }
+    const affected = new Set(rows.slice(startRow, startRow + cells.length).map(row => row.row_no));
+    const nextRows = rows.map((row, index) => {
+      if (index < startRow || index >= startRow + cells.length) return row;
+      const data = { ...row.data };
+      cells[index - startRow].forEach((rawValue, offset) => {
+        const key = pasteFields[startCol + offset];
+        const value = rawValue.trim();
+        data[key] = numericFields.has(key) ? (value ? parsePastedPrice(value) : null) : value;
+      });
+      return { ...row, data };
+    });
+    setRows(nextRows);
+    setServerErrors(current => current.filter(error => !affected.has(error.row)));
+    setNcmSuggestions(current => current.filter(item => !affected.has(item.row_no)));
+    setSelection({ startRow, startCol, endRow: startRow + cells.length - 1, endCol: startCol + Math.max(...cells.map(line => line.length)) - 1 });
+    setAiChecked(false); setAiCheckNote(t('upload.note.dataChanged')); setErr('');
+    if (cells.some(line => line.some((value, offset) => pasteFields[startCol + offset] === 'hs_code' && /^\d{6}$/.test(value.trim())))) void runAiCheck(draftId, nextRows);
+  };
+
   const input = (row: Row, index: number, key: string, type = 'text') => (
     <input
       className={`form-input form-input-sm${errors.some(error => error.row === row.row_no && error.field_key === key) ? ' upload-field-error' : ''}`}
@@ -457,6 +460,8 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       disabled={busy}
       title={errors.filter(error => error.row === row.row_no && error.field_key === key).map(error => error.reason).join(t('upload.fieldSeparator'))}
       onChange={event => update(index, key, event.target.value)}
+      onPaste={event => pasteGrid(event, index, pasteFields.indexOf(key as typeof pasteFields[number]))}
+      onCopy={copyGrid}
       onBlur={event => { if (key === 'hs_code' && /^\d{6}$/.test(event.currentTarget.value.trim())) void runAiCheck(draftId, rows); }}
     />
   );
@@ -589,16 +594,21 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
             </div>
           )}
 
-          <div className="row gap-md mt-12" style={{ flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={openNcmPaste}>{t('upload.pasteNcmColumn')}</button>
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setShowPricePaste(value => !value)}>{t('upload.pastePriceColumn')}</button>
-          </div>
           <div className="table-wrap mt-12">
-            <table className="table" style={{ minWidth: 1800 }}>
+            <table className="table client-upload-grid" style={{ minWidth: 1800 }} onPointerDown={event => {
+              const cell = (event.target as HTMLElement).closest<HTMLElement>('td[data-grid-col]');
+              if (!cell || event.button !== 0 || busy) return;
+              selecting.current = true;
+              setSelection({ startRow: Number(cell.dataset.gridRow), endRow: Number(cell.dataset.gridRow), startCol: Number(cell.dataset.gridCol), endCol: Number(cell.dataset.gridCol) });
+            }} onPointerMove={(event: ReactPointerEvent<HTMLTableElement>) => {
+              if (!selecting.current || event.buttons !== 1) return;
+              const cell = (event.target as HTMLElement).closest<HTMLElement>('td[data-grid-col]');
+              if (cell) setSelection(current => current && ({ ...current, endRow: Number(cell.dataset.gridRow), endCol: Number(cell.dataset.gridCol) }));
+            }} onPointerUp={() => { selecting.current = false; }} onPointerLeave={() => { selecting.current = false; }}>
               <thead><tr>
-                <th>{t('upload.th.row')}</th><th>{t('upload.field.carton_no')}</th><th>{t('upload.field.product_cn')}</th><th>{t('upload.field.product_en')}</th><th>{t('upload.field.sku')}</th><th>{t('upload.field.hs_code')}<button type="button" className="btn-link price-paste-trigger" onClick={openNcmPaste}>{t('upload.pasteColumn')}</button></th>
+                <th>{t('upload.th.row')}</th><th>{t('upload.field.carton_no')}</th><th>{t('upload.field.product_cn')}</th><th>{t('upload.field.product_en')}</th><th>{t('upload.field.sku')}</th><th>{t('upload.field.hs_code')}</th>
                 <th>{t('upload.field.cartons')}</th><th>{t('upload.field.pcs_per_carton')}</th><th>{t('upload.field.total_pcs')}</th><th>{t('upload.field.nw_per_carton')}</th><th>{t('upload.field.gw_per_carton')}</th>
-                <th>{t('upload.field.length_cm')}</th><th>{t('upload.field.width_cm')}</th><th>{t('upload.field.height_cm')}</th><th>{t('upload.field.total_cbm')}</th><th>{t('upload.th.unitPrice', { currency })}<button type="button" className="btn-link price-paste-trigger" onClick={() => setShowPricePaste(value => !value)}>{t('upload.pasteColumn')}</button></th><th>{t('upload.th.totalPrice', { currency })}</th><th>{t('upload.field.material')}</th><th>{t('upload.field.description')}</th><th>{t('upload.th.issue')}</th><th>{t('upload.th.actions')}</th>
+                <th>{t('upload.field.length_cm')}</th><th>{t('upload.field.width_cm')}</th><th>{t('upload.field.height_cm')}</th><th>{t('upload.field.total_cbm')}</th><th>{t('upload.th.unitPrice', { currency })}</th><th>{t('upload.th.totalPrice', { currency })}</th><th>{t('upload.field.material')}</th><th>{t('upload.field.description')}</th><th>{t('upload.th.issue')}</th><th>{t('upload.th.actions')}</th>
               </tr></thead>
               <tbody>
                 {computedRows.map((row, index) => {
@@ -606,28 +616,28 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
                   return (
                     <tr key={row.row_no} style={rowHasError ? { background: '#fff5f5' } : undefined}>
                       <td>{row.row_no}</td>
-                      <td>{input(row, index, 'carton_no')}</td>
-                      <td>{input(row, index, 'product_cn')}</td>
-                      <td>{input(row, index, 'product_en')}</td>
-                      <td>{input(row, index, 'sku')}</td>
-                      <td>{input(row, index, 'hs_code')}{ncmSuggestions.filter(item => item.row_no === row.row_no).map(item => <div className="upload-ncm-suggestion" key={item.row_no}>{t('upload.aiSuggestion', { confidence: Math.round(item.confidence * 100) })}{item.used_image ? t('upload.aiUsedImage') : ''}<span>{item.rationale}</span></div>)}</td>
-                      <td>{input(row, index, 'cartons', 'number')}</td>
-                      <td>{input(row, index, 'pcs_per_carton', 'number')}</td>
+                      <td data-grid-row={index} data-grid-col={0} className={selectedCell(index, 0)}>{input(row, index, 'carton_no')}</td>
+                      <td data-grid-row={index} data-grid-col={1} className={selectedCell(index, 1)}>{input(row, index, 'product_cn')}</td>
+                      <td data-grid-row={index} data-grid-col={2} className={selectedCell(index, 2)}>{input(row, index, 'product_en')}</td>
+                      <td data-grid-row={index} data-grid-col={3} className={selectedCell(index, 3)}>{input(row, index, 'sku')}</td>
+                      <td data-grid-row={index} data-grid-col={4} className={selectedCell(index, 4)}>{input(row, index, 'hs_code')}{ncmSuggestions.filter(item => item.row_no === row.row_no).map(item => <div className="upload-ncm-suggestion" key={item.row_no}>{t('upload.aiSuggestion', { confidence: Math.round(item.confidence * 100) })}{item.used_image ? t('upload.aiUsedImage') : ''}<span>{item.rationale}</span></div>)}</td>
+                      <td data-grid-row={index} data-grid-col={5} className={selectedCell(index, 5)}>{input(row, index, 'cartons', 'number')}</td>
+                      <td data-grid-row={index} data-grid-col={6} className={selectedCell(index, 6)}>{input(row, index, 'pcs_per_carton', 'number')}</td>
                       <td>{Number(row.data.total_pcs).toLocaleString()}</td>
-                      <td>{input(row, index, 'nw_per_carton', 'number')}</td>
-                      <td>{input(row, index, 'gw_per_carton', 'number')}</td>
-                      <td>{input(row, index, 'length_cm', 'number')}</td>
-                      <td>{input(row, index, 'width_cm', 'number')}</td>
-                      <td>{input(row, index, 'height_cm', 'number')}</td>
+                      <td data-grid-row={index} data-grid-col={7} className={selectedCell(index, 7)}>{input(row, index, 'nw_per_carton', 'number')}</td>
+                      <td data-grid-row={index} data-grid-col={8} className={selectedCell(index, 8)}>{input(row, index, 'gw_per_carton', 'number')}</td>
+                      <td data-grid-row={index} data-grid-col={9} className={selectedCell(index, 9)}>{input(row, index, 'length_cm', 'number')}</td>
+                      <td data-grid-row={index} data-grid-col={10} className={selectedCell(index, 10)}>{input(row, index, 'width_cm', 'number')}</td>
+                      <td data-grid-row={index} data-grid-col={11} className={selectedCell(index, 11)}>{input(row, index, 'height_cm', 'number')}</td>
                       <td>{Number(row.data.total_cbm).toFixed(4)}</td>
-                      <td>{input(row, index, 'unit_price', 'number')}</td>
+                      <td data-grid-row={index} data-grid-col={12} className={selectedCell(index, 12)}>{input(row, index, 'unit_price', 'number')}</td>
                       <td>{Number(row.data.total_price).toFixed(2)}</td>
-                      <td>
-                        <select className="form-input form-input-sm" value={row.data.material || '其他'} onChange={event => update(index, 'material', event.target.value)}>
+                      <td data-grid-row={index} data-grid-col={13} className={selectedCell(index, 13)}>
+                        <select className="form-input form-input-sm" value={row.data.material || '其他'} onChange={event => update(index, 'material', event.target.value)} onPaste={event => pasteGrid(event, index, 13)} onCopy={copyGrid}>
                           {MATERIAL_OPTIONS.map(option => <option key={option.value} value={option.value}>{t(option.labelKey)}</option>)}
                         </select>
                       </td>
-                      <td>{input(row, index, 'description')}</td>
+                      <td data-grid-row={index} data-grid-col={14} className={selectedCell(index, 14)}>{input(row, index, 'description')}</td>
                       <td className="upload-row-errors">{errors.filter(error => error.row === row.row_no).map((error, issueIndex) => <div key={`${error.field_key}-${issueIndex}`}><strong>{fieldLabel(error.field_key)}:</strong> {error.reason}</div>)}</td>
                       <td><button type="button" className="btn-link" disabled={busy} onClick={() => { setRowPasteTarget(row.row_no); setRowPaste(''); }} aria-label={t('upload.pasteRowAria', { row: row.row_no })}>{t('upload.pasteRow')}</button> <button type="button" className="btn-link" disabled={busy} onClick={() => removeRow(row.row_no)} aria-label={t('upload.deleteRowAria', { row: row.row_no })}>{t('common.delete')}</button></td>
                     </tr>
@@ -640,26 +650,6 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
             <div><strong>{t('upload.pasteRowTitle', { row: rowPasteTarget })}</strong><p className="muted text-sm">{t('upload.pasteRowHint', { count: pasteFields.length, fields: pasteFields.map(key => fieldLabel(key)).join(t('upload.fieldSeparator')) })}</p></div>
             <textarea className="form-input" rows={5} autoFocus aria-label={t('upload.pasteRowInputAria')} placeholder={t('upload.pasteRowPlaceholder')} value={rowPaste} onChange={event => setRowPaste(event.target.value)} />
             <div className="row gap-md"><button type="button" className="btn" disabled={busy} onClick={applyRowPaste}>{t('upload.applyRow')}</button><button type="button" className="btn btn-ghost" onClick={() => { setRowPasteTarget(null); setRowPaste(''); }}>{t('common.cancel')}</button></div>
-          </div>}
-          {showPricePaste && (
-            <div className="price-column-paste mt-12">
-              <div>
-                <strong>{t('upload.priceTitle')}</strong>
-                <p className="muted text-sm">{t('upload.priceHint')}</p>
-              </div>
-              <textarea className="form-input" rows={5} autoFocus placeholder={t('upload.pricePlaceholder')} value={pricePaste} onChange={event => { setPricePaste(event.target.value); setPasteError(''); }} />
-              {pasteError && <div className="alert alert-err" role="alert">{pasteError}</div>}
-              <div className="row gap-md">
-                <button type="button" className="btn" onClick={applyPriceColumn}>{t('upload.applyPrice')}</button>
-                <button type="button" className="btn btn-ghost" onClick={() => setShowPricePaste(false)}>{t('common.cancel')}</button>
-              </div>
-            </div>
-          )}
-          {showNcmPaste && <div ref={ncmPasteRef} className="price-column-paste mt-12">
-            <div><strong>{t('upload.ncmTitle')}</strong><p className="muted text-sm">{t('upload.ncmHint')}</p></div>
-            <textarea className="form-input" rows={5} placeholder={t('upload.ncmPlaceholder')} value={ncmPaste} onChange={event => { setNcmPaste(event.target.value); setPasteError(''); }} />
-            {pasteError && <div className="alert alert-err" role="alert">{pasteError}</div>}
-            <div className="row gap-md"><button type="button" className="btn" onClick={applyNcmColumn}>{t('upload.applyNcm')}</button><button type="button" className="btn btn-ghost" onClick={() => setShowNcmPaste(false)}>{t('common.cancel')}</button></div>
           </div>}
           {aiCheckNote && <div className={`alert ${aiChecked ? 'alert-ok' : 'alert-warn'} mt-12`}>{aiCheckNote}</div>}
           <div className="row gap-md mt-12">

@@ -832,9 +832,33 @@ export class QuoteService {
     const needsNcm = rows.filter(row => !String(row.data.hs_code || '').trim() || /^\d{6}$/.test(String(row.data.hs_code).trim()));
     const images = (draft.screenshots || []).filter((image: any) => needsNcm.some(row => Number(row.row_no) === Number(image.row_no)))
       .map((image: any) => ({ row_no: image.row_no, file_path: image.file_path, mime_type: image.mimetype, size_bytes: image.size }));
-    const suggestions = needsNcm.length ? await this.aiNcm.suggest({
-      line_items: needsNcm.map(row => ({ row_no: row.row_no, ...row.data })), images
-    }) : [];
+    // Classify small groups independently: one slow or invalid AI response must not
+    // discard the valid NCMs returned for the other products in a large spreadsheet.
+    const groups: ParsedRow[][] = [];
+    for (let index = 0; index < needsNcm.length; index += 4) groups.push(needsNcm.slice(index, index + 4));
+    const groupResults: { suggestions: any[]; error?: string }[] = new Array(groups.length);
+    let nextGroup = 0;
+    const worker = async () => {
+      while (nextGroup < groups.length) {
+        const index = nextGroup++;
+        const group = groups[index];
+        try {
+          groupResults[index] = { suggestions: await this.aiNcm.suggest({
+            line_items: group.map(row => ({ row_no: row.row_no, ...row.data })),
+            images: images.filter((image: any) => group.some(row => Number(row.row_no) === Number(image.row_no))),
+            retryTimedOutBatch: false
+          }) };
+        } catch (error: any) {
+          groupResults[index] = { suggestions: [], error: String(error?.message || 'AI 服务暂时不可用') };
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, groups.length) }, () => worker()));
+    const suggestions = groupResults.flatMap(result => result.suggestions);
+    groups.forEach((group, index) => {
+      if (!groupResults[index].error) return;
+      for (const row of group) issues.push({ row: row.row_no, col_letter: '', field_key: 'hs_code', reason: `AI 补全失败：${groupResults[index].error}` });
+    });
     const byRow = new Map(suggestions.map(item => [Number(item.row_no), item]));
     let ncmCount = 0;
     let lowConfidenceCount = 0;
@@ -846,13 +870,17 @@ export class QuoteService {
         row.data.hs_code = ncm;
         ncmCount += 1;
       } else {
-        issues.push({ row: row.row_no, col_letter: '', field_key: 'hs_code', reason: prefix ? `AI 未能找到以 ${prefix} 开头的有效 8 位巴西 NCM，请人工确认后修改` : 'AI 未能识别有效的 8 位 NCM' });
+        if (!groupResults[Math.floor(needsNcm.indexOf(row) / 4)].error) issues.push({ row: row.row_no, col_letter: '', field_key: 'hs_code', reason: prefix ? `AI 未能找到以 ${prefix} 开头的有效 8 位巴西 NCM，请人工确认后修改` : 'AI 未能识别有效的 8 位 NCM' });
       }
       if (Number(suggestion?.confidence) < 0.5) {
         lowConfidenceCount += 1;
       }
     }
-    return { ok: issues.length === 0, rows, issues, ncm_count: ncmCount, low_confidence_count: lowConfidenceCount,
+    // The initial validation sees missing NCMs before AI fills them. Do not keep
+    // those stale errors after a successful completion.
+    const remainingIssues = issues.filter(issue => issue.field_key !== 'hs_code'
+      || !/^\d{8}$/.test(String(rows.find(row => row.row_no === issue.row)?.data.hs_code || '').trim()));
+    return { ok: remainingIssues.length === 0, rows, issues: remainingIssues, ncm_count: ncmCount, low_confidence_count: lowConfidenceCount,
       suggestions: suggestions.map(item => ({ row_no: Number(item.row_no), ncm: String(item.ncm || ''), confidence: Number(item.confidence) || 0,
         rationale: String(item.rationale || ''), used_image: images.some((image: any) => Number(image.row_no) === Number(item.row_no)) })) };
   }

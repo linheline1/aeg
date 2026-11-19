@@ -22,7 +22,7 @@ export class AiNcmService {
         try {
           return await this.suggest({ line_items: batch, images });
         } catch (error: any) {
-          if (!/timeout|aborted|tempo limite/i.test(String(error?.message || '')) || batch.length === 1) throw error;
+          if (order.retryTimedOutBatch === false || !/timeout|aborted|tempo limite/i.test(String(error?.message || '')) || batch.length === 1) throw error;
           const retried: any[] = [];
           for (const row of batch) retried.push(...await this.suggest({ line_items: [row], images }));
           return retried;
@@ -43,7 +43,8 @@ export class AiNcmService {
     if (!cfg.apiKey) {
       throw new ServiceUnavailableException('IA de NCM não configurada. Configure a API do modelo em 管理端 → 模型 API.');
     }
-    const { baseUrl, apiKey, model, timeoutMs } = cfg;
+    const { baseUrl, apiKey, model } = cfg;
+    const timeoutMs = order.retryTimedOutBatch === false ? Math.min(cfg.timeoutMs, 70_000) : cfg.timeoutMs;
     const rowNos = order.line_items.map((row: any) => row.row_no).join(',');
     const startedAt = Date.now();
     const orderImages: any[] = Array.isArray(order.images) ? order.images : order.id ? await this.imageRepo.findAll({ quote_id: order.id }) : [];

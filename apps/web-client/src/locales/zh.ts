@@ -655,6 +655,7 @@ export default {
   'upload.err.rowGone': '目标行已不存在，请重新选择',
   'upload.err.rowPasteEmpty': '请先从 Excel 复制整行数据',
   'upload.err.rowPasteOverflow': '从第 {{row}} 行开始只剩 {{remaining}} 行，请减少粘贴行数',
+  'upload.err.gridPasteOverflow': '粘贴内容超出表格行数或可编辑列，请缩小选区后重试',
   'upload.err.rowPasteColumns': '粘贴的第 {{line}} 行有 {{actual}} 列，需要 {{expected}} 列；请只复制可编辑字段，不含自动计算列',
   'upload.err.fieldNotNumber': '{{field}}「{{value}}」不是有效数字',
   'upload.err.ncm8Short': 'NCM「{{value}}」应为 6 位或 8 位数字',

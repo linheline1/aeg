@@ -27,6 +27,7 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
   const [issues, setIssues] = useState<Issue[]>([]);
   const [busy, setBusy] = useState(false);
   const [aiChecking, setAiChecking] = useState(false);
+  const [aiCompleted, setAiCompleted] = useState<number | null>(null);
   const aiInFlight = useRef(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState('');
@@ -86,7 +87,7 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
   const choose = (next: File | null) => { if (next && !/\.xlsx$/i.test(next.name)) { setError(t('orders.invalidExcel')); return; } setFile(next); setError(''); };
   const update = (index: number, key: string, value: string) => {
     setRows(current => current.map((row, i) => i === index ? { ...row, data: { ...row.data, [key]: numbers.has(key) ? (value === '' ? null : Number(value.replace(',', '.'))) : value } } : row));
-    setIssues([]);
+    setIssues([]); setAiCompleted(null);
   };
   const paste = (event: ReactClipboardEvent<HTMLInputElement>, index: number, field: string) => {
     const raw = event.clipboardData.getData('text/plain');
@@ -103,7 +104,7 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
       return { ...row, data };
     });
     setRows(nextRows);
-    setIssues([]); setError('');
+    setIssues([]); setError(''); setAiCompleted(null);
     if (cells.some(line => line.some((value, offset) => fields[column + offset] === 'hs_code' && /^\d{6}$/.test(value.trim())))) void runAiCheck(draftId, nextRows);
   };
   const runAiCheck = async (id: string, candidateRows: Row[]) => {
@@ -114,7 +115,8 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
       const response = await api.post('/api/ops/orders/upload/ai-check', { draft_id: id, rows: candidateRows }, { timeout: 290_000 });
       setRows(response.data.rows || candidateRows);
       setIssues(response.data.issues || []);
-      if (!response.data.ok) setError(t('orders.reviewIssues'));
+      setAiCompleted(Number(response.data.ncm_count || 0));
+      if (!response.data.ok) setError(t('orders.aiCheckPartial', { completed: response.data.ncm_count || 0, remaining: (response.data.rows || candidateRows).filter((row: Row) => !/^\d{8}$/.test(String(row.data.hs_code || '').trim())).length }));
     } catch (reason) { setError(getApiErrorMessage(reason, t('orders.uploadFailed'))); }
     finally { aiInFlight.current = false; setAiChecking(false); setBusy(false); }
   };
@@ -126,7 +128,7 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
       const response = await api.post('/api/ops/orders/upload/preview', data, { timeout: 180_000 });
       if (!response.data.ok) { setError(response.data.error_summary || t('orders.uploadFailed')); return; }
       const previewRows: Row[] = response.data.rows || [];
-      setDraftId(response.data.draft_id); setRows(previewRows); setCurrency(response.data.declared_currency || 'RMB'); setIssues(response.data.errors || []); clearSelection();
+      setDraftId(response.data.draft_id); setRows(previewRows); setCurrency(response.data.declared_currency || 'RMB'); setIssues(response.data.errors || []); setAiCompleted(null); clearSelection();
       if (previewRows.some(row => /^\d{6}$/.test(String(row.data.hs_code || '').trim()))) await runAiCheck(response.data.draft_id, previewRows);
     } catch (reason) { setError(getApiErrorMessage(reason, t('orders.uploadFailed'))); }
     finally { setBusy(false); }
@@ -143,7 +145,7 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
     } catch (reason) { setError(getApiErrorMessage(reason, t('orders.uploadFailed'))); }
     finally { setBusy(false); }
   };
-  const cancel = async () => { if (draftId) try { await api.delete(`/api/ops/orders/upload/${draftId}`); } catch { /* draft expires automatically */ } setDraftId(''); setRows([]); setIssues([]); setError(''); clearSelection(); };
+  const cancel = async () => { if (draftId) try { await api.delete(`/api/ops/orders/upload/${draftId}`); } catch { /* draft expires automatically */ } setDraftId(''); setRows([]); setIssues([]); setAiCompleted(null); setError(''); clearSelection(); };
   return <div className="card ops-excel-upload">
     <div className="card-title"><h3>{t('orders.uploadTitle')}</h3></div>
     {result && <div className="alert alert-ok">{t('orders.uploadSuccess', { quote: result.quote })}{user?.role !== 'sales' && <> · <Link to={`/orders/${result.id}`}>{result.quote}</Link></>}</div>}
@@ -151,6 +153,7 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
     {!draftId ? <><div className="row gap-md order-upload-controls"><select className="form-input" value={clientId} disabled={busy} onChange={event => setClientId(event.target.value)}><option value="">{t('rates.selectClient')}</option>{clients.map(client => <option key={client.id} value={client.id}>{client.china_company_name || client.name}</option>)}</select><input type="file" accept=".xlsx" disabled={busy} onChange={event => choose(event.target.files?.[0] || null)} /><button className="btn" disabled={!clientId || !file || busy} onClick={() => void preview()}>{busy ? t('orders.uploading') : t('orders.previewExcel')}</button></div><div className={`order-upload-dropzone${dragging ? ' is-dragging' : ''}`} onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); choose(event.dataTransfer.files[0] || null); }}>{file?.name || t('orders.dropExcel')}</div></> : <>
       <div className="row gap-md ops-excel-actions"><strong>{t('orders.reviewRows', { count: rows.length })}</strong><select className="form-input" value={currency} onChange={event => setCurrency(event.target.value)}><option value="RMB">RMB</option><option value="USD">USD</option></select><button className="btn btn-ghost" disabled={busy || !selected} onClick={() => void copySelection()}>{t('orders.copySelection')}</button><button className="btn btn-ghost" disabled={busy} onClick={() => void aiCheck()}>{t('orders.aiCheckExcel')}</button><button className="btn" disabled={busy || !rows.length || issues.length > 0 || !computed.every(row => /^\d{8}$/.test(String(row.data.hs_code || '')))} onClick={() => void confirm()}>{busy ? t('orders.uploading') : t('orders.confirmExcel')}</button><button className="btn btn-ghost" disabled={busy} onClick={() => void cancel()}>{t('common.cancel')}</button></div>
       {aiChecking && <div className="alert alert-warn" role="status">{t('orders.autoCompletingNcm')}</div>}
+      {aiCompleted !== null && !aiChecking && <div className="alert alert-ok" role="status">{t('orders.aiCompletedCount', { count: aiCompleted })}</div>}
       {sixDigitNcmCount > 0 && !aiChecking && <div className="alert alert-warn">{t('orders.sixDigitNcmHint', { count: sixDigitNcmCount })}</div>}
       {issues.length > 0 && <div className="alert alert-err">{issues.slice(0, 12).map((issue, index) => <div key={index}>{issue.row} · {issue.field_key ? label(issue.field_key) : ''}: {issue.reason}</div>)}</div>}
       <div className="table-wrap ops-excel-grid" onPointerMove={extendDrag}><table ref={tableRef} className="table"><thead><tr><th>#</th>{fields.map((field, col) => <th key={field}><button type="button" className="ops-excel-select" title={t('orders.selectColumn')} onClick={() => { setAnchor({ row: 0, col }); setEdge({ row: rows.length - 1, col }); }}>{label(field)}</button></th>)}<th>{t('orders.actions')}</th></tr></thead><tbody>{computed.map((row, index) => <tr key={row.row_no}><td><button type="button" className="ops-excel-select" title={t('orders.selectRow')} onClick={() => { setAnchor({ row: index, col: 0 }); setEdge({ row: index, col: fields.length - 1 }); }}>{row.row_no}</button></td>{fields.map((field, col) => {

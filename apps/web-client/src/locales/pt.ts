@@ -650,6 +650,7 @@ export default {
   'upload.err.rowGone': 'A linha de destino não existe mais; selecione novamente',
   'upload.err.rowPasteEmpty': 'Copie primeiro a linha inteira do Excel',
   'upload.err.rowPasteOverflow': 'A partir da linha {{row}} restam apenas {{remaining}} linhas; reduza a quantidade colada',
+  'upload.err.gridPasteOverflow': 'Os dados colados ultrapassam as linhas ou colunas editáveis; reduza a seleção e tente novamente',
   'upload.err.rowPasteColumns': 'A linha {{line}} colada tem {{actual}} colunas; são necessárias {{expected}}. Copie apenas os campos editáveis, sem colunas calculadas',
   'upload.err.fieldNotNumber': '{{field}} “{{value}}” não é um número válido',
   'upload.err.ncm8Short': 'NCM “{{value}}” deve ter 6 ou 8 dígitos',
