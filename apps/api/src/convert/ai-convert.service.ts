@@ -124,7 +124,7 @@ export class AiConvertService {
       || Number(data.cartons) * Number(data.pcs_per_carton);
     const totalPrice = Number(sourceTotals?.total_price) || Number(data.total_price);
     if (Number.isFinite(totalPcs) && totalPcs > 0 && Number.isFinite(totalPrice) && totalPrice > 0) {
-      data.unit_price = Math.round((totalPrice / totalPcs) * 1_000_000) / 1_000_000;
+      data.unit_price = totalPrice / totalPcs;
     }
   }
 
@@ -215,9 +215,6 @@ export class AiConvertService {
         let v: any = excelRow.getCell(this.colToIndex(col) + 1).value;
         if (v && typeof v === 'object' && 'result' in v) v = v.result;
         if (NUMERIC_TYPES.has(f.data_type) && v !== null && v !== undefined && v !== '') v = toNumberLike(v);
-        if (f.field_key === 'hs_code' && v !== null && v !== undefined && v !== '' && /^\d{10,12}$/.test(String(v))) {
-          v = String(v).slice(0, 8);
-        }
         if (v !== null && v !== undefined && v !== '') nonEmpty++;
         data[f.field_key] = v ?? null;
       }

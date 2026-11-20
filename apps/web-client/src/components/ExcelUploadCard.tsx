@@ -67,7 +67,7 @@ function validate(row: Row, t: TFunction): RowError[] {
   }
   if (Number(d.gw_per_carton) < Number(d.nw_per_carton)) errors.push({ row: row.row_no, field_key: 'gw_per_carton', reason: t('upload.errors.gwLtNw') });
   if (d.carton_no && !/^\d+(-\d+)?$/.test(String(d.carton_no))) errors.push({ row: row.row_no, field_key: 'carton_no', reason: t('upload.errors.cartonNoFormat') });
-  if (d.hs_code && !/^(?:\d{6}|\d{8})$/.test(String(d.hs_code).trim())) errors.push({ row: row.row_no, field_key: 'hs_code', reason: t('upload.errors.ncm8') });
+  if (d.hs_code && !/^(?:\d{6}|\d{8}|\d{10})$/.test(String(d.hs_code).trim())) errors.push({ row: row.row_no, field_key: 'hs_code', reason: t('upload.errors.ncm8') });
   const source = row.source_totals || {};
   if (source.total_pcs != null && Math.abs(Number(source.total_pcs) - d.total_pcs) > 0.000001) {
     errors.push({ row: row.row_no, field_key: 'total_pcs', reason: t('upload.errors.totalPcsMismatch', { source: source.total_pcs, computed: d.total_pcs }) });
@@ -103,8 +103,6 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   const [message, setMessage] = useState('');
   const [aiChecked, setAiChecked] = useState(false);
   const [aiCheckNote, setAiCheckNote] = useState('');
-  const [rowPasteTarget, setRowPasteTarget] = useState<number | null>(null);
-  const [rowPaste, setRowPaste] = useState('');
   const [ncmSuggestions, setNcmSuggestions] = useState<NcmSuggestion[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -112,7 +110,6 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
 
   const fieldLabel = (key: string) => t(`upload.field.${key}`, { defaultValue: key });
   const computedRows = useMemo(() => rows.map(calculate), [rows]);
-  const needsNcmCompletion = computedRows.some(row => !String(row.data.hs_code || '').trim() || /^\d{6}$/.test(String(row.data.hs_code).trim()));
   const localErrors = useMemo(() => computedRows.flatMap(row => validate(row, t)), [computedRows, t]);
   const remainingServerErrors = serverErrors.filter(error => !localErrors.some(item => item.row === error.row && item.field_key === error.field_key));
   const errors = [...localErrors, ...remainingServerErrors];
@@ -125,7 +122,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
 
   const reset = () => {
     setDraftId(''); setRows([]); setServerErrors([]); setErr(''); setMessage(''); setConvertedByAi(false); setAiNotes('');
-    setAiChecked(false); setAiCheckNote(''); setRowPasteTarget(null); setRowPaste(''); setNcmSuggestions([]);
+    setAiChecked(false); setAiCheckNote(''); setNcmSuggestions([]);
     setSelection(null);
   };
 
@@ -270,7 +267,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       setConvertedByAi(!!response.data.converted_by_ai);
       setAiNotes(response.data.ai_notes || '');
       setServerErrors(response.data.errors || []);
-      if (previewRows.some(row => /^\d{6}$/.test(String(row.data.hs_code || '').trim()))) {
+      if (previewRows.some(row => /^(?:\d{6}|\d{10})$/.test(String(row.data.hs_code || '').trim()))) {
         setUploadStage(null);
         await runAiCheck(response.data.draft_id, previewRows);
       }
@@ -302,43 +299,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     setAiChecked(false);
     setNcmSuggestions(current => current.filter(item => item.row_no !== rowNo));
     setAiCheckNote(t('upload.note.rowDeleted'));
-  };
-
-  const applyRowPaste = () => {
-    if (busy || aiInFlight.current) return;
-    const targetIndex = rows.findIndex(row => row.row_no === rowPasteTarget);
-    if (targetIndex < 0) { setErr(t('upload.err.rowGone')); return; }
-    const lines = rowPaste.replace(/(?:\r?\n)+$/, '').split(/\r?\n/).filter(line => line.trim());
-    if (!lines.length) { setErr(t('upload.err.rowPasteEmpty')); return; }
-    if (targetIndex + lines.length > rows.length) { setErr(t('upload.err.rowPasteOverflow', { row: rowPasteTarget, remaining: rows.length - targetIndex })); return; }
-    const values = lines.map(line => line.split('\t'));
-    const wrong = values.findIndex(cells => cells.length !== pasteFields.length);
-    if (wrong >= 0) { setErr(t('upload.err.rowPasteColumns', { line: wrong + 1, actual: values[wrong].length, expected: pasteFields.length })); return; }
-    for (const cells of values) {
-      for (let index = 0; index < pasteFields.length; index++) {
-        const key = pasteFields[index];
-        const value = cells[index].trim();
-        if (numericFields.has(key) && value && !Number.isFinite(Number(value))) { setErr(t('upload.err.fieldNotNumber', { field: fieldLabel(key), value })); return; }
-        if (key === 'hs_code' && value && !/^(?:\d{6}|\d{8})$/.test(value)) { setErr(t('upload.err.ncm8Short', { value })); return; }
-      }
-    }
-    const affected = new Set(rows.slice(targetIndex, targetIndex + values.length).map(row => row.row_no));
-    const nextRows = rows.map((row, index) => {
-      if (index < targetIndex || index >= targetIndex + values.length) return row;
-      const data = { ...row.data };
-      pasteFields.forEach((key, fieldIndex) => {
-        const value = values[index - targetIndex][fieldIndex].trim();
-        data[key] = numericFields.has(key) ? (value === '' ? null : Number(value)) : value;
-      });
-      return { ...row, data };
-    });
-    setRows(nextRows);
-    setServerErrors(current => current.filter(error => !affected.has(error.row)));
-    setNcmSuggestions(current => current.filter(item => !affected.has(item.row_no)));
-    setAiChecked(false); setAiCheckNote(t('upload.note.dataChanged')); setErr('');
-    setRowPasteTarget(null); setRowPaste('');
-    showToast(t('upload.toast.rowPasted', { count: values.length }));
-    if (values.some(cells => /^\d{6}$/.test(cells[pasteFields.indexOf('hs_code')].trim()))) void runAiCheck(draftId, nextRows);
+    setSelection(null);
   };
 
   const runAiCheck = async (id: string, candidateRows: Row[]) => {
@@ -372,7 +333,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     } finally { aiInFlight.current = false; setBusy(false); }
   };
   const aiCheck = async () => {
-    if (!draftId || !rows.length || (errors.length > 0 && !needsNcmCompletion)) return;
+    if (busy || !draftId || !rows.length) return;
     await runAiCheck(draftId, rows);
   };
 
@@ -419,7 +380,8 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   };
   const pasteGrid = (event: ReactClipboardEvent<HTMLElement>, startRow: number, startCol: number) => {
     const raw = event.clipboardData.getData('text/plain');
-    if (!/[\t\r\n]/.test(raw)) return;
+    const isSingleSourceCode = pasteFields[startCol] === 'hs_code' && /^(?:\d{6}|\d{10})$/.test(raw.trim());
+    if (!/[\t\r\n]/.test(raw) && !isSingleSourceCode) return;
     event.preventDefault();
     const cells = raw.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n').map(line => line.split('\t'));
     if (startRow + cells.length > rows.length || cells.some(line => startCol + line.length > pasteFields.length)) {
@@ -429,7 +391,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       const key = pasteFields[startCol + offset];
       const value = line[offset].trim();
       if (numericFields.has(key) && value && parsePastedPrice(value) === null) { setErr(t('upload.err.fieldNotNumber', { field: fieldLabel(key), value })); return; }
-      if (key === 'hs_code' && value && !/^(?:\d{6}|\d{8})$/.test(value)) { setErr(t('upload.err.ncm8Short', { value })); return; }
+      if (key === 'hs_code' && value && !/^(?:\d{6}|\d{8}|\d{10})$/.test(value)) { setErr(t('upload.err.ncm8Short', { value })); return; }
     }
     const affected = new Set(rows.slice(startRow, startRow + cells.length).map(row => row.row_no));
     const nextRows = rows.map((row, index) => {
@@ -447,7 +409,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     setNcmSuggestions(current => current.filter(item => !affected.has(item.row_no)));
     setSelection({ startRow, startCol, endRow: startRow + cells.length - 1, endCol: startCol + Math.max(...cells.map(line => line.length)) - 1 });
     setAiChecked(false); setAiCheckNote(t('upload.note.dataChanged')); setErr('');
-    if (cells.some(line => line.some((value, offset) => pasteFields[startCol + offset] === 'hs_code' && /^\d{6}$/.test(value.trim())))) void runAiCheck(draftId, nextRows);
+    if (cells.some(line => line.some((value, offset) => pasteFields[startCol + offset] === 'hs_code' && /^(?:\d{6}|\d{10})$/.test(value.trim())))) void runAiCheck(draftId, nextRows);
   };
 
   const input = (row: Row, index: number, key: string, type = 'text') => (
@@ -462,7 +424,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       onChange={event => update(index, key, event.target.value)}
       onPaste={event => pasteGrid(event, index, pasteFields.indexOf(key as typeof pasteFields[number]))}
       onCopy={copyGrid}
-      onBlur={event => { if (key === 'hs_code' && /^\d{6}$/.test(event.currentTarget.value.trim())) void runAiCheck(draftId, rows); }}
+      onBlur={event => { if (key === 'hs_code' && /^(?:\d{6}|\d{10})$/.test(event.currentTarget.value.trim())) void runAiCheck(draftId, rows); }}
     />
   );
 
@@ -594,6 +556,10 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
             </div>
           )}
 
+          <div className="row gap-md mt-12">
+            <button type="button" className="btn btn-ghost" disabled={busy || !rows.length} onClick={aiCheck}>{t('upload.aiCheck')}</button>
+            {aiInFlight.current && <span role="status" className="muted">{t('upload.aiChecking')}</span>}
+          </div>
           <div className="table-wrap mt-12">
             <table className="table client-upload-grid" style={{ minWidth: 1800 }} onPointerDown={event => {
               const cell = (event.target as HTMLElement).closest<HTMLElement>('td[data-grid-col]');
@@ -639,21 +605,15 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
                       </td>
                       <td data-grid-row={index} data-grid-col={14} className={selectedCell(index, 14)}>{input(row, index, 'description')}</td>
                       <td className="upload-row-errors">{errors.filter(error => error.row === row.row_no).map((error, issueIndex) => <div key={`${error.field_key}-${issueIndex}`}><strong>{fieldLabel(error.field_key)}:</strong> {error.reason}</div>)}</td>
-                      <td><button type="button" className="btn-link" disabled={busy} onClick={() => { setRowPasteTarget(row.row_no); setRowPaste(''); }} aria-label={t('upload.pasteRowAria', { row: row.row_no })}>{t('upload.pasteRow')}</button> <button type="button" className="btn-link" disabled={busy} onClick={() => removeRow(row.row_no)} aria-label={t('upload.deleteRowAria', { row: row.row_no })}>{t('common.delete')}</button></td>
+                      <td><button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => removeRow(row.row_no)} aria-label={t('upload.deleteRowAria', { row: row.row_no })}>{t('upload.deleteRow')}</button></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          {rowPasteTarget !== null && <div className="price-column-paste mt-12">
-            <div><strong>{t('upload.pasteRowTitle', { row: rowPasteTarget })}</strong><p className="muted text-sm">{t('upload.pasteRowHint', { count: pasteFields.length, fields: pasteFields.map(key => fieldLabel(key)).join(t('upload.fieldSeparator')) })}</p></div>
-            <textarea className="form-input" rows={5} autoFocus aria-label={t('upload.pasteRowInputAria')} placeholder={t('upload.pasteRowPlaceholder')} value={rowPaste} onChange={event => setRowPaste(event.target.value)} />
-            <div className="row gap-md"><button type="button" className="btn" disabled={busy} onClick={applyRowPaste}>{t('upload.applyRow')}</button><button type="button" className="btn btn-ghost" onClick={() => { setRowPasteTarget(null); setRowPaste(''); }}>{t('common.cancel')}</button></div>
-          </div>}
           {aiCheckNote && <div className={`alert ${aiChecked ? 'alert-ok' : 'alert-warn'} mt-12`}>{aiCheckNote}</div>}
           <div className="row gap-md mt-12">
-            {!computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim())) && <button className="btn btn-lg" disabled={busy || !rows.length || (errors.length > 0 && !needsNcmCompletion)} onClick={aiCheck}>{busy ? t('upload.aiChecking') : t('upload.aiCheck')}</button>}
             <button className="btn btn-lg btn-success" disabled={busy || !rows.length || errors.length > 0 || !computedRows.every(row => /^\d{8}$/.test(String(row.data.hs_code || '').trim()))} onClick={confirm}>{busy ? t('upload.creating') : t('upload.submit')}</button>
             <button className="btn btn-ghost" disabled={busy} onClick={cancel}>{t('upload.cancelAndReselect')}</button>
           </div>

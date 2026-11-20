@@ -356,6 +356,7 @@ export class QuoteService {
     const textFields = new Set(['sku', 'product_cn', 'product_en', 'material', 'description']);
     const numberFields = new Set(['total_pcs', 'unit_price', 'total_price', 'total_cbm', 'total_gw']);
     const items = (order.line_items || []).map((item: any) => ({ ...item }));
+    const needsNcmConversion: any[] = [];
     const seen = new Set<number>();
     let ncmChanged = false;
     let financialChanged = false;
@@ -377,8 +378,7 @@ export class QuoteService {
           next[field] = value;
         } else if (field === 'hs_code') {
           const value = String(change[field] ?? '').trim();
-          if (!/^\d{8}$/.test(value)) throw new BadRequestException(`第 ${rowNo} 行 NCM 必须是 8 位数字`);
-          ncmChanged ||= value !== String(next.hs_code || '');
+          if (!/^(?:\d{8}|\d{10})$/.test(value)) throw new BadRequestException(`第 ${rowNo} 行请输入八位巴西 NCM 或中国十位商品编码`);
           next.hs_code = value;
         } else {
           if (change[field] === '' || change[field] === null || change[field] === undefined) {
@@ -403,8 +403,30 @@ export class QuoteService {
         }
         next.total_price = Math.round(Number(next.unit_price) * Number(next.total_pcs) * 100) / 100;
       }
+      if (fields.includes('hs_code')) {
+        if (/^\d{10}$/.test(next.hs_code)) needsNcmConversion.push(next);
+        else ncmChanged ||= next.hs_code !== String(before.hs_code || '');
+      }
       financialChanged ||= [...numberFields].some(field => Number(next[field]) !== Number(before[field]));
       seen.add(rowNo);
+    }
+    if (needsNcmConversion.length) {
+      const suggestions = await this.aiNcm.suggest({ line_items: needsNcmConversion, retryTimedOutBatch: false });
+      const byRow = new Map(suggestions.map(item => [Number(item.row_no), item]));
+      for (const row of needsNcmConversion) {
+        const prefix = row.hs_code.slice(0, 6);
+        const ncm = String(byRow.get(Number(row.row_no))?.ncm || '');
+        if (!/^\d{8}$/.test(ncm) || !ncm.startsWith(prefix)) {
+          throw new BadRequestException(`第 ${row.row_no} 行未能匹配以 ${prefix} 开头的八位巴西 NCM，请核对产品资料或填写八位 NCM`);
+        }
+        const original = order.line_items.find((item: any) => Number(item.row_no) === Number(row.row_no));
+        ncmChanged ||= ncm !== String(original.hs_code || '');
+        row.hs_code = ncm;
+      }
+      const latest = await this.quotesRepo.findById(quoteId);
+      if (!latest || latest.status === 'computing' || String(latest.updated_at) !== String(order.updated_at)) {
+        throw new BadRequestException('报价在转换期间已更新，请重新打开后编辑');
+      }
     }
     const totalAmountRmb = Math.round(items.reduce((sum: number, item: any) => sum + (Number(item.total_price) || 0), 0) * 100) / 100;
     const updatedOrder = { ...order, line_items: items, total_amount_rmb: totalAmountRmb };
@@ -829,7 +851,7 @@ export class QuoteService {
     });
     const issues = rows.flatMap(row => this.validateAndComputeRow(row, draft.warehouse_code || '', true));
 
-    const needsNcm = rows.filter(row => !String(row.data.hs_code || '').trim() || /^\d{6}$/.test(String(row.data.hs_code).trim()));
+    const needsNcm = rows.filter(row => !String(row.data.hs_code || '').trim() || /^(?:\d{6}|\d{10})$/.test(String(row.data.hs_code).trim()));
     const images = (draft.screenshots || []).filter((image: any) => needsNcm.some(row => Number(row.row_no) === Number(image.row_no)))
       .map((image: any) => ({ row_no: image.row_no, file_path: image.file_path, mime_type: image.mimetype, size_bytes: image.size }));
     // Classify small groups independently: one slow or invalid AI response must not
@@ -864,8 +886,8 @@ export class QuoteService {
     let lowConfidenceCount = 0;
     for (const row of needsNcm) {
       const suggestion = byRow.get(Number(row.row_no));
-      const ncm = String(suggestion?.ncm || '').replace(/\D/g, '').slice(0, 8);
-      const prefix = String(row.data.hs_code || '').trim();
+      const ncm = String(suggestion?.ncm || '').replace(/\D/g, '');
+      const prefix = String(row.data.hs_code || '').trim().slice(0, 6);
       if (/^\d{8}$/.test(ncm) && (!prefix || ncm.startsWith(prefix))) {
         row.data.hs_code = ncm;
         ncmCount += 1;
@@ -936,21 +958,7 @@ export class QuoteService {
     }
   ): Promise<UploadResult> {
     const declaredCurrency = ctx.currency || 'RMB';
-    if (declaredCurrency === 'USD') {
-      const resolved = await this.resolveRates(ctx.clientId);
-      const fx = resolved.rates.fx_rate;
-      for (const row of rows) {
-        if (row.data.unit_price != null && row.data.unit_price !== '' && Number.isFinite(Number(row.data.unit_price))) {
-          row.data.unit_price = Number(row.data.unit_price) * fx;
-        }
-        if (row.data.total_price != null && row.data.total_price !== '' && Number.isFinite(Number(row.data.total_price))) {
-          row.data.total_price = Number(row.data.total_price) * fx;
-        }
-        if (row.source_totals?.total_price != null) row.source_totals.total_price *= fx;
-      }
-    }
-
-    // 3. 行级校验 + 重算公式
+    // 3. 在申报币种下校验并重算公式，保持与 Excel 预览的容差一致。
     const allErrors: RowError[] = [];
     for (const row of rows) {
       const errs = this.validateAndComputeRow(row, warehouseB2);
@@ -971,7 +979,15 @@ export class QuoteService {
       };
     }
 
-    // 4. 汇总（M3：上传只入「uploaded」状态，报价由运营端按费率表核算后发布）
+    if (declaredCurrency === 'USD') {
+      const { rates } = await this.resolveRates(ctx.clientId);
+      for (const { data } of rows) {
+        data.unit_price = Number(data.unit_price) * rates.fx_rate;
+        data.total_price = data.unit_price * data.total_pcs;
+      }
+    }
+
+    // 4. 按人民币汇总（报价由运营端按费率表核算后发布）
     const summary = this.computeSummary(rows);
 
     // 5. 迁移文件到持久化目录（运营端可看原 Excel）
@@ -1236,7 +1252,7 @@ export class QuoteService {
   }
 
   /** 行校验 + 重算公式列；返回该行的错误列表 */
-  private validateAndComputeRow(row: ParsedRow, warehouseB2: string, allowSixDigitNcm = false): RowError[] {
+  private validateAndComputeRow(row: ParsedRow, warehouseB2: string, allowSourceNcm = false): RowError[] {
     const errs: RowError[] = [];
     const d = row.data;
 
@@ -1276,7 +1292,7 @@ export class QuoteService {
         }
       }
       if (f.validation_pattern) {
-        const re = f.field_key === 'hs_code' && allowSixDigitNcm ? /^(?:\d{6}|\d{8})$/ : new RegExp(f.validation_pattern);
+        const re = f.field_key === 'hs_code' && allowSourceNcm ? /^(?:\d{6}|\d{8}|\d{10})$/ : new RegExp(f.validation_pattern);
         if (!re.test(String(v))) {
           errs.push({ row: row.row_no, col_letter: f.col_letter, field_key: f.field_key, reason: `格式不符（${f.validation_pattern}）` });
         }

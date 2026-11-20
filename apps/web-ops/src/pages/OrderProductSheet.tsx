@@ -131,7 +131,7 @@ export default function OrderProductSheet() {
       const field = fields[startCol + col];
       const value = rows[row][col].trim();
       if (!value) { setError(t('orderDetail.sheet.emptyCell')); return; }
-      if (field === 'hs_code' && !/^\d{8}$/.test(value)) { setError(t('orderDetail.sheet.invalidNcm')); return; }
+      if (field === 'hs_code' && !/^(?:\d{8}|\d{10})$/.test(value.trim())) { setError(t('orderDetail.sheet.invalidNcm')); return; }
       if (numericFields.has(field) && !/^\d+(?:[.,]\d+)?$/.test(value)) { setError(t('orderDetail.sheet.invalidNumber')); return; }
       next[`${order.line_items[startRow + row].row_no}:${field}`] = numericFields.has(field) ? value.replace(',', '.') : value;
     }
@@ -171,7 +171,7 @@ export default function OrderProductSheet() {
       const [rowText, field] = key.split(':');
       const rowNo = Number(rowText);
       if (!value.trim()) { setError(t('orderDetail.sheet.emptyCell')); return; }
-      if (field === 'hs_code' && !/^\d{8}$/.test(value)) { setError(t('orderDetail.sheet.invalidNcm')); return; }
+      if (field === 'hs_code' && !/^(?:\d{8}|\d{10})$/.test(value.trim())) { setError(t('orderDetail.sheet.invalidNcm')); return; }
       if (numericFields.has(field as Field) && (!Number.isFinite(Number(value)) || Number(value) < 0 || (field === 'total_pcs' && !Number.isInteger(Number(value))))) {
         setError(t('orderDetail.sheet.invalidNumber')); return;
       }
@@ -182,7 +182,7 @@ export default function OrderProductSheet() {
     }
     setBusy(true); setError('');
     try {
-      const { data } = await api.patch<{ needs_di_analysis: boolean }>(`/api/ops/orders/${id}/line-items`, { changes: [...changes.values()] });
+      const { data } = await api.patch<{ needs_di_analysis: boolean }>(`/api/ops/orders/${id}/line-items`, { changes: [...changes.values()] }, { timeout: 290_000 });
       navigate(`/orders/${id}#order-${data.needs_di_analysis ? 'di' : 'lines'}`);
     } catch (reason) { setError(getApiErrorMessage(reason, t('orderDetail.sheet.saveFailed'))); }
     finally { setBusy(false); }

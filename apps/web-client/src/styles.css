@@ -252,10 +252,6 @@ a.quote-card { display: block; color: inherit; text-decoration: none; }
 .client-upload-grid td.upload-grid-selected .form-input { background: #eff6ff; border-color: #3b82f6; }
 .upload-ncm-suggestion { max-width: 240px; margin-top: 5px; color: #2563eb; font-size: 11px; white-space: normal; }
 .upload-ncm-suggestion span { display: block; color: #64748b; }
-.price-column-paste { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.4fr) auto; gap: 16px; align-items: end; padding: 16px; border: 1px solid #bfdbfe; border-radius: var(--radius-sm); background: #f8fbff; }
-.price-column-paste p { margin: 4px 0 0; }
-.price-column-paste textarea { resize: vertical; font-variant-numeric: tabular-nums; }
-@media (max-width: 860px) { .price-column-paste { grid-template-columns: 1fr; align-items: stretch; } }
 
 /* 表单 */
 .form-row { margin-bottom: 14px; }

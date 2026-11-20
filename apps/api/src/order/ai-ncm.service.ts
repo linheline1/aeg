@@ -54,12 +54,14 @@ export class AiNcmService {
       const visualDescription = images.length && !/^\d{8}$/.test(existingNcm) ? await this.describeProductImages(images, cfg) : '';
       return {
         row_no: row.row_no, sku: row.sku, product_cn: row.product_cn, product_en: row.product_en,
-        description: row.description, material: row.material, current_hs_code: row.hs_code,
+        description: row.description, material: row.material,
+        current_hs_code: /^\d{10}$/.test(existingNcm) ? existingNcm.slice(0, 6) : existingNcm,
+        chinese_tariff_code: /^\d{10}$/.test(existingNcm) ? existingNcm : undefined,
         visual_description: visualDescription
       };
     }));
     this.logger.log(`NCM rows=${rowNos} visual_ms=${Date.now() - startedAt} model=${model}`);
-    const prompt = `Classifique os produtos importados da China ao Brasil. Quando current_hs_code tiver exatamente 8 dígitos, preserve esse NCM e determine somente as alíquotas; não reclassifique nem analise imagens dessa linha. Quando current_hs_code tiver exatamente 6 dígitos, trate-o como prefixo HS obrigatório: pesquise e complete SOMENTE os dois dígitos finais para formar um NCM brasileiro válido de 8 dígitos. Se não houver evidência suficiente para esse prefixo, explique a dúvida e use confidence baixa; nunca altere os seis dígitos fornecidos. Pesquise na internet, priorizando Receita Federal, CLASSIF, TEC/NCM, TIPI e legislação oficial. Não invente fontes nem alíquotas. Quando visual_description estiver presente, use-a como evidência complementar do nome do produto, sem substituir a legislação oficial.\n` +
+    const prompt = `Classifique os produtos importados da China ao Brasil. Quando current_hs_code tiver exatamente 8 dígitos, preserve esse NCM e determine somente as alíquotas; não reclassifique nem analise imagens dessa linha. Quando current_hs_code tiver exatamente 6 dígitos, trate-o como prefixo HS obrigatório: pesquise e complete SOMENTE os dois dígitos finais para formar um NCM brasileiro válido de 8 dígitos. Use chinese_tariff_code apenas como contexto da classificação na China; não copie os dígitos nacionais chineses para o NCM. Se não houver evidência suficiente para esse prefixo, explique a dúvida e use confidence baixa; nunca altere os seis dígitos fornecidos. Pesquise na internet, priorizando Receita Federal, CLASSIF, TEC/NCM, TIPI e legislação oficial. Não invente fontes nem alíquotas. Quando visual_description estiver presente, use-a como evidência complementar do nome do produto, sem substituir a legislação oficial.\n` +
       `Retorne APENAS um objeto JSON {"items":[...]}, um item por row_no, com: row_no (número), ncm (8 dígitos), confidence (0 a 1), rationale (justificativa curta), ii_rate, ipi_rate, pis_rate, cofins_rate (FRAÇÕES decimais, ex.: 0.14 para 14%), sources (array de URLs oficiais .gov.br que comprovem NCM/alíquota).\n` +
       `Nunca deixe ncm vazio. Sempre retorne o melhor candidato com exatamente 8 dígitos, mesmo quando incerto; nesse caso use confidence baixa (máximo 0.3) e explique a dúvida. Produtos:\n${JSON.stringify(products)}`;
     let response: Response;
@@ -85,6 +87,10 @@ export class AiNcmService {
     }
     this.logger.log(`NCM rows=${rowNos} headers_ms=${Date.now() - requestStartedAt} status=${response.status}`);
     if (!response.ok) {
+      if (response.status === 402) {
+        await response.body?.cancel().catch(() => {});
+        throw new BadGatewayException('AI 服务拒绝请求（HTTP 402）。请检查模型服务账户的余额、额度或计费状态，恢复后重试。');
+      }
       const detail = (await response.text()).slice(0, 500);
       throw new BadGatewayException(`A IA de NCM retornou HTTP ${response.status}: ${detail}`);
     }
@@ -112,7 +118,7 @@ export class AiNcmService {
         const original = order.line_items.find((row: any) => Number(row.row_no) === Number(item.row_no));
         if (/^\d{8}$/.test(String(original?.hs_code || '').trim())) return String(original.hs_code).trim();
         const digits = String(item.ncm || '').replace(/\D/g, '');
-        return /^\d{10,12}$/.test(digits) ? digits.slice(0, 8) : digits;
+        return digits;
       })(),
       confidence: Number(item.confidence) || 0,
       rationale: String(item.rationale || ''),

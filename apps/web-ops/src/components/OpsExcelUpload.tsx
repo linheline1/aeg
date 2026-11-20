@@ -18,7 +18,7 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const pt = i18n.resolvedLanguage?.startsWith('pt');
-  const label = (field: string) => (pt ? ptLabels : labels)[field];
+  const label = (field: string) => field === 'total_price' ? t('orders.sourceAmountLabel') : ((pt ? ptLabels : labels)[field] ?? field);
   const [clientId, setClientId] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [draftId, setDraftId] = useState('');
@@ -46,7 +46,19 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
     data.total_price = data.total_pcs * value('unit_price');
     return { ...row, data };
   }), [rows]);
-  const sixDigitNcmCount = computed.filter(row => /^\d{6}$/.test(String(row.data.hs_code || '').trim())).length;
+  const sourceNcmCount = computed.filter(row => /^(?:\d{6}|\d{10})$/.test(String(row.data.hs_code || '').trim())).length;
+  const priceIssues = computed.flatMap(row => {
+    const source = row.source_totals?.total_price;
+    const quantity = Number(row.data.total_pcs);
+    const total = Number(row.data.total_price);
+    if (source == null || !Number.isFinite(source) || !Number.isFinite(total) || Math.abs(source - total) <= 0.02) return [];
+    return [{
+      row: row.row_no,
+      reason: t('orders.sourceAmountMismatch', { source, total }),
+      unitPrice: source >= 0 && quantity > 0 && Number.isFinite(source / quantity) ? source / quantity : null
+    }];
+  });
+  const otherIssues = issues.filter(issue => issue.field_key !== 'total_price' || !priceIssues.some(priceIssue => priceIssue.row === issue.row));
   const selected = anchor && edge ? {
     top: Math.min(anchor.row, edge.row), bottom: Math.max(anchor.row, edge.row),
     left: Math.min(anchor.col, edge.col), right: Math.max(anchor.col, edge.col),
@@ -91,7 +103,8 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
   };
   const paste = (event: ReactClipboardEvent<HTMLInputElement>, index: number, field: string) => {
     const raw = event.clipboardData.getData('text/plain');
-    if (!/[\t\r\n]/.test(raw)) return;
+    const isSingleSourceCode = field === 'hs_code' && /^(?:\d{6}|\d{10})$/.test(raw.trim());
+    if (!/[\t\r\n]/.test(raw) && !isSingleSourceCode) return;
     event.preventDefault();
     const cells = raw.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n').map(line => line.split('\t'));
     const column = fields.indexOf(field as typeof fields[number]);
@@ -105,7 +118,7 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
     });
     setRows(nextRows);
     setIssues([]); setError(''); setAiCompleted(null);
-    if (cells.some(line => line.some((value, offset) => fields[column + offset] === 'hs_code' && /^\d{6}$/.test(value.trim())))) void runAiCheck(draftId, nextRows);
+    if (cells.some(line => line.some((value, offset) => fields[column + offset] === 'hs_code' && /^(?:\d{6}|\d{10})$/.test(value.trim())))) void runAiCheck(draftId, nextRows);
   };
   const runAiCheck = async (id: string, candidateRows: Row[]) => {
     if (!id || aiInFlight.current) return;
@@ -129,7 +142,7 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
       if (!response.data.ok) { setError(response.data.error_summary || t('orders.uploadFailed')); return; }
       const previewRows: Row[] = response.data.rows || [];
       setDraftId(response.data.draft_id); setRows(previewRows); setCurrency(response.data.declared_currency || 'RMB'); setIssues(response.data.errors || []); setAiCompleted(null); clearSelection();
-      if (previewRows.some(row => /^\d{6}$/.test(String(row.data.hs_code || '').trim()))) await runAiCheck(response.data.draft_id, previewRows);
+      if (previewRows.some(row => /^(?:\d{6}|\d{10})$/.test(String(row.data.hs_code || '').trim()))) await runAiCheck(response.data.draft_id, previewRows);
     } catch (reason) { setError(getApiErrorMessage(reason, t('orders.uploadFailed'))); }
     finally { setBusy(false); }
   };
@@ -151,16 +164,27 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
     {result && <div className="alert alert-ok">{t('orders.uploadSuccess', { quote: result.quote })}{user?.role !== 'sales' && <> · <Link to={`/orders/${result.id}`}>{result.quote}</Link></>}</div>}
     {error && <div className="alert alert-err" role="alert">{error}</div>}
     {!draftId ? <><div className="row gap-md order-upload-controls"><select className="form-input" value={clientId} disabled={busy} onChange={event => setClientId(event.target.value)}><option value="">{t('rates.selectClient')}</option>{clients.map(client => <option key={client.id} value={client.id}>{client.china_company_name || client.name}</option>)}</select><input type="file" accept=".xlsx" disabled={busy} onChange={event => choose(event.target.files?.[0] || null)} /><button className="btn" disabled={!clientId || !file || busy} onClick={() => void preview()}>{busy ? t('orders.uploading') : t('orders.previewExcel')}</button></div><div className={`order-upload-dropzone${dragging ? ' is-dragging' : ''}`} onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); choose(event.dataTransfer.files[0] || null); }}>{file?.name || t('orders.dropExcel')}</div></> : <>
-      <div className="row gap-md ops-excel-actions"><strong>{t('orders.reviewRows', { count: rows.length })}</strong><select className="form-input" value={currency} onChange={event => setCurrency(event.target.value)}><option value="RMB">RMB</option><option value="USD">USD</option></select><button className="btn btn-ghost" disabled={busy || !selected} onClick={() => void copySelection()}>{t('orders.copySelection')}</button><button className="btn btn-ghost" disabled={busy} onClick={() => void aiCheck()}>{t('orders.aiCheckExcel')}</button><button className="btn" disabled={busy || !rows.length || issues.length > 0 || !computed.every(row => /^\d{8}$/.test(String(row.data.hs_code || '')))} onClick={() => void confirm()}>{busy ? t('orders.uploading') : t('orders.confirmExcel')}</button><button className="btn btn-ghost" disabled={busy} onClick={() => void cancel()}>{t('common.cancel')}</button></div>
+      <div className="row gap-md ops-excel-actions"><strong>{t('orders.reviewRows', { count: rows.length })}</strong><select className="form-input" value={currency} onChange={event => setCurrency(event.target.value)}><option value="RMB">RMB</option><option value="USD">USD</option></select><button className="btn btn-ghost" disabled={busy || !selected} onClick={() => void copySelection()}>{t('orders.copySelection')}</button><button className="btn btn-ghost" disabled={busy} onClick={() => void aiCheck()}>{t('orders.aiCheckExcel')}</button><button className="btn" disabled={busy || !rows.length || (issues.length > 0 || priceIssues.length > 0) || !computed.every(row => /^\d{8}$/.test(String(row.data.hs_code || '')))} onClick={() => void confirm()}>{busy ? t('orders.uploading') : t('orders.confirmExcel')}</button><button className="btn btn-ghost" disabled={busy} onClick={() => void cancel()}>{t('common.cancel')}</button></div>
       {aiChecking && <div className="alert alert-warn" role="status">{t('orders.autoCompletingNcm')}</div>}
       {aiCompleted !== null && !aiChecking && <div className="alert alert-ok" role="status">{t('orders.aiCompletedCount', { count: aiCompleted })}</div>}
-      {sixDigitNcmCount > 0 && !aiChecking && <div className="alert alert-warn">{t('orders.sixDigitNcmHint', { count: sixDigitNcmCount })}</div>}
-      {issues.length > 0 && <div className="alert alert-err">{issues.slice(0, 12).map((issue, index) => <div key={index}>{issue.row} · {issue.field_key ? label(issue.field_key) : ''}: {issue.reason}</div>)}</div>}
+      {sourceNcmCount > 0 && !aiChecking && <div className="alert alert-warn">{t('orders.sourceNcmHint', { count: sourceNcmCount })}</div>}
+      {(priceIssues.length > 0 || otherIssues.length > 0) && <div className="alert alert-err">
+        {priceIssues.map(issue => <div key={issue.row}>
+          {issue.row} · {label('total_price')}: {issue.reason}{' '}
+          {issue.unitPrice !== null && <button type="button" className="btn-link" disabled={busy} onClick={() => {
+            const unitPrice = issue.unitPrice;
+            setRows(current => current.map(row => row.row_no === issue.row ? { ...row, data: { ...row.data, unit_price: unitPrice } } : row));
+            setIssues(current => current.filter(item => item.row !== issue.row || !['unit_price', 'total_price'].includes(item.field_key ?? '')));
+            setError('');
+          }}>{t('orders.useSourceAmount')}</button>}
+        </div>)}
+        {otherIssues.slice(0, 12).map((issue, index) => <div key={index}>{issue.row} · {issue.field_key ? label(issue.field_key) : ''}: {issue.reason}</div>)}
+      </div>}
       <div className="table-wrap ops-excel-grid" onPointerMove={extendDrag}><table ref={tableRef} className="table"><thead><tr><th>#</th>{fields.map((field, col) => <th key={field}><button type="button" className="ops-excel-select" title={t('orders.selectColumn')} onClick={() => { setAnchor({ row: 0, col }); setEdge({ row: rows.length - 1, col }); }}>{label(field)}</button></th>)}<th>{t('orders.actions')}</th></tr></thead><tbody>{computed.map((row, index) => <tr key={row.row_no}><td><button type="button" className="ops-excel-select" title={t('orders.selectRow')} onClick={() => { setAnchor({ row: index, col: 0 }); setEdge({ row: index, col: fields.length - 1 }); }}>{row.row_no}</button></td>{fields.map((field, col) => {
         const active = !!selected && index >= selected.top && index <= selected.bottom && col >= selected.left && col <= selected.right;
         const fieldIndex = col;
         return <td key={field} data-row={index} data-col={fieldIndex} className={active ? 'ops-cell-selected' : undefined} onPointerDown={event => startDrag(event, { row: index, col: fieldIndex })}>
-          <input className={`form-input form-input-sm${active ? ' is-selected' : ''}`} type={numbers.has(field) ? 'number' : 'text'} step={numbers.has(field) ? 'any' : undefined} value={row.data[field] ?? ''} disabled={busy} onChange={event => update(index, field, event.target.value)} onPaste={event => paste(event, index, field)} onBlur={event => { if (field === 'hs_code' && /^\d{6}$/.test(event.currentTarget.value.trim())) void runAiCheck(draftId, rows); }} data-row-index={index} data-field={field} aria-label={`${label(field)} ${row.row_no}`}
+          <input className={`form-input form-input-sm${active ? ' is-selected' : ''}`} type={numbers.has(field) ? 'number' : 'text'} step={numbers.has(field) ? 'any' : undefined} value={row.data[field] ?? ''} disabled={busy} onChange={event => update(index, field, event.target.value)} onPaste={event => paste(event, index, field)} onBlur={event => { if (field === 'hs_code' && /^(?:\d{6}|\d{10})$/.test(event.currentTarget.value.trim())) void runAiCheck(draftId, rows); }} data-row-index={index} data-field={field} aria-label={`${label(field)} ${row.row_no}`}
             onCopy={event => { if (selected && (selected.top !== selected.bottom || selected.left !== selected.right)) { event.preventDefault(); event.clipboardData.setData('text/plain', selectionText()); } }}
             onKeyDown={(event: ReactKeyboardEvent<HTMLInputElement>) => {
               if (event.key !== 'Enter' && event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
