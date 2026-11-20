@@ -1202,23 +1202,25 @@ export class QuoteService {
       }
     }
 
-    // 普通 drawing 浮动图片（按锚点行号归属；同一 imageId 多锚点时只取首个，避免重复副本）
+    // 普通 drawing 浮动图片按锚点行号归属，同一图片可被多个产品行共用。
     // 仅保留锚定在产品行的浮动图片；锚定在标题/logo 等非产品行的丢弃
-    const placedImageIds = new Set<number>();
+    const placedImages = new Set<string>();
     for (const worksheet of workbook.worksheets) {
       const placements = worksheet.getImages();
       for (let index = 0; index < placements.length; index++) {
         const placement = placements[index];
         const imageId = Number(placement.imageId);
-        if (placedImageIds.has(imageId)) continue;
-        placedImageIds.add(imageId);
         const nativeRow = Number((placement.range as any)?.tl?.nativeRow);
         const rowNo = Number.isInteger(nativeRow) && nativeRow >= 0 ? nativeRow + 1 : null;
         if (validRowNos.size > 0 && rowNo !== null && !validRowNos.has(rowNo)) continue; // 非产品行的浮动图跳过
-        const media = workbook.getImage(Number(placement.imageId));
+        const placementKey = `${rowNo}:${imageId}`;
+        if (placedImages.has(placementKey)) continue;
+        const media = workbook.getImage(imageId);
+        if (!media?.buffer) continue;
         const extension = String(media.extension || 'png').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'png';
         const buffer = Buffer.from(media.buffer as any);
-        if (!buffer || buffer.length === 0) continue;
+        if (buffer.length === 0) continue;
+        placedImages.add(placementKey);
         const fileName = `excel-embedded-${crypto.randomUUID()}.${extension}`;
         const absolutePath = path.join(imageDir, fileName);
         fs.writeFileSync(absolutePath, buffer);
