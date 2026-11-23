@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditRepo, QuotesRepo } from '../common/mock-db';
 import { AiNcmService } from './ai-ncm.service';
 import { calculateDi, DiParameters } from './di-calculation';
@@ -15,7 +15,7 @@ export class DiService {
   ) {}
 
   async analyze(id: string, parameters: DiParameters, actor: { username: string; role: string }) {
-    const order: any = await this.quotesRepo.findById(id);
+    const order: any = await this.quotesRepo.findVersioned(id);
     if (!order) throw new NotFoundException('Pedido não encontrado');
     if (!Array.isArray(order.line_items) || order.line_items.length === 0) {
       throw new BadRequestException('O pedido não possui produtos para análise de NCM');
@@ -25,10 +25,11 @@ export class DiService {
       if (!item.sources.length) throw new BadGatewayException(`A IA não forneceu fonte oficial para a linha ${item.row_no}`);
     }
     const analysis = calculateDi(order, suggestions, parameters);
-    const saved = await this.quotesRepo.update(id, {
+    const saved = await this.quotesRepo.updateIfUnchanged(id, order.revision, {
       di_analysis: analysis,
       customs_review: pendingCustomsReview(analysis.totals.di_brl)
     } as any);
+    if (!saved) throw new ConflictException('O pedido mudou durante a análise. Execute novamente.');
     await this.auditRepo.entry({
       actor_username: actor.username, actor_role: actor.role, action: 'order.di.analyze',
       target_type: 'quote', target_id: id,

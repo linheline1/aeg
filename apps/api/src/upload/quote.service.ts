@@ -11,7 +11,7 @@ import { calculateDi } from '../order/di-calculation';
 import { calculateDdpPricing } from './ddp-pricing';
 import { pendingCustomsReview } from '../order/customs-review';
 
-type DdpFees = {
+export type DdpFees = {
   ocean_freight_usd: number;
   port_fee_usd: number;
   br_trucking_brl: number;
@@ -74,7 +74,7 @@ async function validateTemplateMeta(
   }
 }
 
-interface ParsedRow {
+export interface ParsedRow {
   row_no: number;
   data: Record<string, any>;
   source_totals?: {
@@ -84,7 +84,7 @@ interface ParsedRow {
   };
 }
 
-interface RowError {
+export interface RowError {
   row: number;
   col_letter: string;
   field_key: string;
@@ -104,6 +104,7 @@ export interface UploadResult {
   total_amount?: number;
   total_pcs?: number;
   draft_id?: string;
+  draft_expires_at?: string;
   rows?: ParsedRow[];
   can_confirm?: boolean;
   message?: string;
@@ -221,6 +222,40 @@ export class QuoteService {
     };
   }
 
+  async autoDiInput(order: any) {
+    const { rates } = await this.resolveRates(order.client_id);
+    const parameters = {
+      rmb_brl: Number(process.env.DI_RMB_BRL || 0.75),
+      insurance_brl: Number(process.env.DI_INSURANCE_BRL || 0),
+      icms_rate: Number(process.env.DI_ICMS_RATE || 0.18),
+      uf: process.env.DI_UF || 'SP',
+      freight_brl: (rates.ocean_freight_usd + rates.port_fee_usd) * rates.fx_rate
+    };
+    return { parameters, rates };
+  }
+
+  async publishTaskDi(order: any, analysis: any, rates: DdpFees | undefined, actor: { username: string; role: string }) {
+    let pricePatch = {};
+    if (rates) {
+      const pricing = this.buildDdpPricing(analysis, rates);
+      pricePatch = {
+        status: 'done', error_message: null, pricing_breakdown: pricing.breakdown,
+        total_amount_brl: pricing.brl, total_amount_usd: pricing.usd
+      };
+    }
+    const saved = await this.quotesRepo.updateIfUnchanged(order.id, order.revision, {
+      ...pricePatch, di_analysis: analysis, customs_review: pendingCustomsReview(analysis.totals.di_brl)
+    });
+    if (!saved) return false;
+    await this.auditRepo.entry({
+      actor_username: actor.username, actor_role: actor.role,
+      action: rates ? 'order.di.auto' : 'order.di.analyze',
+      target_type: 'quote', target_id: order.id,
+      detail: { quote_no: order.quote_no, items: analysis.items.length, total_di_brl: analysis.totals.di_brl, task_id: analysis.task_id }
+    }).catch(() => undefined);
+    return true;
+  }
+
   /**
    * 运营端参考 DDP 计算。已有 DI 即可生成参考价，报关行批准仅限制最终成交。
    * 费率来源：客户覆盖 > 全局默认，overrides 仅作单次微调。
@@ -270,52 +305,6 @@ export class QuoteService {
         detail: { quote_no: order.quote_no, error: e?.message }
       });
       throw e;
-    }
-  }
-
-  async runAutoDi(quoteId: string): Promise<{ ok: boolean; error?: string }> {
-    const startedAt = new Date().toISOString();
-    try {
-      const order: any = await this.quotesRepo.findById(quoteId);
-      if (!order) throw new NotFoundException('订单不存在');
-      await this.quotesRepo.update(quoteId, {
-        di_analysis: { status: 'analyzing', stage: 'ncm', progress: 15, auto: true, started_at: startedAt },
-        customs_review: pendingCustomsReview()
-      } as any);
-      const suggestions = await this.aiNcm.suggest(order);
-      await this.quotesRepo.update(quoteId, {
-        di_analysis: { status: 'calculating', stage: 'taxes', progress: 80, auto: true, started_at: startedAt }
-      } as any);
-      const resolved = await this.resolveRates(order.client_id);
-      const analysis: any = calculateDi(order, suggestions, {
-        rmb_brl: Number(process.env.DI_RMB_BRL || 0.75),
-        insurance_brl: Number(process.env.DI_INSURANCE_BRL || 0),
-        icms_rate: Number(process.env.DI_ICMS_RATE || 0.18),
-        uf: process.env.DI_UF || 'SP',
-        freight_brl: (resolved.rates.ocean_freight_usd + resolved.rates.port_fee_usd) * resolved.rates.fx_rate
-      });
-      analysis.progress = 100;
-      analysis.stage = 'completed';
-      analysis.auto = true;
-      analysis.started_at = startedAt;
-      analysis.completed_at = new Date().toISOString();
-      await this.quotesRepo.update(quoteId, { di_analysis: analysis } as any);
-      await this.auditRepo.entry({
-        actor_username: 'system', actor_role: 'system', action: 'order.di.auto',
-        target_type: 'quote', target_id: quoteId,
-        detail: { quote_no: order.quote_no, items: analysis.items.length, total_di_brl: analysis.totals.di_brl }
-      });
-      return { ok: true };
-    } catch (e: any) {
-      const error = e?.message || 'AI NCM / DI 自动核算失败';
-      await this.quotesRepo.update(quoteId, {
-        di_analysis: {
-          status: 'failed', stage: 'failed', progress: 100, auto: true,
-          started_at: startedAt, completed_at: new Date().toISOString(),
-          error_message: error
-        }
-      } as any);
-      return { ok: false, error };
     }
   }
 
@@ -710,6 +699,7 @@ export class QuoteService {
     const previewRows: ParsedRow[] = JSON.parse(JSON.stringify(parsed.rows));
     const errors = previewRows.flatMap(row => this.validateAndComputeRow(row, parsed.warehouseCode || '', true));
     const summary = this.computeSummary(previewRows);
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     await this.uploadDraftsRepo.insert({
       id: draftId,
       client_id: clientId,
@@ -723,12 +713,13 @@ export class QuoteService {
       ai_notes: parsed.aiNotes || null,
       declared_currency: parsed.currency,
       screenshots,
-      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      expires_at: expiresAt
     });
 
     return {
       ok: true,
       draft_id: draftId,
+      draft_expires_at: expiresAt,
       status: 'validating',
       rows: previewRows,
       total_rows: previewRows.length,
@@ -832,14 +823,15 @@ export class QuoteService {
     return draft;
   }
 
-  /** 提交前复用系统 AI 配置检查产品信息，并为每行建议巴西 NCM。 */
-  async aiCheckUpload(draftId: string, clientId: string, submittedRows: ParsedRow[]): Promise<AiUploadCheckResult> {
+  async prepareUploadTask(draftId: string, clientId: string, submittedRows: ParsedRow[]) {
     const draft = await this.getUploadDraft(draftId, clientId);
-    if (draft.status !== 'preview') throw new BadRequestException('该草稿已取消或不可检查');
+    if (draft.status !== 'preview' || (draft.expires_at && new Date(draft.expires_at).getTime() <= Date.now())) {
+      throw new BadRequestException('该草稿已取消、过期或不可检查');
+    }
     if (!Array.isArray(submittedRows) || submittedRows.length === 0 || submittedRows.length > TEMPLATE_MAX_ROWS) {
       throw new BadRequestException('待检查明细为空或超过最大行数');
     }
-    const originalRows = new Set((draft.rows || []).map((row: ParsedRow) => Number(row.row_no)));
+    const originalRows = new Map<number, ParsedRow>((draft.rows || []).map((row: ParsedRow) => [Number(row.row_no), row]));
     const seen = new Set<number>();
     const rows: ParsedRow[] = submittedRows.map(row => {
       const rowNo = Number(row?.row_no);
@@ -847,13 +839,20 @@ export class QuoteService {
         throw new BadRequestException('待检查明细包含无效行');
       }
       seen.add(rowNo);
-      return { row_no: rowNo, data: { ...row.data }, source_totals: row.source_totals };
+      const data = Object.fromEntries(FIELD_DICTIONARY.filter(field => !field.formula).map(field => [field.field_key, row.data[field.field_key]]));
+      return { row_no: rowNo, data, source_totals: originalRows.get(rowNo)?.source_totals };
     });
     const issues = rows.flatMap(row => this.validateAndComputeRow(row, draft.warehouse_code || '', true));
 
     const needsNcm = rows.filter(row => !String(row.data.hs_code || '').trim() || /^(?:\d{6}|\d{10})$/.test(String(row.data.hs_code).trim()));
     const images = (draft.screenshots || []).filter((image: any) => needsNcm.some(row => Number(row.row_no) === Number(image.row_no)))
       .map((image: any) => ({ row_no: image.row_no, file_path: image.file_path, mime_type: image.mimetype, size_bytes: image.size }));
+    return { rows, issues, needsNcm, images, declaredCurrency: draft.declared_currency };
+  }
+
+  async aiCheckUpload(draftId: string, clientId: string, submittedRows: ParsedRow[]): Promise<AiUploadCheckResult> {
+    const prepared = await this.prepareUploadTask(draftId, clientId, submittedRows);
+    const { needsNcm, images } = prepared;
     // Classify small groups independently: one slow or invalid AI response must not
     // discard the valid NCMs returned for the other products in a large spreadsheet.
     const groups: ParsedRow[][] = [];
@@ -876,11 +875,19 @@ export class QuoteService {
       }
     };
     await Promise.all(Array.from({ length: Math.min(3, groups.length) }, () => worker()));
-    const suggestions = groupResults.flatMap(result => result.suggestions);
+    const errors = new Map<number, string>();
     groups.forEach((group, index) => {
-      if (!groupResults[index].error) return;
-      for (const row of group) issues.push({ row: row.row_no, col_letter: '', field_key: 'hs_code', reason: `AI 补全失败：${groupResults[index].error}` });
+      const error = groupResults[index].error;
+      if (error) for (const row of group) errors.set(row.row_no, error);
     });
+    return this.finishUploadTask(prepared, groupResults.flatMap(result => result.suggestions), errors);
+  }
+
+  finishUploadTask(
+    { rows, issues, needsNcm, images }: Awaited<ReturnType<QuoteService['prepareUploadTask']>>,
+    suggestions: any[],
+    errors = new Map<number, string>()
+  ): AiUploadCheckResult {
     const byRow = new Map(suggestions.map(item => [Number(item.row_no), item]));
     let ncmCount = 0;
     let lowConfidenceCount = 0;
@@ -892,7 +899,7 @@ export class QuoteService {
         row.data.hs_code = ncm;
         ncmCount += 1;
       } else {
-        if (!groupResults[Math.floor(needsNcm.indexOf(row) / 4)].error) issues.push({ row: row.row_no, col_letter: '', field_key: 'hs_code', reason: prefix ? `AI 未能找到以 ${prefix} 开头的有效 8 位巴西 NCM，请人工确认后修改` : 'AI 未能识别有效的 8 位 NCM' });
+        issues.push({ row: row.row_no, col_letter: '', field_key: 'hs_code', reason: errors.get(row.row_no) || (prefix ? `AI 未能找到以 ${prefix} 开头的有效 8 位巴西 NCM，请人工确认后修改` : 'AI 未能识别有效的 8 位 NCM') });
       }
       if (Number(suggestion?.confidence) < 0.5) {
         lowConfidenceCount += 1;

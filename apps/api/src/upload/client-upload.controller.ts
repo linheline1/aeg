@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Get,
   Delete,
   Body,
   Param,
@@ -20,6 +21,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { QuoteService } from './quote.service';
+import { QuoteAiTasksService } from '../quote-tasks/quote-ai-tasks.service';
 import { ImageRepo, AuditRepo, QuotesRepo, repoRoot } from '../common/mock-db';
 
 const TMP_DIR = path.join(repoRoot(), 'apps/api/uploads/tmp');
@@ -40,7 +42,8 @@ export class ClientUploadController {
     private readonly quoteService: QuoteService,
     @Inject('ImageRepo') private readonly imageRepo: ImageRepo,
     @Inject('AuditRepo') private readonly auditRepo: AuditRepo,
-    @Inject('QuotesRepo') private readonly quotesRepo: QuotesRepo
+    @Inject('QuotesRepo') private readonly quotesRepo: QuotesRepo,
+    private readonly tasks: QuoteAiTasksService
   ) {}
 
   private static readonly excelScreenshotsInterceptor = FileFieldsInterceptor(
@@ -108,18 +111,12 @@ export class ClientUploadController {
       String(body?.declared_currency || ''),
       { username: req.user?.username, role: req.user?.role || 'client' }
     );
-    if (!result.draft_id) return result;
+    if (!result.draft_id) return result.ok && result.quote_id
+      ? { ...result, analysis_queued: await this.tasks.enqueueAutomatic(result.quote_id) } : result;
     const draft = await this.quoteService.getUploadDraft(result.draft_id, clientId);
     const bound = await this.bindScreenshots(result, clientId, draft.screenshots || [], req.user?.username || 'client');
-    if (result.quote_id) {
-      void (async () => {
-        const diResult = await this.quoteService.runAutoDi(result.quote_id!);
-        if (diResult.ok) {
-          await this.quoteService.computeOrder(result.quote_id!, { username: 'system', role: 'system' });
-        }
-      })().catch(() => undefined);
-    }
-    return { ...result, ...bound };
+    const queued = result.quote_id ? await this.tasks.enqueueAutomatic(result.quote_id) : false;
+    return { ...result, ...bound, analysis_queued: queued };
   }
 
   @Post('upload/ai-check')
@@ -128,6 +125,20 @@ export class ClientUploadController {
     const clientId = req.user?.client_id;
     if (!clientId) throw new BadRequestException('当前用户缺少 client_id');
     return this.quoteService.aiCheckUpload(String(body?.draft_id || ''), clientId, body?.rows);
+  }
+
+  @Post('upload/:draftId/ncm-task')
+  startNcm(@Param('draftId') draftId: string, @Body() body: { rows?: any[]; currency?: string }, @Req() req: Request & { user?: any }) {
+    const clientId = req.user?.client_id;
+    if (!clientId) throw new BadRequestException('当前用户缺少 client_id');
+    return this.tasks.startNcm(draftId, clientId, body?.rows as any, body?.currency);
+  }
+
+  @Get('upload/:draftId/ncm-task')
+  getNcm(@Param('draftId') draftId: string, @Req() req: Request & { user?: any }) {
+    const clientId = req.user?.client_id;
+    if (!clientId) throw new BadRequestException('当前用户缺少 client_id');
+    return this.tasks.getNcm(draftId, clientId);
   }
 
   @Delete('upload/:draftId')
@@ -162,7 +173,7 @@ export class ClientUploadController {
       this.screenshotMetadata(files.files || [], req.body?.row_map),
       req.user?.username || 'client'
     );
-    return { ...result, ...bound };
+    return { ...result, ...bound, analysis_queued: await this.tasks.enqueueAutomatic(result.quote_id) };
   }
 
   private screenshotMetadata(files: Express.Multer.File[], rowMapRaw?: string): any[] {

@@ -34,6 +34,7 @@ interface ClientOrderDetail {
   /** 金额是否为参考预估（接口未返回时按参考处理） */
   price_is_reference?: boolean;
   pricing_processing?: boolean;
+  di_task?: { status: string; total: number; completed: number } | null;
   pricing_failed?: boolean;
   pricing_breakdown?: PricingBreakdown | null;
   di_analysis?: {
@@ -133,7 +134,7 @@ export default function OrderDetail() {
         if (cancelled) return;
         setD(response.data);
         setErr(null);
-        const processing = ['analyzing', 'calculating'].includes(response.data.di_analysis?.status);
+        const processing = response.data.pricing_processing;
         timer = setTimeout(() => { if (document.visibilityState === 'visible') load(); }, processing ? 3000 : 30000);
       } catch (e: any) {
         if (!cancelled) {
@@ -286,7 +287,7 @@ export default function OrderDetail() {
             <span className="calc-spinner" aria-hidden="true" />
             <div>
               <strong>{t('orderDetail.calculating')}</strong>
-              <span className="text-sm muted">{t('orderDetail.calculatingHint')}</span>
+              <span className="text-sm muted">{d.di_task ? t('quoteTask.clientProgress', { ...d.di_task }) : t('orderDetail.calculatingHint')}</span>
             </div>
           </div>
         ) : d.pricing_failed ? (

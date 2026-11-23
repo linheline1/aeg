@@ -6,9 +6,10 @@ import { CustomsProfileController } from './profile.controller';
 import { AdminCustomsCnpjController, CustomsCnpjController } from './customs-cnpj.controller';
 import { CustomsService } from './customs.service';
 import { CustomsCnpjService } from './customs-cnpj.service';
+import { UploadModule } from '../upload/upload.module';
 
 @Module({
-  imports: [AuthModule, OrderModule],
+  imports: [AuthModule, OrderModule, UploadModule],
   controllers: [CustomsController, CustomsProfileController, AdminCustomsCnpjController, CustomsCnpjController],
   providers: [CustomsService, CustomsCnpjService]
 })

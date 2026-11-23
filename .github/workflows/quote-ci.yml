@@ -1,0 +1,45 @@
+name: Quote regression
+
+on:
+  pull_request:
+  push:
+    branches: [main, development]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quote-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: aeg_quote_test
+          POSTGRES_USER: aeg_test
+          POSTGRES_PASSWORD: aeg_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U aeg_test -d aeg_quote_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Type check and build API and four portals
+        run: pnpm build
+      - name: Quote and role regressions
+        run: pnpm test
+      - name: PostgreSQL migrations and quote workflow
+        run: pnpm --filter @aeg/api test:postgres
+        env:
+          AEG_TEST_PG_URL: postgres://aeg_test:aeg_test@127.0.0.1:${{ job.services.postgres.ports[5432] }}/aeg_quote_test

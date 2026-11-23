@@ -28,6 +28,7 @@ export default function AiConfigPage() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [taskCounts, setTaskCounts] = useState<Record<string, number> | null>(null);
 
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -59,6 +60,15 @@ export default function AiConfigPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const update = () => api.get<Record<string, number>>('/api/admin/ai-config/tasks', { signal: controller.signal })
+      .then(({ data }) => setTaskCounts(data)).catch(() => undefined);
+    void update();
+    const timer = setInterval(update, 15000);
+    return () => { controller.abort(); clearInterval(timer); };
+  }, []);
 
   const flash = (text: string) => {
     setMsg(text);
@@ -171,6 +181,15 @@ export default function AiConfigPage() {
         <h1>{t('aiConfig.title')}</h1>
         <span className="muted text-sm">{t('aiConfig.subtitle')}</span>
       </div>
+
+      {taskCounts && <div className="card">
+        <h3>{t('quoteTask.admin')}</h3>
+        <p className="muted">{t('quoteTask.adminTotals', {
+          queued: taskCounts.queued ?? 0, running: taskCounts.running ?? 0, complete: taskCounts.complete ?? 0,
+          attention: (taskCounts.partial ?? 0) + (taskCounts.failed ?? 0) + (taskCounts.stale ?? 0),
+          billing: taskCounts.billing ?? 0
+        })}</p>
+      </div>}
 
       {err && <div className="alert alert-err">❌ {err}</div>}
       {msg && <div className="alert alert-ok">{msg}</div>}

@@ -9,6 +9,8 @@
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",
     "build": "node ../../scripts/write-version.mjs api . && nest build",
+    "test": "node --test test/quote.test.cjs test/permissions.test.cjs test/quote-tasks.test.cjs",
+    "test:postgres": "node --test test/postgres.test.cjs",
     "lint": "eslint \"src/**/*.ts\"",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/data-source.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/data-source.ts",

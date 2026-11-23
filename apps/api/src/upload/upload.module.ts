@@ -9,6 +9,9 @@ import { AuthModule } from '../auth/auth.module';
 import { MulterModule } from '@nestjs/platform-express';
 import { repoRoot } from '../common/mock-db';
 import path from 'path';
+import { QuoteAiTasksService } from '../quote-tasks/quote-ai-tasks.service';
+import { QuoteTaskStore } from '../quote-tasks/quote-task.store';
+import { QuoteTasksAdminController } from '../quote-tasks/quote-tasks-admin.controller';
 
 @Module({
   imports: [
@@ -18,8 +21,8 @@ import path from 'path';
       preservePath: true
     })
   ],
-  controllers: [ClientUploadController, OpsUploadController, ClientImageController, OpsImageController],
-  providers: [QuoteService, AiConvertService, AiNcmService],
-  exports: [QuoteService]
+  controllers: [ClientUploadController, OpsUploadController, ClientImageController, OpsImageController, QuoteTasksAdminController],
+  providers: [QuoteService, AiConvertService, AiNcmService, QuoteTaskStore, QuoteAiTasksService],
+  exports: [QuoteService, QuoteAiTasksService]
 })
 export class UploadModule {}

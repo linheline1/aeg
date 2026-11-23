@@ -254,6 +254,22 @@ export class PgQuotesRepo {
   private repo: Repository<QuoteOrderEntity>;
   constructor(ds: DataSource) { this.repo = ds.getRepository(QuoteOrderEntity); }
 
+  async findVersioned(id: string): Promise<(QuoteOrderRow & { revision: string }) | null> {
+    const { entities, raw } = await this.repo.createQueryBuilder('q')
+      .addSelect("concat(q.xmin::text, ':', q.updated_at::text)", 'quote_revision')
+      .where('q.id = :id AND q.status <> :deleted', { id, deleted: 'deleted' }).getRawAndEntities();
+    return entities[0] ? { ...toRow<QuoteOrderRow>(entities[0]), revision: raw[0].quote_revision } : null;
+  }
+
+  async updateIfUnchanged(id: string, version: string, patch: Partial<QuoteOrderRow>): Promise<QuoteOrderRow | null> {
+    const result = await this.repo.createQueryBuilder().update()
+      .set(stripUndefined(patch) as any)
+      .where("id = :id AND status <> :deleted AND concat(xmin::text, ':', updated_at::text) = :version",
+        { id, deleted: 'deleted', version })
+      .returning('*').execute();
+    return result.affected ? toRow(result.raw[0]) as QuoteOrderRow : null;
+  }
+
   async find(opts: { where?: { client_id?: string; salesperson_id?: string } } = {}): Promise<QuoteOrderRow[]> {
     const where: any = {};
     if (opts.where?.client_id) where.client_id = opts.where.client_id;

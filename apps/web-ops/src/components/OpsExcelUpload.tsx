@@ -1,3 +1,4 @@
+import { useNcmTask, taskRetryable } from '@aeg/web-shared/quote-tasks';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ClipboardEvent as ReactClipboardEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { Link } from 'react-router-dom';
@@ -98,6 +99,7 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
   };
   const choose = (next: File | null) => { if (next && !/\.xlsx$/i.test(next.name)) { setError(t('orders.invalidExcel')); return; } setFile(next); setError(''); };
   const update = (index: number, key: string, value: string) => {
+    ncmTask.clear();
     setRows(current => current.map((row, i) => i === index ? { ...row, data: { ...row.data, [key]: numbers.has(key) ? (value === '' ? null : Number(value.replace(',', '.'))) : value } } : row));
     setIssues([]); setAiCompleted(null);
   };
@@ -116,25 +118,42 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
       cells[rowIndex - index].forEach((value, offset) => { const key = fields[column + offset]; data[key] = numbers.has(key) ? (value.trim() ? Number(value.trim().replace(',', '.')) : null) : value.trim(); });
       return { ...row, data };
     });
+    ncmTask.clear();
     setRows(nextRows);
     setIssues([]); setError(''); setAiCompleted(null);
     if (cells.some(line => line.some((value, offset) => fields[column + offset] === 'hs_code' && /^(?:\d{6}|\d{10})$/.test(value.trim())))) void runAiCheck(draftId, nextRows);
   };
-  const runAiCheck = async (id: string, candidateRows: Row[]) => {
-    if (!id || aiInFlight.current) return;
-    aiInFlight.current = true;
-    setBusy(true); setAiChecking(true); setError('');
-    try {
-      const response = await api.post('/api/ops/orders/upload/ai-check', { draft_id: id, rows: candidateRows }, { timeout: 290_000 });
-      setRows(response.data.rows || candidateRows);
-      setIssues(response.data.issues || []);
-      setAiCompleted(Number(response.data.ncm_count || 0));
-      if (!response.data.ok) setError(t('orders.aiCheckPartial', { completed: response.data.ncm_count || 0, remaining: (response.data.rows || candidateRows).filter((row: Row) => !/^\d{8}$/.test(String(row.data.hs_code || '').trim())).length }));
-    } catch (reason) { setError(getApiErrorMessage(reason, t('orders.uploadFailed'))); }
-    finally { aiInFlight.current = false; setAiChecking(false); setBusy(false); }
+  const ncmTask = useNcmTask<{ rows: Row[]; issues: Issue[]; ncm_count: number; ok: boolean }, Row>({
+    api, prefix: '/api/ops/orders/upload', storageKey: 'aeg-ops-ncm:' + user?.id,
+    onBusy: running => { aiInFlight.current = running; setBusy(running); setAiChecking(running); },
+    onRestore: (id, task) => {
+      setDraftId(id); setRows(task.inputRows || []); setCurrency(task.currency || 'RMB'); clearSelection();
+    },
+    onError: reason => setError(getApiErrorMessage(reason, t('orders.uploadFailed'))),
+    onResult: task => {
+      const result = task.result;
+      if (task.error) setError(t('quoteTask.' + task.error.code, { defaultValue: task.error.message }));
+      if (!result) return;
+      setRows(result.rows);
+      const failures = new Map(task.failures?.map(failure => [failure.row_no, failure]));
+      setIssues(result.issues.map(issue => {
+        const failure = failures.get(issue.row);
+        return issue.field_key === 'hs_code' && failure
+          ? { ...issue, reason: t('quoteTask.' + failure.code, { defaultValue: failure.message }) }
+          : issue;
+      }));
+      setAiCompleted(result.ncm_count);
+      if (!result.ok && !task.error) setError(t('orders.reviewIssues'));
+    }
+  });
+  const runAiCheck = async (id: string, candidateRows: Row[], taskCurrency = currency) => {
+    if (!id || !candidateRows.length || aiInFlight.current) return;
+    setError('');
+    await ncmTask.run(id, candidateRows, taskCurrency);
   };
   const preview = async () => {
     if (!clientId || !file) return;
+    ncmTask.clear();
     setBusy(true); setError(''); setResult(null);
     try {
       const data = new FormData(); data.append('client_id', clientId); data.append('file', file);
@@ -142,7 +161,7 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
       if (!response.data.ok) { setError(response.data.error_summary || t('orders.uploadFailed')); return; }
       const previewRows: Row[] = response.data.rows || [];
       setDraftId(response.data.draft_id); setRows(previewRows); setCurrency(response.data.declared_currency || 'RMB'); setIssues(response.data.errors || []); setAiCompleted(null); clearSelection();
-      if (previewRows.some(row => /^(?:\d{6}|\d{10})$/.test(String(row.data.hs_code || '').trim()))) await runAiCheck(response.data.draft_id, previewRows);
+      if (previewRows.some(row => /^(?:\d{6}|\d{10})$/.test(String(row.data.hs_code || '').trim()))) await runAiCheck(response.data.draft_id, previewRows, response.data.declared_currency || 'RMB');
     } catch (reason) { setError(getApiErrorMessage(reason, t('orders.uploadFailed'))); }
     finally { setBusy(false); }
   };
@@ -154,18 +173,19 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
     try {
       const response = await api.post('/api/ops/orders/upload/confirm', { draft_id: draftId, rows: computed, declared_currency: currency }, { timeout: 120_000 });
       if (!response.data.ok) { setIssues(response.data.errors || []); setError(response.data.error_summary || t('orders.reviewIssues')); return; }
+      ncmTask.clear();
       setResult({ id: response.data.quote_id, quote: response.data.quote_no }); setDraftId(''); setRows([]); setFile(null); clearSelection(); onConfirmed();
     } catch (reason) { setError(getApiErrorMessage(reason, t('orders.uploadFailed'))); }
     finally { setBusy(false); }
   };
-  const cancel = async () => { if (draftId) try { await api.delete(`/api/ops/orders/upload/${draftId}`); } catch { /* draft expires automatically */ } setDraftId(''); setRows([]); setIssues([]); setAiCompleted(null); setError(''); clearSelection(); };
+  const cancel = async () => { ncmTask.clear(); if (draftId) try { await api.delete(`/api/ops/orders/upload/${draftId}`); } catch { /* draft expires automatically */ } setDraftId(''); setRows([]); setIssues([]); setAiCompleted(null); setError(''); clearSelection(); };
   return <div className="card ops-excel-upload">
     <div className="card-title"><h3>{t('orders.uploadTitle')}</h3></div>
     {result && <div className="alert alert-ok">{t('orders.uploadSuccess', { quote: result.quote })}{user?.role !== 'sales' && <> · <Link to={`/orders/${result.id}`}>{result.quote}</Link></>}</div>}
     {error && <div className="alert alert-err" role="alert">{error}</div>}
     {!draftId ? <><div className="row gap-md order-upload-controls"><select className="form-input" value={clientId} disabled={busy} onChange={event => setClientId(event.target.value)}><option value="">{t('rates.selectClient')}</option>{clients.map(client => <option key={client.id} value={client.id}>{client.china_company_name || client.name}</option>)}</select><input type="file" accept=".xlsx" disabled={busy} onChange={event => choose(event.target.files?.[0] || null)} /><button className="btn" disabled={!clientId || !file || busy} onClick={() => void preview()}>{busy ? t('orders.uploading') : t('orders.previewExcel')}</button></div><div className={`order-upload-dropzone${dragging ? ' is-dragging' : ''}`} onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); choose(event.dataTransfer.files[0] || null); }}>{file?.name || t('orders.dropExcel')}</div></> : <>
-      <div className="row gap-md ops-excel-actions"><strong>{t('orders.reviewRows', { count: rows.length })}</strong><select className="form-input" value={currency} onChange={event => setCurrency(event.target.value)}><option value="RMB">RMB</option><option value="USD">USD</option></select><button className="btn btn-ghost" disabled={busy || !selected} onClick={() => void copySelection()}>{t('orders.copySelection')}</button><button className="btn btn-ghost" disabled={busy} onClick={() => void aiCheck()}>{t('orders.aiCheckExcel')}</button><button className="btn" disabled={busy || !rows.length || (issues.length > 0 || priceIssues.length > 0) || !computed.every(row => /^\d{8}$/.test(String(row.data.hs_code || '')))} onClick={() => void confirm()}>{busy ? t('orders.uploading') : t('orders.confirmExcel')}</button><button className="btn btn-ghost" disabled={busy} onClick={() => void cancel()}>{t('common.cancel')}</button></div>
-      {aiChecking && <div className="alert alert-warn" role="status">{t('orders.autoCompletingNcm')}</div>}
+      <div className="row gap-md ops-excel-actions"><strong>{t('orders.reviewRows', { count: rows.length })}</strong><select className="form-input" value={currency} disabled={busy} onChange={event => { ncmTask.clear(); setCurrency(event.target.value); }}><option value="RMB">RMB</option><option value="USD">USD</option></select><button className="btn btn-ghost" disabled={busy || !selected} onClick={() => void copySelection()}>{t('orders.copySelection')}</button><button className="btn btn-ghost" disabled={busy} onClick={() => void aiCheck()}>{t(taskRetryable(ncmTask.task) ? 'quoteTask.retry' : 'orders.aiCheckExcel')}</button><button className="btn" disabled={busy || !rows.length || (issues.length > 0 || priceIssues.length > 0) || !computed.every(row => /^\d{8}$/.test(String(row.data.hs_code || '')))} onClick={() => void confirm()}>{busy ? t('orders.uploading') : t('orders.confirmExcel')}</button><button className="btn btn-ghost" disabled={busy} onClick={() => void cancel()}>{t('common.cancel')}</button></div>
+      {aiChecking && <div className="alert alert-warn" role="status">{ncmTask.task ? t('quoteTask.progress', { ...ncmTask.task }) : t('orders.autoCompletingNcm')}</div>}
       {aiCompleted !== null && !aiChecking && <div className="alert alert-ok" role="status">{t('orders.aiCompletedCount', { count: aiCompleted })}</div>}
       {sourceNcmCount > 0 && !aiChecking && <div className="alert alert-warn">{t('orders.sourceNcmHint', { count: sourceNcmCount })}</div>}
       {(priceIssues.length > 0 || otherIssues.length > 0) && <div className="alert alert-err">
@@ -196,7 +216,7 @@ export default function OpsExcelUpload({ clients, onConfirmed }: { clients: Clie
               input?.focus(); input?.select();
             }} />
         </td>;
-      })}<td><button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => { setRows(current => current.filter(item => item.row_no !== row.row_no)); setIssues([]); clearSelection(); }}>{t('orders.deleteRow')}</button></td></tr>)}</tbody></table></div>
+      })}<td><button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => { ncmTask.clear(); setRows(current => current.filter(item => item.row_no !== row.row_no)); setIssues([]); clearSelection(); }}>{t('orders.deleteRow')}</button></td></tr>)}</tbody></table></div>
     </>}
   </div>;
 }

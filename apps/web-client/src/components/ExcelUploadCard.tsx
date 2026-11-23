@@ -1,15 +1,46 @@
-import { useMemo, useRef, useState } from 'react';
+import { useNcmTask, taskRetryable } from '@aeg/web-shared/quote-tasks';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ClipboardEvent as ReactClipboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
-import { api } from '../store/auth';
+import { api, useAuth } from '../store/auth';
 import { showToast } from './Toast';
 
 type Row = { row_no: number; data: Record<string, any>; source_totals?: Record<string, number | null> };
 type RowError = { row: number; field_key: string; reason: string };
 type NcmSuggestion = { row_no: number; ncm: string; confidence: number; rationale: string; used_image: boolean };
+type DraftSnapshot = {
+  draftId: string;
+  expiresAt: string;
+  filename: string;
+  rows: Row[];
+  currency: 'RMB' | 'USD';
+  errors: RowError[];
+  suggestions: NcmSuggestion[];
+  convertedByAi: boolean;
+  aiNotes: string;
+  aiChecked: boolean;
+  aiCheckNote: string;
+};
+
+const fallbackExpiry = () => new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+function saveDraft(key: string, snapshot?: DraftSnapshot) {
+  try {
+    if (snapshot) sessionStorage.setItem(key, JSON.stringify(snapshot));
+    else sessionStorage.removeItem(key);
+  } catch { /* Browser data storage may be disabled. */ }
+}
+
+function loadDraft(key: string): DraftSnapshot | null {
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(key) || 'null') as DraftSnapshot | null;
+    if (draft?.draftId && Array.isArray(draft.rows) && Date.parse(draft.expiresAt) > Date.now()) return draft;
+  } catch { /* An invalid snapshot cannot be restored. */ }
+  return null;
+}
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const isSheetFile = (f: File) => /\.xlsx$/i.test(f.name);
@@ -82,17 +113,26 @@ function validate(row: Row, t: TFunction): RowError[] {
 }
 
 export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => void }) {
+  const accountId = useAuth(state => state.user?.id);
+  return accountId ? <AccountExcelUpload key={accountId} accountId={accountId} onConfirmed={onConfirmed} /> : null;
+}
+
+function AccountExcelUpload({ accountId, onConfirmed }: { accountId: string; onConfirmed?: () => void }) {
   const nav = useNavigate();
   const { t } = useTranslation();
+  const storageKey = 'aeg-client-quote-preview:' + accountId;
+  const [restored] = useState(() => loadDraft(storageKey));
   const [file, setFile] = useState<File | null>(null);
   const [shots, setShots] = useState<File[]>([]);
   const [shotRows, setShotRows] = useState<string[]>([]);
-  const [draftId, setDraftId] = useState('');
-  const [rows, setRows] = useState<Row[]>([]);
-  const [currency, setCurrency] = useState<'RMB' | 'USD'>('RMB');
-  const [convertedByAi, setConvertedByAi] = useState(false);
-  const [aiNotes, setAiNotes] = useState('');
-  const [serverErrors, setServerErrors] = useState<RowError[]>([]);
+  const [draftId, setDraftId] = useState(restored?.draftId ?? '');
+  const [expiresAt, setExpiresAt] = useState(restored?.expiresAt ?? '');
+  const [filename, setFilename] = useState(restored?.filename ?? '');
+  const [rows, setRows] = useState<Row[]>(restored?.rows ?? []);
+  const [currency, setCurrency] = useState<'RMB' | 'USD'>(restored?.currency ?? 'RMB');
+  const [convertedByAi, setConvertedByAi] = useState(restored?.convertedByAi ?? false);
+  const [aiNotes, setAiNotes] = useState(restored?.aiNotes ?? '');
+  const [serverErrors, setServerErrors] = useState<RowError[]>(restored?.errors ?? []);
   const [busy, setBusy] = useState(false);
   const aiInFlight = useRef(false);
   const [selection, setSelection] = useState<{ startRow: number; startCol: number; endRow: number; endCol: number } | null>(null);
@@ -101,12 +141,19 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   const [uploadStage, setUploadStage] = useState<'uploading' | 'recognizing' | null>(null);
   const [err, setErr] = useState('');
   const [message, setMessage] = useState('');
-  const [aiChecked, setAiChecked] = useState(false);
-  const [aiCheckNote, setAiCheckNote] = useState('');
-  const [ncmSuggestions, setNcmSuggestions] = useState<NcmSuggestion[]>([]);
+  const [aiChecked, setAiChecked] = useState(restored?.aiChecked ?? false);
+  const [aiCheckNote, setAiCheckNote] = useState(restored?.aiCheckNote ?? '');
+  const [ncmSuggestions, setNcmSuggestions] = useState<NcmSuggestion[]>(restored?.suggestions ?? []);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragDepth = useRef(0);
+
+  useEffect(() => {
+    saveDraft(storageKey, draftId && Date.parse(expiresAt) > Date.now() ? {
+      draftId, expiresAt, filename, rows, currency, errors: serverErrors, suggestions: ncmSuggestions,
+      convertedByAi, aiNotes, aiChecked, aiCheckNote
+    } : undefined);
+  }, [storageKey, draftId, expiresAt, filename, rows, currency, serverErrors, ncmSuggestions, convertedByAi, aiNotes, aiChecked, aiCheckNote]);
 
   const fieldLabel = (key: string) => t(`upload.field.${key}`, { defaultValue: key });
   const computedRows = useMemo(() => rows.map(calculate), [rows]);
@@ -121,6 +168,9 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   }), { pcs: 0, amount: 0, gw: 0, cbm: 0 }), [computedRows]);
 
   const reset = () => {
+    ncmTask.clear();
+    saveDraft(storageKey);
+    setExpiresAt(''); setFilename('');
     setDraftId(''); setRows([]); setServerErrors([]); setErr(''); setMessage(''); setConvertedByAi(false); setAiNotes('');
     setAiChecked(false); setAiCheckNote(''); setNcmSuggestions([]);
     setSelection(null);
@@ -262,6 +312,8 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       }
       const previewRows: Row[] = response.data.rows || [];
       setDraftId(response.data.draft_id);
+      setExpiresAt(response.data.draft_expires_at || fallbackExpiry());
+      setFilename(file.name);
       setRows(previewRows);
       setCurrency(response.data.declared_currency || 'RMB');
       setConvertedByAi(!!response.data.converted_by_ai);
@@ -269,7 +321,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       setServerErrors(response.data.errors || []);
       if (previewRows.some(row => /^(?:\d{6}|\d{10})$/.test(String(row.data.hs_code || '').trim()))) {
         setUploadStage(null);
-        await runAiCheck(response.data.draft_id, previewRows);
+        await runAiCheck(response.data.draft_id, previewRows, response.data.declared_currency || 'RMB');
       }
     } catch (e: any) {
       const serverMessage = e?.response?.data?.message || e?.response?.data?.error_summary;
@@ -283,6 +335,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   };
 
   const update = (index: number, key: string, value: string) => {
+    ncmTask.clear();
     setRows(current => current.map((row, rowIndex) => rowIndex === index ? {
       ...row,
       data: { ...row.data, [key]: numericFields.has(key) ? (value === '' ? null : Number(value)) : value }
@@ -294,6 +347,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
   };
 
   const removeRow = (rowNo: number) => {
+    ncmTask.clear();
     setRows(current => current.filter(row => row.row_no !== rowNo));
     setServerErrors(current => current.filter(error => error.row !== rowNo));
     setAiChecked(false);
@@ -302,35 +356,48 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
     setSelection(null);
   };
 
-  const runAiCheck = async (id: string, candidateRows: Row[]) => {
-    if (!id || !candidateRows.length || aiInFlight.current) return;
-    aiInFlight.current = true;
-    setBusy(true); setErr(''); setMessage(''); setAiCheckNote('');
-    try {
-      const response = await api.post('/api/client/orders/upload/ai-check', {
-        draft_id: id, rows: candidateRows.map(calculate)
-      }, { timeout: 290_000 });
-      setRows(response.data.rows || candidateRows);
-      setNcmSuggestions(response.data.suggestions || []);
-      setServerErrors(response.data.issues || []);
-      const completed = Number(response.data.ncm_count || 0);
-      const low = Number(response.data.low_confidence_count || 0);
-      if (completed) setAiCheckNote(!response.data.ok
-        ? t('upload.note.aiPartial', { count: completed })
-        : low ? t('upload.note.aiDoneLow', { count: completed, low })
-          : t('upload.note.aiDone', { count: completed }));
-      if (!response.data.ok) {
-        setAiChecked(false);
-        setErr(t('upload.err.aiIssues', { count: response.data.issues?.length || 0 }));
-        return;
+  const ncmTask = useNcmTask<{ rows: Row[]; suggestions: NcmSuggestion[]; issues: RowError[]; ncm_count: number; low_confidence_count: number; ok: boolean }, Row>({
+    api, prefix: '/api/client/orders/upload', storageKey: 'aeg-client-ncm:' + accountId,
+    onBusy: running => { aiInFlight.current = running; setBusy(running); },
+    onRestore: (id, task) => {
+      setDraftId(id);
+      setExpiresAt(task.expiresAt || expiresAt || fallbackExpiry());
+      setFilename(task.filename || filename);
+      if (id !== draftId || !rows.length) {
+        setRows(task.inputRows || []);
+        setCurrency(task.currency || 'RMB');
       }
-      setAiChecked(true);
-      if (!completed) setAiCheckNote(t('upload.note.aiDone', { count: 0 }));
-      showToast(t('upload.toast.aiPassed'));
-    } catch (e: any) {
+    },
+    onError: error => {
       setAiChecked(false);
-      setErr(getApiErrorMessage(e, t('upload.err.aiFailed')));
-    } finally { aiInFlight.current = false; setBusy(false); }
+      setErr(getApiErrorMessage(error, t('upload.err.aiFailed')));
+    },
+    onResult: task => {
+      const result = task.result;
+      if (task.error) setErr(t('quoteTask.' + task.error.code, { defaultValue: task.error.message }));
+      if (!result) return;
+      setRows(result.rows);
+      setNcmSuggestions(result.suggestions || []);
+      const failures = new Map(task.failures?.map(failure => [failure.row_no, failure]));
+      setServerErrors(result.issues.map(issue => {
+        const failure = failures.get(issue.row);
+        return issue.field_key === 'hs_code' && failure
+          ? { ...issue, reason: t('quoteTask.' + failure.code, { defaultValue: failure.message }) }
+          : issue;
+      }));
+      const completed = result.ncm_count;
+      const low = result.low_confidence_count;
+      setAiCheckNote(!result.ok ? t('upload.note.aiPartial', { count: completed })
+        : low ? t('upload.note.aiDoneLow', { count: completed, low }) : t('upload.note.aiDone', { count: completed }));
+      setAiChecked(result.ok);
+      if (!result.ok && !task.error) setErr(t('upload.err.aiIssues', { count: result.issues.length }));
+      if (result.ok) showToast(t('upload.toast.aiPassed'));
+    }
+  });
+  const runAiCheck = async (id: string, candidateRows: Row[], taskCurrency = currency) => {
+    if (!id || !candidateRows.length || aiInFlight.current) return;
+    setErr(''); setMessage(''); setAiCheckNote('');
+    await ncmTask.run(id, candidateRows.map(calculate), taskCurrency);
   };
   const aiCheck = async () => {
     if (busy || !draftId || !rows.length) return;
@@ -358,6 +425,9 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
         setErr(response.data.error_summary || t('upload.err.validationFailed'));
         return;
       }
+      ncmTask.clear();
+      saveDraft(storageKey);
+      setDraftId('');
       setMessage(t('upload.msg.quoteCreated', { quote: response.data.quote_no }));
       showToast(t('upload.msg.quoteCreated', { quote: response.data.quote_no }));
       onConfirmed?.();
@@ -404,6 +474,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       });
       return { ...row, data };
     });
+    ncmTask.clear();
     setRows(nextRows);
     setServerErrors(current => current.filter(error => !affected.has(error.row)));
     setNcmSuggestions(current => current.filter(item => !affected.has(item.row_no)));
@@ -523,9 +594,9 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
       {message && <div className="alert alert-ok mt-12">{message}</div>}
       {draftId && (
         <div className="mt-12">
-          {file && (
+          {filename && (
             <p className="muted text-sm" style={{ margin: '0 0 8px' }}>
-              {t('upload.recognizedFile')}<strong>{file.name}</strong>
+              {t('upload.recognizedFile')}<strong>{filename}</strong>
               <button type="button" className="btn-link" style={{ marginLeft: 8 }} onClick={cancel} disabled={busy}>{t('upload.reupload')}</button>
             </p>
           )}
@@ -536,7 +607,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
           <div className="row gap-md" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div className="form-row" style={{ margin: 0 }}>
               <label>{t('upload.currencyLabel')}</label>
-              <select className="form-input" value={currency} onChange={event => setCurrency(event.target.value as 'RMB' | 'USD')}>
+              <select className="form-input" value={currency} disabled={busy} onChange={event => { ncmTask.clear(); setCurrency(event.target.value as 'RMB' | 'USD'); }}>
                 <option value="RMB">{t('upload.currencyRmb')}</option>
                 <option value="USD">{t('upload.currencyUsd')}</option>
               </select>
@@ -557,8 +628,8 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
           )}
 
           <div className="row gap-md mt-12">
-            <button type="button" className="btn btn-ghost" disabled={busy || !rows.length} onClick={aiCheck}>{t('upload.aiCheck')}</button>
-            {aiInFlight.current && <span role="status" className="muted">{t('upload.aiChecking')}</span>}
+            <button type="button" className="btn btn-ghost" disabled={busy || !rows.length} onClick={aiCheck}>{t(taskRetryable(ncmTask.task) ? 'quoteTask.retry' : 'upload.aiCheck')}</button>
+            {aiInFlight.current && <span role="status" className="muted">{ncmTask.task ? t('quoteTask.progress', { ...ncmTask.task }) : t('upload.aiChecking')}</span>}
           </div>
           <div className="table-wrap mt-12">
             <table className="table client-upload-grid" style={{ minWidth: 1800 }} onPointerDown={event => {
@@ -599,7 +670,7 @@ export default function ExcelUploadCard({ onConfirmed }: { onConfirmed?: () => v
                       <td data-grid-row={index} data-grid-col={12} className={selectedCell(index, 12)}>{input(row, index, 'unit_price', 'number')}</td>
                       <td>{Number(row.data.total_price).toFixed(2)}</td>
                       <td data-grid-row={index} data-grid-col={13} className={selectedCell(index, 13)}>
-                        <select className="form-input form-input-sm" value={row.data.material || '其他'} onChange={event => update(index, 'material', event.target.value)} onPaste={event => pasteGrid(event, index, 13)} onCopy={copyGrid}>
+                        <select disabled={busy} className="form-input form-input-sm" value={row.data.material || '其他'} onChange={event => update(index, 'material', event.target.value)} onPaste={event => pasteGrid(event, index, 13)} onCopy={copyGrid}>
                           {MATERIAL_OPTIONS.map(option => <option key={option.value} value={option.value}>{t(option.labelKey)}</option>)}
                         </select>
                       </td>

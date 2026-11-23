@@ -8,6 +8,7 @@ import * as path from 'path';
 import { AuthGuard, Roles, RolesGuard } from '../common/guards/auth.guard';
 import { ImageRepo, QuotesRepo, repoRoot } from '../common/mock-db';
 import { CustomsService } from './customs.service';
+import { QuoteAiTasksService } from '../quote-tasks/quote-ai-tasks.service';
 
 @Controller('customs')
 @UseGuards(AuthGuard, RolesGuard)
@@ -16,7 +17,8 @@ export class CustomsController {
   constructor(
     private readonly service: CustomsService,
     @Inject('ImageRepo') private readonly imageRepo: ImageRepo,
-    @Inject('QuotesRepo') private readonly quotesRepo: QuotesRepo
+    @Inject('QuotesRepo') private readonly quotesRepo: QuotesRepo,
+    private readonly tasks: QuoteAiTasksService
   ) {}
 
   private actor(req: Request & { user?: any }) {
@@ -58,6 +60,19 @@ export class CustomsController {
   @Post('orders/:id/di/analyze')
   analyze(@Param('id') id: string, @Body() body: any, @Req() req: Request & { user?: any }) {
     return this.service.analyze(id, body, this.actor(req));
+  }
+
+  @Post('orders/:id/di/task')
+  startTask(@Param('id') id: string, @Body() body: any, @Req() req: Request & { user?: any }) {
+    return this.tasks.startDi(id, body, this.actor(req));
+  }
+
+  @Get('orders/:id/di/task')
+  getTask(@Param('id') id: string) { return this.tasks.getDi(id); }
+
+  @Post('orders/:id/di/task/retry')
+  retryTask(@Param('id') id: string, @Req() req: Request & { user?: any }) {
+    return this.tasks.retryDi(id, this.actor(req));
   }
 
   @Patch('orders/:id/di/review')

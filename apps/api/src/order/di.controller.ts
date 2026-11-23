@@ -2,13 +2,27 @@ import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards, UsePipes, Va
 import { Request } from 'express';
 import { AuthGuard, Roles, RolesGuard } from '../common/guards/auth.guard';
 import { DiService } from './di.service';
+import { QuoteAiTasksService } from '../quote-tasks/quote-ai-tasks.service';
 
 @Controller('ops/orders')
 @UsePipes(new ValidationPipe({ whitelist: false }))
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('operator', 'admin')
 export class DiController {
-  constructor(private readonly service: DiService) {}
+  constructor(private readonly service: DiService, private readonly tasks: QuoteAiTasksService) {}
+
+  @Post(':id/di/task')
+  startTask(@Param('id') id: string, @Body() body: any, @Req() req: Request & { user?: any }) {
+    return this.tasks.startDi(id, body, { username: req.user?.username || 'system', role: req.user?.role || 'system' });
+  }
+
+  @Get(':id/di/task')
+  getTask(@Param('id') id: string) { return this.tasks.getDi(id); }
+
+  @Post(':id/di/task/retry')
+  retryTask(@Param('id') id: string, @Req() req: Request & { user?: any }) {
+    return this.tasks.retryDi(id, { username: req.user?.username || 'system', role: req.user?.role || 'system' });
+  }
 
   @Post(':id/di/analyze')
   analyze(@Param('id') id: string, @Body() body: any, @Req() req: Request & { user?: any }) {

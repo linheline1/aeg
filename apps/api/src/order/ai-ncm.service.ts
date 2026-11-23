@@ -51,7 +51,7 @@ export class AiNcmService {
     const products = await Promise.all(order.line_items.map(async (row: any) => {
       const images = orderImages.filter(image => Number(image.row_no) === Number(row.row_no)).slice(0, 2);
       const existingNcm = String(row.hs_code || '').trim();
-      const visualDescription = images.length && !/^\d{8}$/.test(existingNcm) ? await this.describeProductImages(images, cfg) : '';
+      const visualDescription = images.length && !/^\d{8}$/.test(existingNcm) ? await this.describeProductImages(images, { ...cfg, timeoutMs }) : '';
       return {
         row_no: row.row_no, sku: row.sku, product_cn: row.product_cn, product_en: row.product_en,
         description: row.description, material: row.material,

@@ -1,6 +1,7 @@
+import { QuoteAiTasksService } from '../quote-tasks/quote-ai-tasks.service';
 import {
   BadRequestException, Body, Controller, ForbiddenException, Inject, NotFoundException,
-  Delete, Param, Post, Req, UploadedFile, UseGuards, UseInterceptors
+  Delete, Get, Param, Post, Req, UploadedFile, UseGuards, UseInterceptors
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
@@ -20,7 +21,8 @@ const TMP_DIR = path.join(repoRoot(), 'apps/api/uploads/tmp');
 export class OpsUploadController {
   constructor(
     private readonly quoteService: QuoteService,
-    @Inject('ClientRepo') private readonly clientRepo: ClientRepo
+    @Inject('ClientRepo') private readonly clientRepo: ClientRepo,
+    private readonly tasks: QuoteAiTasksService
   ) {}
 
   private async allowedClient(clientId: string, user: any) {
@@ -60,15 +62,25 @@ export class OpsUploadController {
     return this.quoteService.aiCheckUpload(draft.id, draft.client_id, body.rows as any);
   }
 
+  @Post('upload/:draftId/ncm-task')
+  async startNcm(@Param('draftId') draftId: string, @Body() body: { rows?: any[]; currency?: string }, @Req() req: Request & { user?: any }) {
+    const draft = await this.allowedDraft(draftId, req.user);
+    return this.tasks.startNcm(draftId, draft.client_id, body?.rows as any, body?.currency);
+  }
+
+  @Get('upload/:draftId/ncm-task')
+  async getNcm(@Param('draftId') draftId: string, @Req() req: Request & { user?: any }) {
+    const draft = await this.allowedDraft(draftId, req.user);
+    return this.tasks.getNcm(draftId, draft.client_id);
+  }
+
   @Post('upload/confirm')
   async confirm(@Body() body: { draft_id?: string; rows?: any[]; declared_currency?: string }, @Req() req: Request & { user?: any }) {
     const draft = await this.allowedDraft(String(body.draft_id || ''), req.user);
     const actor = { username: req.user?.username || 'system', role: req.user?.role || 'system' };
     const result = await this.quoteService.confirmUpload(draft.id, draft.client_id, body.rows as any, String(body.declared_currency || ''), actor);
-    if (result.ok && result.quote_id) {
-      void (async () => { const di = await this.quoteService.runAutoDi(result.quote_id!); if (di.ok) await this.quoteService.computeOrder(result.quote_id!, actor); })().catch(() => undefined);
-    }
-    return result;
+    if (!result.ok || !result.quote_id) return result;
+    return { ...result, analysis_queued: await this.tasks.enqueueAutomatic(result.quote_id, actor) };
   }
 
   @Delete('upload/:draftId')
@@ -110,23 +122,7 @@ export class OpsUploadController {
       const actor = { username: req.user?.username || 'system', role: req.user?.role || 'system' };
       const result = await this.quoteService.processUpload(file.path, file.originalname, clientId, '2.0', actor);
       if (!result.ok || !result.quote_id) return result;
-      const diResult = await this.quoteService.runAutoDi(result.quote_id);
-      if (!diResult.ok) {
-        return {
-          ...result,
-          ok: false,
-          error_summary: `清单已上传，但 AI DI 自动核算失败：${diResult.error || '未知错误'}`
-        };
-      }
-      const computed = await this.quoteService.computeOrder(result.quote_id, actor);
-      return {
-        ...result,
-        ...computed,
-        quote_id: result.quote_id,
-        status: 'done',
-        price_is_reference: true,
-        message: '参考 DDP 已生成；报关行批准当前 DI 版本后才能标记成交'
-      };
+      return { ...result, analysis_queued: await this.tasks.enqueueAutomatic(result.quote_id, actor) };
     } catch (e) {
       try { fs.unlinkSync(file.path); } catch { /* 临时文件可能已清理 */ }
       throw e;

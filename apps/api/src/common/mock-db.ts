@@ -914,6 +914,24 @@ export class FeeRatesRepo {
 }
 
 export class QuotesRepo {
+  private quoteRevision(quote: QuoteOrderRow) {
+    return crypto.createHash('sha256').update(JSON.stringify(quote)).digest('hex');
+  }
+
+  async findVersioned(id: string) {
+    const quote = await this.findById(id);
+    return quote ? { ...quote, revision: this.quoteRevision(quote) } : null;
+  }
+
+  async updateIfUnchanged(id: string, version: string, patch: Partial<QuoteOrderRow>) {
+    const db = load();
+    const index = db.quotes.findIndex(q => q.id === id && q.status !== 'deleted' && this.quoteRevision(q) === version);
+    if (index < 0) return null;
+    db.quotes[index] = { ...db.quotes[index], ...patch, updated_at: new Date().toISOString() };
+    save(db);
+    return db.quotes[index];
+  }
+
   find(opts: { where?: { client_id?: string; salesperson_id?: string } } = {}) {
     const db = load();
     let rows = db.quotes.filter(q => q.status !== 'deleted');

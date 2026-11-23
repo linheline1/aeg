@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "peerDependencies": {
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.11"
+  },
   "dependencies": {
     "@capacitor/app": "8.1.2",
     "@capacitor/core": "8.6.0",

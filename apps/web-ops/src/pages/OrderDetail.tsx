@@ -1,3 +1,4 @@
+import { useDiTask, taskRetryable } from '@aeg/web-shared/quote-tasks';
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -481,16 +482,19 @@ export default function OrderDetail() {
     icms_rate: Number(diParams.icms_rate)
   });
 
+  const diTask = useDiTask<any>(api, id ? `/api/ops/orders/${id}/di/task` : null, result => {
+    setDi(result);
+    setD(prev => prev ? { ...prev, di_analysis: result } : prev);
+    if (result.parameters) {
+      const p = result.parameters;
+      setDiParams({ rmb_brl: String(p.rmb_brl), insurance_brl: p.insurance_brl || 0, uf: p.uf || 'SP', icms_rate: p.icms_rate });
+    }
+    if (result.auto) load();
+  }, () => setErr(t('orderDetail.di.analyzeFailed')));
   const handleDiAnalyze = async () => {
     if (!diParams.rmb_brl) { setErr(t('orderDetail.di.rmbRateRequired')); return; }
-    setDiBusy(true); setErr(null);
-    try {
-      const r = await api.post(`/api/ops/orders/${id}/di/analyze`, diPayload());
-      setDi(r.data);
-      setD(prev => prev ? { ...prev, di_analysis: r.data } : prev);
-      flashMsg(t('orderDetail.di.analyzed'));
-    } catch (e: any) { setErr(e?.response?.data?.message || e?.message || t('orderDetail.di.analyzeFailed')); }
-    finally { setDiBusy(false); }
+    setErr(null);
+    await diTask.start(diPayload());
   };
 
   const updateDiItem = (rowNo: number, key: string, value: any) => {
@@ -1280,10 +1284,18 @@ export default function OrderDetail() {
           <div className="form-row" style={{ margin: 0 }}><label>{t('orderDetail.di.insurance')}</label><input className="form-input form-input-sm" style={{ width: 140 }} type="number" min="0" step="0.01" value={diParams.insurance_brl} onChange={e => setDiParams({ ...diParams, insurance_brl: Number(e.target.value) })} /></div>
           <div className="form-row" style={{ margin: 0 }}><label>{t('orderDetail.di.uf')}</label><input className="form-input form-input-sm" style={{ width: 80 }} maxLength={2} value={diParams.uf} onChange={e => setDiParams({ ...diParams, uf: e.target.value.toUpperCase() })} /></div>
           <div className="form-row" style={{ margin: 0 }}><label>{t('orderDetail.di.icms')}</label><input className="form-input form-input-sm" style={{ width: 100 }} type="number" min="0" max="99" step="0.01" value={diParams.icms_rate * 100} onChange={e => setDiParams({ ...diParams, icms_rate: Number(e.target.value) / 100 })} /></div>
-          <button className="btn" disabled={diBusy || !d.line_items?.length || ['analyzing', 'calculating'].includes(di?.status)} onClick={handleDiAnalyze}>{diBusy ? t('orderDetail.di.analyzing') : Array.isArray(di?.items) ? t('orderDetail.di.reanalyze') : t('orderDetail.di.analyze')}</button>
+          <button className="btn" disabled={diBusy || diTask.busy || !d.line_items?.length} onClick={handleDiAnalyze}>{diBusy || diTask.busy ? t('orderDetail.di.analyzing') : Array.isArray(di?.items) ? t('orderDetail.di.reanalyze') : t('orderDetail.di.analyze')}</button>
         </div>
 
-        {di && !Array.isArray(di.items) && <div className={di.status === 'failed' ? 'alert alert-err mt-12' : 'alert alert-warn mt-12'}>
+        {diTask.task && <div role="status" className="text-sm">
+          {t('quoteTask.progress', { ...diTask.task })}
+          {diTask.task.error && <p>{t('quoteTask.' + diTask.task.error.code, { defaultValue: diTask.task.error.message })}</p>}
+          {!!diTask.task.failures?.length && <details><summary>{t('quoteTask.failedRows')}</summary><ul>
+            {diTask.task.failures.map(item => <li key={item.row_no}>{item.row_no} · {t('quoteTask.' + item.code, { defaultValue: item.message })}</li>)}
+          </ul></details>}
+          {taskRetryable(diTask.task) && <button type="button" className="btn btn-ghost" disabled={diTask.busy} onClick={() => void diTask.retry()}>{t('quoteTask.retry')}</button>}
+        </div>}
+        {di && !diTask.task && !Array.isArray(di.items) && <div className={di.status === 'failed' ? 'alert alert-err mt-12' : 'alert alert-warn mt-12'}>
           {di.status === 'failed' ? t('orderDetail.di.calcFailed', { message: di.error_message || t('orderDetail.di.retryLater') }) : t('orderDetail.di.processing')}
         </div>}
         {di && Array.isArray(di.items) && di.totals && (
@@ -1322,10 +1334,10 @@ export default function OrderDetail() {
                 <span className="muted text-sm">II {di.totals.ii_brl} · IPI {di.totals.ipi_brl} · PIS {di.totals.pis_brl} · COFINS {di.totals.cofins_brl} · ICMS {di.totals.icms_brl}</span>
                 <div style={{ fontSize: 20, marginTop: 6 }}><strong>{t('orderDetail.di.taxTotal', { amount: Number(di.totals.di_brl).toFixed(2) })}</strong></div>
               </div>
-              <button className="btn" disabled={diBusy} onClick={handleDiReview}>{t('orderDetail.di.saveVersion')}</button>
+              <button className="btn" disabled={diBusy || diTask.busy} onClick={handleDiReview}>{t('orderDetail.di.saveVersion')}</button>
               <button
                 className="btn btn-ghost"
-                disabled={diBusy || di.status !== 'reviewed'}
+                disabled={diBusy || diTask.busy || di.status !== 'reviewed'}
                 title={di.status !== 'reviewed' ? t('orderDetail.di.saveFirst') : t('orderDetail.di.generateDdpHint')}
                 onClick={handleDiDdp}
               >{t('orderDetail.di.generateDdp')}</button>

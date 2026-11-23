@@ -1,4 +1,5 @@
-import { BadRequestException, Controller, Delete, Get, Inject, Param, Req, UseGuards, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Controller, Delete, Get, Inject, Optional, Param, Req, UseGuards, NotFoundException } from '@nestjs/common';
+import { QuoteAiTasksService } from '../quote-tasks/quote-ai-tasks.service';
 import { AisStreamService } from './ais-stream.service';
 import { Request } from 'express';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
@@ -10,7 +11,7 @@ import { resolveShipment } from '../common/port-geo';
 @Roles('client')
 export class ClientOrderController {
   constructor(@Inject('QuotesRepo') private readonly repo: QuotesRepo, @Inject('AuditRepo') private readonly auditRepo: AuditRepo,
-    private readonly aisStream: AisStreamService) {}
+    private readonly aisStream: AisStreamService, @Optional() private readonly tasks?: QuoteAiTasksService) {}
 
   @Delete(':id')
   async archive(@Param('id') id: string, @Req() req: Request & { user?: any }) {
@@ -95,11 +96,12 @@ export class ClientOrderController {
     if (!q || q.client_id !== clientId) throw new NotFoundException('报价单不存在');
     const diStatus = (q as any).di_analysis?.status;
     const recentlyUploaded = Date.now() - new Date(q.created_at).getTime() < 5 * 60 * 1000;
-    const pricingProcessing = q.total_amount_brl == null && (
+    const task = await this.tasks?.getDi(id, false);
+    const pricingProcessing = q.total_amount_brl == null && (task ? ['queued', 'running'].includes(task.status) : (
       q.status === 'computing'
       || ['analyzing', 'calculating', 'draft', 'reviewed'].includes(diStatus)
       ||       (q.status === 'uploaded' && recentlyUploaded)
-    );
+    ));
     const shipmentResolved = q.shipment ? resolveShipment(q.shipment) : null;
     return {
       id: q.id,
@@ -120,7 +122,8 @@ export class ClientOrderController {
       pricing_breakdown: this.publicPricingBreakdown(q.pricing_breakdown),
       price_is_reference: true,
       pricing_processing: pricingProcessing,
-      pricing_failed: q.total_amount_brl == null && diStatus === 'failed',
+      pricing_failed: q.total_amount_brl == null && (task ? ['failed', 'partial', 'stale'].includes(task.status) : diStatus === 'failed'),
+      di_task: task ? { status: task.status, total: task.total, completed: task.completed } : null,
       di_analysis: null,
       line_items: q.line_items ?? [],
       deal_status: q.deal_status ?? null,
