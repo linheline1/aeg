@@ -1,3 +1,5 @@
+import { quoteInputHash } from './quote-publication';
+import { Body, ConflictException, Post } from '@nestjs/common';
 import { BadRequestException, Controller, Delete, Get, Inject, Optional, Param, Req, UseGuards, NotFoundException } from '@nestjs/common';
 import { QuoteAiTasksService } from '../quote-tasks/quote-ai-tasks.service';
 import { AisStreamService } from './ais-stream.service';
@@ -49,6 +51,38 @@ export class ClientOrderController {
       ...publicBreakdown,
       hidden_internal_costs: true
     };
+  }
+
+  @Post(':id/decision')
+  async decide(@Param('id') id: string, @Body() body: { version: number; decision: 'accepted' | 'rejected' },
+    @Req() req: Request & { user?: any }) {
+    if (!Number.isSafeInteger(body?.version) || !['accepted', 'rejected'].includes(body?.decision)) {
+      throw new BadRequestException('Invalid quote version or decision.');
+    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const order = await this.repo.findVersioned(id);
+      if (!order || !req.user?.client_id || order.client_id !== req.user.client_id) throw new NotFoundException('报价单不存在');
+      const versions = order.quote_versions ?? [];
+      const latest = versions.at(-1);
+      if (!latest || latest.version !== body.version) throw new ConflictException('报价版本已变更，请刷新后确认');
+      if (latest.decision?.value === body.decision) return { version: latest.version, decision: latest.decision };
+      if (latest.decision || latest.input_hash !== quoteInputHash(order) || order.status !== 'done' || order.deal_status === 'won' || order.deal_status === 'lost'
+        || Date.parse(latest.expires_at) <= Date.now()) {
+        throw new ConflictException('该报价已过期、处理或不可确认，请联系运营');
+      }
+      const decision = { value: body.decision, at: new Date().toISOString(), by: req.user.username || req.user.sub || 'client' };
+      const updated = await this.repo.updateIfUnchanged(id, order.revision, {
+        quote_versions: [...versions.slice(0, -1), { ...latest, decision }],
+        deal_status: decision.value === 'accepted' ? 'won' : 'lost', deal_closed_at: decision.at
+      });
+      if (!updated) continue;
+      await this.auditRepo.entry({
+        actor_username: decision.by, actor_role: 'client', action: 'order.quote_decision', target_type: 'quote', target_id: id,
+        detail: { version: latest.version, decision: decision.value, amount: latest.amount, currency: latest.currency }
+      });
+      return { version: latest.version, decision };
+    }
+    throw new ConflictException('报价已更新，请刷新后确认');
   }
 
   /** 返回当前 client 的报价订单列表（含未核算状态，仅自身订单可见） */
@@ -121,6 +155,10 @@ export class ClientOrderController {
       total_amount_usd: q.total_amount_usd,
       pricing_breakdown: this.publicPricingBreakdown(q.pricing_breakdown),
       price_is_reference: true,
+      quote_versions: (q.quote_versions ?? []).map(({ fees, decision, input_hash, ...version }) => ({
+        ...version, current: input_hash === quoteInputHash(q), fees: this.publicPricingBreakdown(fees),
+        decision: decision ? { value: decision.value, at: decision.at } : null
+      })),
       pricing_processing: pricingProcessing,
       pricing_failed: q.total_amount_brl == null && (task ? ['failed', 'partial', 'stale'].includes(task.status) : diStatus === 'failed'),
       di_task: task ? { status: task.status, total: task.total, completed: task.completed } : null,

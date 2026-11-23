@@ -1,4 +1,5 @@
-import { Injectable, Inject, BadRequestException, NotFoundException } from '@nestjs/common';
+import { publishQuote } from '../order/quote-publication';
+import { Injectable, Inject, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import crypto from 'crypto';
 import path from 'path';
@@ -6,6 +7,8 @@ import fs from 'fs';
 import { AuditRepo, FeeRatesRepo, QuotesRepo, ClientRepo, ImageRepo, repoRoot } from '../common/mock-db';
 import { AiConvertService } from '../convert/ai-convert.service';
 import { UploadDraftsRepo } from './upload-draft.repository';
+import { PgQuotesRepo, PgImageRepo, PgAuditRepo } from '../common/pg-repos';
+import type { DataSource, EntityManager } from 'typeorm';
 import { AiNcmService } from '../order/ai-ncm.service';
 import { calculateDi } from '../order/di-calculation';
 import { calculateDdpPricing } from './ddp-pricing';
@@ -114,6 +117,7 @@ export interface UploadResult {
   declared_currency?: 'RMB' | 'USD';
   ai_notes?: string;
   embedded_image_count?: number;
+  images_count?: number;
 }
 
 export interface AiUploadCheckResult {
@@ -147,7 +151,16 @@ export class QuoteService {
     private readonly aiNcm: AiNcmService
   ) {}
 
-  private readonly confirmingDrafts = new Set<string>();
+  private forDraftTransaction(manager?: EntityManager): QuoteService {
+    if (!manager) return this;
+    const storage = { getRepository: manager.getRepository.bind(manager) } as DataSource;
+    return new QuoteService(
+      new PgQuotesRepo(storage) as unknown as QuotesRepo,
+      this.feeRatesRepo, new PgAuditRepo(storage) as unknown as AuditRepo, this.clientRepo,
+      new PgImageRepo(storage) as unknown as ImageRepo, new UploadDraftsRepo(storage),
+      this.aiConvert, this.aiNcm
+    );
+  }
 
   /** 费率解析：客户覆盖 > 全局默认（M2 费率表） */
   resolveRates(clientId?: string | null) {
@@ -191,14 +204,16 @@ export class QuoteService {
     };
   }
 
-  private async persistDdpPricing(quoteId: string, pricing: DdpPricing) {
-    const updated = await this.quotesRepo.update(quoteId, {
+  private async persistDdpPricing(quoteId: string, order: any, pricing: DdpPricing) {
+    const updated = await this.quotesRepo.updateIfUnchanged(quoteId, order.revision, {
+      ...publishQuote(order, pricing),
       pricing_breakdown: pricing.breakdown,
       total_amount_brl: pricing.brl,
       total_amount_usd: pricing.usd,
       status: 'done',
       error_message: null
     });
+    if (!updated) throw new ConflictException('报价已更新，请刷新后重新核算');
     return {
       ok: true,
       quote_no: updated?.quote_no,
@@ -239,6 +254,7 @@ export class QuoteService {
     if (rates) {
       const pricing = this.buildDdpPricing(analysis, rates);
       pricePatch = {
+        ...publishQuote(order, pricing),
         status: 'done', error_message: null, pricing_breakdown: pricing.breakdown,
         total_amount_brl: pricing.brl, total_amount_usd: pricing.usd
       };
@@ -273,7 +289,7 @@ export class QuoteService {
       profit_brl?: number;
     }
   ) {
-    const order: any = await this.quotesRepo.findById(quoteId);
+    const order: any = await this.quotesRepo.findVersioned(quoteId);
     if (!order) throw new NotFoundException('订单不存在');
     if (order.status === 'done' && !overrides) throw new BadRequestException('订单已完成核算，如需调整请编辑费率');
     const di = order.di_analysis;
@@ -284,41 +300,33 @@ export class QuoteService {
     const fees = this.resolveDdpFees(resolved.rates, null, overrides);
     const pricing = this.buildDdpPricing(di, fees);
 
-    await this.quotesRepo.update(quoteId, { status: 'computing', error_message: null });
-    try {
-      const result = await this.persistDdpPricing(quoteId, pricing);
-      await this.auditRepo.entry({
-        actor_username: actor.username, actor_role: actor.role,
-        action: 'order.compute', target_type: 'quote', target_id: quoteId,
-        detail: {
-          quote_no: order.quote_no, rate_source: resolved.source, fees,
-          ...this.ddpAuditValues(pricing),
-          di_review_version: pricing.breakdown.di_review_version, is_reference: true
-        }
-      });
-      return result;
-    } catch (e: any) {
-      await this.quotesRepo.update(quoteId, { status: 'failed', error_message: e?.message || '计算失败' });
-      await this.auditRepo.entry({
-        actor_username: actor.username, actor_role: actor.role,
-        action: 'order.compute_failed', target_type: 'quote', target_id: quoteId,
-        detail: { quote_no: order.quote_no, error: e?.message }
-      });
-      throw e;
-    }
+    const result = await this.persistDdpPricing(quoteId, order, pricing);
+    await this.auditRepo.entry({
+      actor_username: actor.username, actor_role: actor.role,
+      action: 'order.compute', target_type: 'quote', target_id: quoteId,
+      detail: {
+        quote_no: order.quote_no, rate_source: resolved.source, fees,
+        ...this.ddpAuditValues(pricing),
+        di_review_version: pricing.breakdown.di_review_version, is_reference: true
+      }
+    });
+    return result;
   }
 
-  /** 使用默认运费 + 已复核 DI 生成客户可见的参考 DDP。 */
   async computeDdpWithDi(quoteId: string, di: any, actor: { username: string; role: string }) {
-    const order: any = await this.quotesRepo.findById(quoteId);
+    const order: any = await this.quotesRepo.findVersioned(quoteId);
     if (!order) throw new NotFoundException('订单不存在');
     if (!Number.isFinite(Number(di?.totals?.di_brl))) {
       throw new BadRequestException('DI 尚未计算，请先执行 NCM / DI 分析');
     }
+    if (order.di_analysis?.status !== 'reviewed' || order.di_analysis.review_version !== di.review_version) {
+      throw new ConflictException('DI 版本已更新，请刷新后重新核算');
+    }
+    di = order.di_analysis;
     if (di.status !== 'reviewed') throw new BadRequestException('请先复核 DI 再生成参考 DDP');
     const resolved = await this.resolveRates(order.client_id);
     const pricing = this.buildDdpPricing(di, resolved.rates, di.review_version);
-    const result = await this.persistDdpPricing(quoteId, pricing);
+    const result = await this.persistDdpPricing(quoteId, order, pricing);
     await this.auditRepo.entry({
       actor_username: actor.username, actor_role: actor.role,
       action: 'order.compute', target_type: 'quote', target_id: quoteId,
@@ -336,7 +344,7 @@ export class QuoteService {
     changes: Record<string, unknown>[],
     actor: { username: string; role: string }
   ) {
-    const order: any = await this.quotesRepo.findById(quoteId);
+    const order: any = await this.quotesRepo.findVersioned(quoteId);
     if (!order) throw new NotFoundException('订单不存在');
     if (order.status === 'computing') throw new BadRequestException('报价正在核算，请稍后再编辑');
     if (!Array.isArray(changes) || changes.length < 1 || changes.length > 500) {
@@ -347,6 +355,7 @@ export class QuoteService {
     const items = (order.line_items || []).map((item: any) => ({ ...item }));
     const needsNcmConversion: any[] = [];
     const seen = new Set<number>();
+    if (order.quote_versions?.at(-1)?.decision?.value === 'accepted') throw new ConflictException('客户已接受报价，费用和产品明细已锁定');
     let ncmChanged = false;
     let financialChanged = false;
     for (const change of changes) {
@@ -434,7 +443,7 @@ export class QuoteService {
       const resolved = await this.resolveRates(order.client_id);
       pricing = this.buildDdpPricing(diAnalysis, this.resolveDdpFees(resolved.rates, order.pricing_breakdown));
     }
-    await this.quotesRepo.update(quoteId, {
+    const saved = await this.quotesRepo.updateIfUnchanged(quoteId, order.revision, {
       line_items: items,
       total_amount_rmb: totalAmountRmb,
       total_cbm: items.some((item: any) => item.total_cbm != null)
@@ -450,6 +459,7 @@ export class QuoteService {
       status: ncmChanged || financialChanged ? (pricing ? 'done' : 'uploaded') : order.status,
       error_message: null
     } as any);
+    if (!saved) throw new ConflictException('报价已更新，请刷新后重试');
     await this.auditRepo.entry({ actor_username: actor.username, actor_role: actor.role,
       action: 'order.line_items.update', target_type: 'quote', target_id: quoteId,
       detail: { quote_no: order.quote_no, rows: changes.map(change => change.row_no), ncm_changed: ncmChanged, financial_changed: financialChanged } });
@@ -570,7 +580,7 @@ export class QuoteService {
       br_clearance_brl?: number;
     }
   ) {
-    const order: any = await this.quotesRepo.findById(quoteId);
+    const order: any = await this.quotesRepo.findVersioned(quoteId);
     if (!order) throw new NotFoundException('订单不存在');
     const di = order.di_analysis;
     if (!Number.isFinite(Number(di?.totals?.di_brl))) {
@@ -596,7 +606,7 @@ export class QuoteService {
     } : null;
     const fees = this.resolveDdpFees(resolved.rates, previous, overrides);
     const pricing = this.buildDdpPricing(di, fees);
-    const result = await this.persistDdpPricing(quoteId, pricing);
+    const result = await this.persistDdpPricing(quoteId, order, pricing);
 
     await this.auditRepo.entry({
       actor_username: actor.username, actor_role: actor.role,
@@ -744,6 +754,19 @@ export class QuoteService {
     currency: string,
     actor: { username: string; role: string }
   ): Promise<UploadResult> {
+    let sourceFile: string | undefined;
+    const result = await this.uploadDraftsRepo.withLock(draftId, manager =>
+      this.forDraftTransaction(manager).confirmLocked(draftId, clientId, submittedRows, currency, actor, file => { sourceFile = file; }));
+    if (sourceFile) {
+      try { fs.unlinkSync(sourceFile); } catch { /* draft cleanup can be retried separately */ }
+    }
+    return result;
+  }
+
+  private async confirmLocked(
+    draftId: string, clientId: string, submittedRows: ParsedRow[], currency: string,
+    actor: { username: string; role: string }, onConfirmed: (file: string) => void
+  ): Promise<UploadResult> {
     const draft = await this.uploadDraftsRepo.findById(draftId);
     if (!draft || draft.client_id !== clientId) throw new NotFoundException('识别草稿不存在');
     if (draft.status === 'confirmed' && draft.quote_id) {
@@ -766,7 +789,6 @@ export class QuoteService {
     }
     if (draft.status !== 'preview') throw new BadRequestException('该草稿已取消或不可确认');
     if (new Date(draft.expires_at).getTime() <= Date.now()) throw new BadRequestException('识别草稿已过期，请重新上传');
-    if (this.confirmingDrafts.has(draftId)) throw new BadRequestException('该草稿正在确认，请勿重复提交');
     if (!Array.isArray(submittedRows) || submittedRows.length === 0 || submittedRows.length > TEMPLATE_MAX_ROWS) {
       throw new BadRequestException('确认明细为空或超过最大行数');
     }
@@ -789,26 +811,19 @@ export class QuoteService {
       return { row_no: rowNo, data, source_totals: original.source_totals || undefined };
     });
 
-    this.confirmingDrafts.add(draftId);
-    try {
-      const result = await this.finalizeUpload(rows, draft.warehouse_code || '', {
-        filePath: path.join(repoRoot(), draft.file_path),
-        fileName: draft.file_name,
-        clientId,
-        templateVersion: draft.template_version,
-        actor,
-        convertedByAi: draft.converted_by_ai,
-        aiNotes: draft.ai_notes || undefined,
-        currency
-      });
-      if (result.ok && result.quote_id) {
-        await this.uploadDraftsRepo.update(draftId, { status: 'confirmed', quote_id: result.quote_id });
-        result.draft_id = draftId;
-      }
-      return result;
-    } finally {
-      this.confirmingDrafts.delete(draftId);
+    const filePath = path.join(repoRoot(), draft.file_path);
+    const result = await this.finalizeUpload(rows, draft.warehouse_code || '', {
+      filePath, fileName: draft.file_name, clientId, templateVersion: draft.template_version, actor,
+      convertedByAi: draft.converted_by_ai, aiNotes: draft.ai_notes || undefined, currency, sourceDraftId: draftId,
+      screenshots: draft.screenshots || []
+    });
+    if (result.ok && result.quote_id) {
+      const confirmed = await this.uploadDraftsRepo.update(draftId, { status: 'confirmed', quote_id: result.quote_id });
+      if (!confirmed) throw new ConflictException('草稿已变更，请重新打开');
+      result.draft_id = draftId;
+      onConfirmed(filePath);
     }
+    return result;
   }
 
   async getUploadDraft(draftId: string, clientId: string) {
@@ -915,15 +930,18 @@ export class QuoteService {
   }
 
   async cancelUpload(draftId: string, clientId: string): Promise<{ ok: true }> {
-    const draft = await this.uploadDraftsRepo.findById(draftId);
-    if (!draft || draft.client_id !== clientId) throw new NotFoundException('识别草稿不存在');
-    if (draft.status === 'confirmed') throw new BadRequestException('已确认草稿不能取消');
-    if (draft.status === 'preview') {
-      for (const file of [draft.file_path, ...(draft.screenshots || []).map(item => item.file_path)]) {
-        try { fs.unlinkSync(path.join(repoRoot(), file)); } catch { /* ignore */ }
-      }
+    const files = await this.uploadDraftsRepo.withLock(draftId, async manager => {
+      const repository = this.forDraftTransaction(manager).uploadDraftsRepo;
+      const draft = await repository.findById(draftId);
+      if (!draft || draft.client_id !== clientId) throw new NotFoundException('识别草稿不存在');
+      if (draft.status === 'confirmed') throw new BadRequestException('已确认草稿不能取消');
+      if (draft.status !== 'preview') return [];
+      await repository.update(draftId, { status: 'cancelled' });
+      return [draft.file_path, ...(draft.screenshots || []).map(item => item.file_path)];
+    });
+    for (const file of files) {
+      try { fs.unlinkSync(path.join(repoRoot(), file)); } catch { /* ignore */ }
     }
-    await this.uploadDraftsRepo.update(draftId, { status: 'cancelled' });
     return { ok: true };
   }
 
@@ -962,6 +980,8 @@ export class QuoteService {
       convertedByAi: boolean;
       aiNotes?: string;
       currency?: 'RMB' | 'USD';
+      sourceDraftId?: string;
+      screenshots?: any[];
     }
   ): Promise<UploadResult> {
     const declaredCurrency = ctx.currency || 'RMB';
@@ -1003,7 +1023,7 @@ export class QuoteService {
     const quoteNo = this.genQuoteNo();
     const destName = `${quoteNo}_${ctx.fileName}`;
     const destPath = path.join(quotesDir, destName);
-    try { fs.copyFileSync(ctx.filePath, destPath); } catch { /* ignore */ }
+    fs.copyFileSync(ctx.filePath, destPath);
 
     // 6. 把解析出的行数据归一化（field_key 中文名 + 数值结果）
     const lineItems = rows.map(r => ({ row_no: r.row_no, ...r.data }));
@@ -1013,6 +1033,7 @@ export class QuoteService {
     const uploadClient: any = await this.clientRepo.findOne({ where: { id: ctx.clientId } });
     const saved = await this.quotesRepo.insert({
       quote_no: quoteNo,
+      source_draft_id: ctx.sourceDraftId,
       client_id: ctx.clientId,
       template_code: 'BR_FCL',
       template_version: ctx.templateVersion,
@@ -1059,8 +1080,26 @@ export class QuoteService {
       }
     });
 
-    // 清理 multer 临时文件
-    try { fs.unlinkSync(ctx.filePath); } catch { /* ignore */ }
+    const screenshots = ctx.screenshots ?? [];
+    if (screenshots.length) {
+      const validRows = new Set(rows.map(row => row.row_no));
+      const attachments = screenshots.map(file => ({
+        client_id: ctx.clientId, quote_id: saved.id,
+        row_no: validRows.has(Number(file.row_no)) ? Number(file.row_no) : null,
+        file_name: file.originalname, file_path: file.file_path, mime_type: file.mimetype, size_bytes: file.size
+      }));
+      await this.imageRepo.insertMany(attachments);
+      await this.auditRepo.entry({
+        actor_username: ctx.actor.username, actor_role: ctx.actor.role,
+        action: 'image.upload', target_type: 'quote', target_id: saved.id,
+        detail: { quote_no: quoteNo, count: attachments.length,
+          row_map: attachments.map(item => ({ file: item.file_name, row_no: item.row_no })) }
+      });
+    }
+
+    if (!ctx.sourceDraftId) {
+      try { fs.unlinkSync(ctx.filePath); } catch { /* ignore */ }
+    }
 
     return {
       ok: true,
@@ -1078,7 +1117,8 @@ export class QuoteService {
         : '上传成功，已进入核算队列；运营按费率表核算后报价将发布到「我的报价」',
       converted_by_ai: ctx.convertedByAi || undefined,
       ai_notes: ctx.aiNotes,
-      embedded_image_count: embeddedImageCount
+      embedded_image_count: embeddedImageCount,
+      images_count: screenshots.length
     };
   }
 

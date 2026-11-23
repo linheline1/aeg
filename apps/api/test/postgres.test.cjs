@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const { DataSource } = require('typeorm');
 const { ALL_ENTITIES } = require('../dist/data-source');
 const { ClientEntity } = require('../dist/entities/client.entity');
+const { UploadDraftEntity } = require('../dist/entities/upload-draft.entity');
 const { PgQuotesRepo, PgImageRepo } = require('../dist/common/pg-repos');
 const { UploadDraftsRepo } = require('../dist/upload/upload-draft.repository');
 const { QuoteTaskStore } = require('../dist/quote-tasks/quote-task.store');
@@ -22,6 +23,26 @@ test('PostgreSQL migrations support quote uploads and versioned automatic DI tas
   try {
     await ds.runMigrations();
     assert.equal(await ds.showMigrations(), false);
+    const drafts = new UploadDraftsRepo(ds);
+    const lockDraft = await drafts.insert({
+      client_id: require('node:crypto').randomUUID(), status: 'preview', file_name: 'lock.xlsx', file_path: 'lock.xlsx',
+      template_version: '2.0', rows: [], converted_by_ai: false, declared_currency: 'RMB',
+      expires_at: new Date(Date.now() + 60_000).toISOString()
+    });
+    try {
+      const observed = await Promise.all([
+        drafts.withLock(lockDraft.id, async manager => {
+          await manager.query('SELECT pg_sleep(0.1)');
+          await manager.update(UploadDraftEntity, lockDraft.id, { status: 'confirmed' });
+          return 'committed';
+        }),
+        new UploadDraftsRepo(ds).withLock(lockDraft.id, async manager =>
+          (await manager.findOneByOrFail(UploadDraftEntity, { id: lockDraft.id })).status)
+      ]);
+      assert.deepEqual(observed, ['committed', 'confirmed']);
+    } finally {
+      await ds.getRepository(UploadDraftEntity).delete(lockDraft.id);
+    }
     const runner = ds.createQueryRunner();
     try {
       await runner.startTransaction();
@@ -37,6 +58,11 @@ test('PostgreSQL migrations support quote uploads and versioned automatic DI tas
         clients: manager.getRepository(ClientEntity)
       };
       const quote = await runUploadRegression(t, repos, client.id);
+      await assert.rejects(() => manager.transaction(async tx => {
+        const repo = new PgQuotesRepo({ getRepository: entity => tx.getRepository(entity) });
+        const { id, created_at, updated_at, ...copy } = quote;
+        await repo.insert({ ...copy, quote_no: quote.quote_no + '-DUP' });
+      }), error => error.code === '23505' && error.constraint === 'uq_quote_source_draft');
       const own = await quotes.findPaged({ where: { client_id: client.id, status: 'uploaded' }, q: quote.quote_no, pageSize: 1 });
       assert.equal(own.total, 1);
       assert.equal(own.items[0].id, quote.id);

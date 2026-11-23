@@ -25,7 +25,10 @@ interface PricingBreakdown {
   di_brl?: number;
   di_total_brl?: number;
 }
+type QuoteVersion = { version: number; expires_at: string; published_at: string; amount: number; current?: boolean;
+  fx_rate: number | null; fees?: PricingBreakdown | null; decision?: { value: 'accepted' | 'rejected'; at: string } | null };
 interface ClientOrderDetail {
+  quote_versions?: QuoteVersion[];
   id: string; quote_no: string; status: string; template_version: string;
   input_file_name: string | null;
   total_rows?: number | null; valid_rows?: number | null;
@@ -119,6 +122,8 @@ export default function OrderDetail() {
   const [fileUrls, setFileUrls] = useState<Record<string, string>>({});
   // M9：开票 CNPJ（我的抬头列表 + 订单绑定）
   const [cnpjs, setCnpjs] = useState<any[]>([]);
+  const [decisionBusy, setDecisionBusy] = useState(false);
+  const [decisionError, setDecisionError] = useState('');
   const [cnpjBusy, setCnpjBusy] = useState(false);
 
   useEffect(() => {
@@ -316,6 +321,32 @@ export default function OrderDetail() {
       </div>
 
       {/* M7 国际物流：成交后展示运营维护的动态时间线，历史物流订单保持可见 */}
+      {!!d.quote_versions?.length && <div className="card">
+        <h3>{t('quoteVersion.title')}</h3>
+        {[...d.quote_versions].reverse().map((version, index) => <div key={version.version} className="mt-12">
+          <strong>{t('quoteVersion.number', { version: version.version })} · {fmtBRL(version.amount)}</strong>
+          <p>{t('quoteVersion.expiry', { date: new Date(version.expires_at).toLocaleString() })}</p>
+          {version.decision && <p>{t('quoteVersion.' + version.decision.value)} · {new Date(version.decision.at).toLocaleString()}</p>}
+          {!!version.fees?.items?.length && <details>
+            <summary>{t('orderDetail.amountTitle')}</summary>
+            {version.fx_rate != null && <p>{t('orderDetail.fxRate')} USD→BRL {version.fx_rate}</p>}
+            <ul>{version.fees.items.map(item => <li key={item.code}>{item.name} · {fmtBRL(item.amount)}</li>)}</ul>
+          </details>}
+          {index === 0 && !version.decision && (d.status === 'done' && version.current && !['won', 'lost'].includes(d.deal_status ?? '') && Date.parse(version.expires_at) > Date.now()
+            ? <div className="row gap-md">{(['accepted', 'rejected'] as const).map(decision => <button key={decision} type="button" className={decision === 'accepted' ? 'btn' : 'btn btn-ghost'} disabled={decisionBusy} onClick={async () => {
+                if (!window.confirm(t('quoteVersion.confirm', { action: t('quoteVersion.' + decision + 'Action'), version: version.version }))) return;
+                setDecisionBusy(true); setDecisionError('');
+                try {
+                  await api.post(`/api/client/orders/${id}/decision`, { version: version.version, decision });
+                  const { data } = await api.get<ClientOrderDetail>(`/api/client/orders/${id}`);
+                  setD(data);
+                } catch (error) { setDecisionError(getApiErrorMessage(error, t('quoteVersion.error'))); }
+                finally { setDecisionBusy(false); }
+              }}>{t('quoteVersion.' + decision + 'Action')}</button>)}</div>
+            : <p className="muted">{t('quoteVersion.unavailable')}</p>)}
+        </div>)}
+        {decisionError && <p className="alert alert-err" role="alert">{decisionError}</p>}
+      </div>}
       {(d.shipment || d.deal_status === 'won') && (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="card-title">

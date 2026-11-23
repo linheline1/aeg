@@ -7,7 +7,7 @@ module.exports = {
     {
       name: 'aeg-ddp-api',
       script: './apps/api/dist/main.js',
-      cwd: '/opt/aeg-ddp',
+      cwd: process.env.AEG_RELEASE_DIR || '/opt/aeg-ddp',
       instances: 1,
       exec_mode: 'fork',
       max_memory_restart: '2G',

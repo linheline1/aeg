@@ -1,3 +1,5 @@
+import { publishQuote, quoteInputHash } from './quote-publication';
+import { ConflictException } from '@nestjs/common';
 import {
   Body, Controller, Delete, Get, Inject, Param, Patch, Post, Put, NotFoundException, UseGuards, Res, Req, BadRequestException, ForbiddenException, Query
 } from '@nestjs/common';
@@ -217,6 +219,7 @@ export class OpsOrderController {
       salesperson_id: owner,
       salesperson_name: salesName,
       deal_status: q.deal_status || null,
+      quote_versions: q.quote_versions ?? [],
       deal_note: q.deal_note || null,
       deal_closed_at: q.deal_closed_at || null,
       invoice_cnpj: q.invoice_cnpj || null,
@@ -239,6 +242,30 @@ export class OpsOrderController {
    * 仅返回 AIS 船位，供详情页轮询（前端不重载整张订单，避免覆盖正在编辑的物流表单）。
    * `tracked=false` 表示该订单未维护 MMSI 或未配置 API key，前端据此停止轮询。
    */
+  @Post(':id/quote-versions')
+  @Roles('operator', 'admin')
+  async publishVersion(@Param('id') id: string, @Req() req: Request & { user?: any }) {
+    const order = await this.quotesRepo.findVersioned(id);
+    if (!order) throw new NotFoundException('订单不存在');
+    if (order.status !== 'done' || order.total_amount_brl == null || !order.pricing_breakdown || order.deal_status === 'won') {
+      throw new ConflictException('仅已核算且未成交的报价可发布新版本');
+    }
+    if (order.deal_status === 'lost' && order.quote_versions?.at(-1)?.decision?.value !== 'rejected') {
+      throw new ConflictException('请先恢复跟进再发布新版本');
+    }
+    const current = order.quote_versions?.at(-1);
+    if (current && current.input_hash !== quoteInputHash(order)) {
+      throw new ConflictException('产品明细已变更，请重新核算后发布');
+    }
+    const patch = publishQuote(order, { brl: order.total_amount_brl, breakdown: order.pricing_breakdown });
+    if (!(await this.quotesRepo.updateIfUnchanged(id, order.revision, patch))) throw new ConflictException('报价已更新，请刷新后重试');
+    const version = patch.quote_versions.at(-1)!;
+    const actor = this.actor(req);
+    await this.auditRepo.entry({ actor_username: actor.username, actor_role: actor.role, action: 'order.quote_publish',
+      target_type: 'quote', target_id: id, detail: { version: version.version, expires_at: version.expires_at } });
+    return version;
+  }
+
   @Get(':id/ais')
   @Roles('operator', 'admin')
   async aisLive(@Param('id') id: string) {
@@ -347,7 +374,7 @@ export class OpsOrderController {
     if (body.note !== undefined && String(body.note).length > 500) {
       throw new BadRequestException('备注过长（最多 500 字符）');
     }
-    const order: any = await this.quotesRepo.findById(id);
+    const order: any = await this.quotesRepo.findVersioned(id);
     if (!order) throw new NotFoundException('订单不存在');
     if (order.status !== 'done') {
       throw new BadRequestException('仅已核算发布（done）的报价可标记成交状态');
@@ -358,11 +385,16 @@ export class OpsOrderController {
       const owner = order.salesperson_id || client?.salesperson_id || null;
       if (owner !== req.user.sub) throw new ForbiddenException('只能标记归属自己的报价单');
     }
-    const updated = await this.quotesRepo.update(id, {
+    const decision = order.quote_versions?.at(-1)?.decision;
+    if (decision && next !== (decision.value === 'accepted' ? 'won' : 'lost')) {
+      throw new ConflictException('客户已确认此版本，不能覆盖客户决定');
+    }
+    const updated = await this.quotesRepo.updateIfUnchanged(id, order.revision, {
       deal_status: next,
       deal_note: body.note !== undefined ? (body.note.trim() || null) : (order.deal_note || null),
       deal_closed_at: next === 'open' ? null : new Date().toISOString()
     });
+    if (!updated) throw new ConflictException('报价已更新，请刷新后重试');
     await this.auditRepo.entry({
       actor_username: req.user?.username || 'system', actor_role: req.user?.role || 'system',
       action: 'order.deal', target_type: 'quote', target_id: id,

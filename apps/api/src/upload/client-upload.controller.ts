@@ -111,12 +111,8 @@ export class ClientUploadController {
       String(body?.declared_currency || ''),
       { username: req.user?.username, role: req.user?.role || 'client' }
     );
-    if (!result.draft_id) return result.ok && result.quote_id
-      ? { ...result, analysis_queued: await this.tasks.enqueueAutomatic(result.quote_id) } : result;
-    const draft = await this.quoteService.getUploadDraft(result.draft_id, clientId);
-    const bound = await this.bindScreenshots(result, clientId, draft.screenshots || [], req.user?.username || 'client');
-    const queued = result.quote_id ? await this.tasks.enqueueAutomatic(result.quote_id) : false;
-    return { ...result, ...bound, analysis_queued: queued };
+    if (!result.ok || !result.quote_id) return result;
+    return { ...result, analysis_queued: await this.tasks.enqueueAutomatic(result.quote_id) };
   }
 
   @Post('upload/ai-check')

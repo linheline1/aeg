@@ -9,6 +9,11 @@ export type QuoteStatus = 'uploaded' | 'validating' | 'pending_fee' | 'computing
 /** 报价订单（核心业务表：客户上传清单 → 运营核算 → 发布 → 成交/物流/交付文件） */
 @Entity('quote_order')
 export class QuoteOrderEntity {
+  @Column({ type: 'jsonb', nullable: true })
+  quote_versions?: import('../order/quote-publication').PublishedQuote[] | null;
+  @Column({ type: 'uuid', nullable: true })
+  source_draft_id?: string | null;
+
   @PrimaryColumn({ type: 'uuid' })
   id!: string;
 

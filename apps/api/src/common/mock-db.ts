@@ -55,6 +55,8 @@ export interface TemplateRow {
 }
 
 export interface QuoteOrderRow {
+  quote_versions?: import('../order/quote-publication').PublishedQuote[] | null;
+  source_draft_id?: string | null;
   id: string;
   quote_no: string;
   client_id: string;

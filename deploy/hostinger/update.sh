@@ -1,44 +1,88 @@
 #!/usr/bin/env bash
-# =====================================================================
-# AEG DDP — 增量部署（在 VPS 上执行）
-# 用法：新代码同步到 /opt/aeg-ddp 后，执行 bash deploy/hostinger/update.sh
-# 前提：setup.sh 首次安装已完成、.env 已配置（APP_MODULE_MODE=postgres、
-#       DB_PASS、JWT_SECRET 等，应用启动时经 dotenv 读取）
-# =====================================================================
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/release-lib.sh"
+lock_operations
+cd "$app_root"
 
-APP_ROOT="/opt/aeg-ddp"
-cd "$APP_ROOT"
+allow_migrations=false
+case "${1:-}" in
+  '') ;;
+  --allow-compatible-migrations) allow_migrations=true ;;
+  *) echo "Usage: $0 [--allow-compatible-migrations]" >&2; exit 2 ;;
+esac
 
-echo "=== 1. 安装依赖 ==="
-pnpm install --frozen-lockfile
+old="$(readlink -f "$current")"
+test -d "$old"
+if [[ ! -s "$old/apps/api/dist/main.js" ]]; then
+  # Capture the legacy API before building anything. Its dependencies stay in APP_ROOT.
+  baseline="$(mktemp -d /opt/aeg-ddp-baseline-XXXXXX)"
+  chmod 755 "$baseline"
+  mkdir -p "$baseline/apps/api" "$baseline/packages"
+  cp -a "$app_root/apps/api/dist" "$baseline/apps/api/"
+  cp "$app_root/versions.json" "$baseline/versions.json"
+  cp "$app_root/pnpm-workspace.yaml" "$baseline/"
+  ln -s "$app_root/node_modules" "$baseline/node_modules"
+  ln -s "$app_root/apps/api/node_modules" "$baseline/apps/api/node_modules"
+  ln -s "$app_root/packages/shared-types" "$baseline/packages/shared-types"
+  for app in "${portals[@]}"; do
+    mkdir -p "$baseline/apps/$app"
+    cp -a "$old/apps/$app/dist" "$baseline/apps/$app/"
+  done
+  link_runtime "$baseline"
+  old="$baseline"
+fi
+old_commit="$(node -p 'require(process.argv[1]).api.commit' "$old/versions.json")"
+check_api http://127.0.0.1:5000 "$old_commit"
 
-echo "=== 2. 构建（api + 四端前端 + packages，子域名根路径）==="
-pnpm build
-
-echo "=== 3. 数据库迁移（幂等）==="
-cd "$APP_ROOT/apps/api"
-pnpm run migration:run
-cd "$APP_ROOT"
-
-echo "=== 4. 重启 API ==="
-pm2 restart aeg-ddp-api || pm2 start pm2.config.js
-pm2 save
-
-echo "=== 5. 发布四端静态页面 ==="
-# Nginx 从 /opt/aeg-ddp-current 读取前端文件，不能只构建在 APP_ROOT。
-# 先准备完整发布目录，再一次性切换符号链接，避免四端出现不同版本。
-release_dir="$(mktemp -d "/opt/aeg-ddp-release-$(git rev-parse --short HEAD)-XXXXXX")"
-chmod 755 "$release_dir"
-for app in web-client web-ops web-admin web-customs; do
-  mkdir -p "$release_dir/apps/$app"
-  cp -a "$APP_ROOT/apps/$app/dist" "$release_dir/apps/$app/"
+commit="$(git rev-parse --short HEAD)"
+release="$(mktemp -d "/opt/aeg-ddp-release-$commit-XXXXXX")"
+git worktree add --detach "$release" HEAD
+chmod 755 "$release"
+link_runtime "$release"
+for app in "${portals[@]}"; do
+  for env_file in .env .env.local .env.production .env.production.local; do
+    [[ ! -f "$app_root/apps/$app/$env_file" || -e "$release/apps/$app/$env_file" ]] ||
+      ln -s "$app_root/apps/$app/$env_file" "$release/apps/$app/$env_file"
+  done
 done
-next_link="/opt/aeg-ddp-current.next.$$"
-ln -s "$release_dir" "$next_link"
-mv -Tf "$next_link" /opt/aeg-ddp-current
-echo "  · Nginx 静态页面：$release_dir"
+cd "$release"
+pnpm install --frozen-lockfile
+pnpm build --force
+node -e '
+  const entries = require("./versions.json");
+  for (const name of ["api", "client", "ops", "admin", "customs"])
+    if (entries[name]?.commit !== process.argv[1]) process.exit(1);
+' "$commit"
 
-echo "=== ✅ 部署完成 ==="
-echo "  · API：127.0.0.1:5000（PM2 守护，postgres 模式）"
-echo "  · 四端静态文件已切换到最新发布目录，无需重启 Nginx"
+migration_status="$(cd apps/api && pnpm exec typeorm-ts-node-commonjs migration:show -d src/data-source.ts)"
+if grep -Fq '[ ]' <<< "$migration_status"; then
+  if [[ "$allow_migrations" != true ]]; then
+    echo 'Pending migration. Verify compatibility with the previous API and take a paired backup. Then use --allow-compatible-migrations.' >&2
+    exit 1
+  fi
+  (cd apps/api && pnpm run migration:run)
+fi
+
+rollback() {
+  local status=$?
+  trap - EXIT
+  if (( status != 0 )); then
+    echo "Release validation failed. Restoring $old_commit." >&2
+    point_link "$old" "$current"
+    if activate "$old" && wait_for_api "$old_commit" && check_release "$old" "$old_commit"; then
+      pm2 save
+    else
+      echo 'Rollback verification failed. Check PM2, Nginx and database compatibility.' >&2
+    fi
+  fi
+  exit "$status"
+}
+trap rollback EXIT
+activate "$release"
+wait_for_api "$commit"
+point_link "$release" "$current"
+check_release "$release" "$commit"
+pm2 save
+point_link "$old" "$previous"
+trap - EXIT
+echo "Published and verified $commit at $release"

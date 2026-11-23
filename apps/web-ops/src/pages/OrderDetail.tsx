@@ -44,7 +44,9 @@ interface CustomsReview {
   reviewed_at: string | null;
 }
 
+type QuoteVersion = { version: number; expires_at: string; published_at: string; amount: number; current?: boolean; decision?: { value: 'accepted' | 'rejected'; at: string; by?: string } | null };
 interface OrderDetail {
+  quote_versions?: QuoteVersion[];
   id: string; quote_no: string; client_id: string; template_version: string; status: string;
   input_file_name: string | null; has_file?: boolean; total_rows?: number; valid_rows?: number;
   total_cbm?: number; total_gw_kg?: number; total_amount_rmb?: number | null;
@@ -182,6 +184,7 @@ export default function OrderDetail() {
   const [diParams, setDiParams] = useState({ rmb_brl: '', insurance_brl: 0, uf: 'SP', icms_rate: 0.18 });
   const [rmbMarket, setRmbMarket] = useState<MarketFx | null>(null);
   const [rmbMarketError, setRmbMarketError] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [diBusy, setDiBusy] = useState(false);
   const [diVersions, setDiVersions] = useState<any[]>([]);
   const [diHistory, setDiHistory] = useState<any>(null);
@@ -551,6 +554,13 @@ export default function OrderDetail() {
   };
 
   /** M4：成交标记（won/lost/open） */
+  const publishCustomerVersion = async () => {
+    setPublishing(true); setErr(null);
+    try { await api.post(`/api/ops/orders/${id}/quote-versions`); load(); }
+    catch (error) { setErr(getApiErrorMessage(error, t('quoteVersion.error'))); }
+    finally { setPublishing(false); }
+  };
+
   const handleDeal = async (next: 'won' | 'lost' | 'open') => {
     let note: string | undefined;
     if (next === 'lost') {
@@ -870,6 +880,15 @@ export default function OrderDetail() {
       )}
 
       {/* M4 成交状态工作条：仅 done 报价可标记 */}
+      {visibleSection === 'deal' && d.status === 'done' && <div className="card">
+        <h3>{t('quoteVersion.title')}</h3>
+        {[...(d.quote_versions ?? [])].reverse().map(version => <p key={version.version}>
+          {t('quoteVersion.number', { version: version.version })} · BRL {version.amount.toFixed(2)} · {t('quoteVersion.expiry', { date: new Date(version.expires_at).toLocaleString() })}
+          {version.decision && ' · ' + t('quoteVersion.' + version.decision.value) + ' · ' + new Date(version.decision.at).toLocaleString() + ' · ' + (version.decision.by ?? '')}
+        </p>)}
+        {d.deal_status !== 'won' && (d.deal_status !== 'lost' || d.quote_versions?.at(-1)?.decision?.value === 'rejected') &&
+          <button className="btn btn-ghost" disabled={publishing} onClick={publishCustomerVersion}>{t('quoteVersion.publish')}</button>}
+      </div>}
       {visibleSection === 'deal' && d.status === 'done' && (
         <div id="order-deal" className="alert alert-warn row-between order-workbar" style={{ alignItems: 'center' }}>
           <div>
@@ -904,7 +923,7 @@ export default function OrderDetail() {
               <button className="btn btn-ghost" disabled={busy} onClick={() => handleDeal('lost')}>✗ {t('orderDetail.deal.actionMarkLost')}</button>
             )}
             {d.deal_status && (
-              <button className="btn btn-ghost" disabled={busy} onClick={() => handleDeal('open')}>{t('orderDetail.deal.resume')}</button>
+              <button className="btn btn-ghost" disabled={busy || !!d.quote_versions?.at(-1)?.decision} onClick={() => handleDeal('open')}>{t('orderDetail.deal.resume')}</button>
             )}
           </div>
         </div>

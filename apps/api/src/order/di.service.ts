@@ -39,7 +39,7 @@ export class DiService {
   }
 
   async review(id: string, body: { parameters: DiParameters; items: any[]; additional_fees?: any[] }, actor: { username: string; role: string }) {
-    const order: any = await this.quotesRepo.findById(id);
+    const order: any = await this.quotesRepo.findVersioned(id);
     if (!order) throw new NotFoundException('Pedido não encontrado');
     if (!order.di_analysis) throw new BadRequestException('Execute a análise de NCM antes de confirmar a DI');
     if (!Array.isArray(body.items)) throw new BadRequestException('Itens da DI não informados');
@@ -60,11 +60,12 @@ export class DiService {
       reviewed_at: reviewedAt,
       analysis: JSON.parse(JSON.stringify(analysis))
     };
-    const saved = await this.quotesRepo.update(id, {
+    const saved = await this.quotesRepo.updateIfUnchanged(id, order.revision, {
       di_analysis: analysis,
       di_review_versions: [...versions, snapshot],
       customs_review: pendingCustomsReview(analysis.totals.di_brl)
     } as any);
+    if (!saved) throw new ConflictException('O pedido mudou durante a revisão. Recarregue e tente novamente.');
     await this.auditRepo.entry({
       actor_username: actor.username, actor_role: actor.role, action: 'order.di.review',
       target_type: 'quote', target_id: id,

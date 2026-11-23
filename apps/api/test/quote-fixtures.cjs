@@ -8,6 +8,7 @@ const ExcelJS = require('exceljs');
 const { DATA_START_ROW, FIELD_DICTIONARY } = require('../../../packages/shared-types/dist');
 const storage = require('../dist/common/mock-db');
 const { QuoteService } = require('../dist/upload/quote.service');
+const { UploadDraftsRepo } = require('../dist/upload/upload-draft.repository');
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/M1sAAAAASUVORK5CYII=', 'base64');
 const actor = { username: 'quote-test', role: 'client' };
@@ -70,9 +71,13 @@ function memoryRepositories(client) {
     },
     clients: { async findOne() { return client; } },
     drafts: {
+      withLock: UploadDraftsRepo.prototype.withLock,
       async insert(row) { drafts.set(row.id, structuredClone(row)); },
       async findById(id) { return structuredClone(drafts.get(id)); },
-      async update(id, change) { Object.assign(drafts.get(id), change); }
+      async update(id, change) {
+        const row = drafts.get(id);
+        return row ? structuredClone(Object.assign(row, change)) : null;
+      }
     },
     images: {
       async insertMany(rows) { images.push(...rows); },
@@ -104,7 +109,7 @@ async function isolatedWorkspace(t) {
   return root;
 }
 
-async function runUploadRegression(t, repos, clientId) {
+async function runUploadRegression(t, repos, clientId, concurrent = false) {
   const root = await isolatedWorkspace(t);
   const service = quoteService(repos);
   const filename = path.join(root, 'synthetic.xlsx');
@@ -125,10 +130,13 @@ async function runUploadRegression(t, repos, clientId) {
   assert.ok(rejected.errors.some(issue => issue.field_key === 'total_price'));
   assert.equal((await repos.drafts.findById(preview.draft_id)).status, 'preview');
 
-  const confirmed = await service.confirmUpload(preview.draft_id, clientId, preview.rows, 'USD', actor);
+  const submit = () => quoteService(repos).confirmUpload(preview.draft_id, clientId, preview.rows, 'USD', actor);
+  const [confirmed, concurrentReplay] = await Promise.all(concurrent ? [submit(), submit()] : [submit()]);
   assert.equal(confirmed.ok, true, JSON.stringify(confirmed));
   assert.equal(confirmed.embedded_image_count, 10);
   const quote = await repos.quotes.findById(confirmed.quote_id);
+  assert.equal(quote.source_draft_id, preview.draft_id);
+  if (concurrentReplay) assert.equal(concurrentReplay.quote_id, quote.id);
   assert.equal(quote.declared_currency, 'USD');
   assert.equal(quote.status, 'uploaded');
   assert.ok(Math.abs(quote.line_items[0].total_price - 5113.2789792) < 1e-8);

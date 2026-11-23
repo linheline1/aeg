@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import * as crypto from 'crypto';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { UploadDraftEntity } from '../entities/upload-draft.entity';
 import { repoRoot } from '../common/mock-db';
 
@@ -36,10 +36,31 @@ function toRow(entity: UploadDraftEntity): UploadDraftRow {
 }
 
 export class UploadDraftsRepo {
+  private static readonly pending = new Map<string, Promise<void>>();
   private repo?: Repository<UploadDraftEntity>;
 
   constructor(ds?: DataSource) {
     if (ds) this.repo = ds.getRepository(UploadDraftEntity);
+  }
+
+  async withLock<T>(id: string, action: (manager?: EntityManager) => Promise<T>): Promise<T> {
+    if (this.repo) {
+      return this.repo.manager.transaction(async manager => {
+        await manager.getRepository(UploadDraftEntity).findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+        return action(manager);
+      });
+    }
+    const previous = UploadDraftsRepo.pending.get(id);
+    let release!: () => void;
+    const next = new Promise<void>(resolve => { release = resolve; });
+    UploadDraftsRepo.pending.set(id, next);
+    try {
+      await previous;
+      return await action();
+    } finally {
+      release();
+      if (UploadDraftsRepo.pending.get(id) === next) UploadDraftsRepo.pending.delete(id);
+    }
   }
 
   private load(): UploadDraftRow[] {

@@ -7,7 +7,7 @@ const { memoryRepositories, productRow, quoteService, runUploadRegression } = re
 
 test('USD upload validates in original currency and retains ten image associations', async t => {
   const client = { id: 'client-1' };
-  await runUploadRegression(t, memoryRepositories(client), client.id);
+  await runUploadRegression(t, memoryRepositories(client), client.id, true);
 });
 
 test('NCM completion preserves existing codes and rejects wrong prefixes or ten-digit model results', async t => {
@@ -61,4 +61,63 @@ test('DDP uses the reviewed DI version and applies the quoted sales tax base', (
   assert.equal(result.breakdown.sales_tax_brl, 182);
   assert.equal(result.breakdown.di_review_version, 3);
   assert.equal(result.brl, 1132);
+});
+
+test('DDP write rejects a superseded quote revision without marking the quote failed', async () => {
+  const { QuoteService } = require('../dist/upload/quote.service');
+  const order = { id: 'quote', revision: 'old', client_id: 'client', status: 'uploaded',
+    di_analysis: { totals: { di_brl: 10, merchandise_brl: 100 } } };
+  let current = order.revision;
+  const quotes = {
+    async findVersioned() { return { ...order, revision: current }; },
+    async updateIfUnchanged(_id, revision) {
+      assert.equal(revision, 'old');
+      assert.equal(current, 'edited');
+      return null;
+    },
+    async update() { assert.fail('An outdated computation must not write any state'); }
+  };
+  const feeRepo = { async resolve() {
+    current = 'edited';
+    return { rates: { ocean_freight_usd: 10, port_fee_usd: 0, br_trucking_brl: 0,
+      fx_rate: 5, sales_markup_rate: 0, sales_tax_rate: 0, profit_brl: 0 } };
+  } };
+  const service = new QuoteService(quotes, feeRepo, {}, {}, {}, {}, {}, {});
+  await assert.rejects(() => service.computeOrder(order.id, { username: 'test', role: 'operator' }), { status: 409 });
+  assert.equal(current, 'edited');
+});
+
+test('customer decisions are version-bound, ownership-checked and idempotent across concurrent requests', async () => {
+  const { ClientOrderController } = require('../dist/order/client-order.controller');
+  const { publishQuote } = require('../dist/order/quote-publication');
+  let order = { id: 'q', revision: '1', client_id: 'c', status: 'done', line_items: [{ row_no: 1 }] };
+  const pricing = { brl: 120, breakdown: { fx_rate: 5, items: [] } };
+  Object.assign(order, publishQuote(order, pricing, new Date(Date.now() - 8 * 86400000)));
+  let audits = 0;
+  const repo = {
+    async findVersioned() { return structuredClone(order); },
+    async updateIfUnchanged(_id, revision, patch) {
+      if (order.revision !== revision) return null;
+      order = { ...order, ...patch, revision: String(Number(revision) + 1) };
+      return order;
+    }
+  };
+  const controller = new ClientOrderController(repo, { async entry() { audits++; } }, {});
+  const own = { user: { client_id: 'c', username: 'customer' } };
+  const decide = (version, decision, request = own) => controller.decide('q', { version, decision }, request);
+  await assert.rejects(() => decide(1, 'accepted'), { status: 409 });
+  await assert.rejects(() => decide(1, 'accepted', { user: { client_id: 'other' } }), { status: 404 });
+  Object.assign(order, publishQuote(order, pricing));
+  await assert.rejects(() => decide(1, 'accepted'), { status: 409 });
+  await decide(2, 'rejected');
+  assert.equal(order.deal_status, 'lost');
+  Object.assign(order, publishQuote(order, { ...pricing, brl: 130 }));
+  assert.equal(order.deal_status, 'open');
+  const [first, retry] = await Promise.all([decide(3, 'accepted'), decide(3, 'accepted')]);
+  assert.deepEqual(first, retry);
+  assert.equal(audits, 2);
+  assert.equal(order.deal_status, 'won');
+  assert.equal(order.quote_versions[2].amount, 130);
+  await assert.rejects(() => decide(3, 'rejected'), { status: 409 });
+  assert.throws(() => publishQuote(order, pricing), { status: 409 });
 });

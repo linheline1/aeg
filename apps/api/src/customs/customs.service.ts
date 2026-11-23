@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { AuditRepo, ImageRepo, QuotesRepo } from '../common/mock-db';
@@ -160,7 +161,9 @@ export class CustomsService {
   }
 
   async updateProductAmounts(id: string, changes: { row_no: number; product_en?: string; hs_code?: string; total_pcs?: number; unit_price?: number; total_price?: number; total_cbm?: number; total_gw?: number; amount?: number }[], actor: { username: string; role: string }) {
-    const order = await this.order(id);
+    const order = await this.quotesRepo.findVersioned(id);
+    if (!order) throw new NotFoundException('Pedido não encontrado');
+    if (order.quote_versions?.at(-1)?.decision?.value === 'accepted') throw new ConflictException('O cliente já aceitou este orçamento.');
     if (!Array.isArray(changes) || !changes.length || changes.length > 500) throw new BadRequestException('Lista de valores inválida');
     const items = [...(order.line_items || [])];
     const seen = new Set<number>();
@@ -210,11 +213,12 @@ export class CustomsService {
     const analysis = !ncmChanged && order.di_analysis?.items?.length && order.di_analysis?.parameters
       ? calculateDi({ ...order, line_items: items }, order.di_analysis.items.map((item: any) => ({ ...item, product_en: items.find((row: any) => Number(row.row_no) === Number(item.row_no))?.product_en || item.product_en })), order.di_analysis.parameters, order.di_analysis.additional_fees)
       : null;
-    await this.quotesRepo.update(id, {
+    const updated = await this.quotesRepo.updateIfUnchanged(id, order.revision, {
       line_items: items, total_amount_rmb: Math.round(total * 100) / 100,
       di_analysis: analysis,
       customs_review: pendingCustomsReview(analysis?.totals.di_brl ?? null)
     } as any);
+    if (!updated) throw new ConflictException('O pedido mudou. Recarregue e tente novamente.');
     await this.auditRepo.entry({ actor_username: actor.username, actor_role: actor.role,
       action: 'customs.order.product_amount', target_type: 'quote', target_id: id,
       detail: { quote_no: order.quote_no, changes: auditChanges } });
