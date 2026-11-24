@@ -47,7 +47,7 @@ export default function InquiryWidget() {
     const next = [...messages, { role: 'user' as const, content }].slice(-12);
     setMessages(next); setDraft(''); setBusy(true); setError('');
     try {
-      const { data } = await axios.post<{ reply: string }>(`${api.defaults.baseURL || ''}/api/public/inquiry`, { messages: next }, { timeout: 28000 });
+      const { data } = await axios.post<{ reply: string }>(`${api.defaults.baseURL || ''}/api/public/inquiry`, { messages: next }, { timeout: 60000 });
       setMessages(current => [...current, { role: 'assistant', content: data.reply }]);
     } catch (reason) {
       setError(axios.isAxiosError(reason) && reason.response?.status === 429 ? t('inquiry.rateLimit') : t('inquiry.failed'));

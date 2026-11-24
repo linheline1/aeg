@@ -12,6 +12,7 @@ import CustomsCnpjs from './pages/CustomsCnpjs';
 import AuditLog from './pages/AuditLog';
 import HelpArticles from './pages/HelpArticles';
 import AiConfig from './pages/AiConfig';
+import KnowledgeBase from './pages/KnowledgeBase';
 import PartnersAdmin from './pages/PartnersAdmin';
 import Versions from './pages/Versions';
 import Profile from './pages/Profile';
@@ -35,6 +36,7 @@ export default function App() {
                 <Route path="help" element={<RequireAuth allowedRoles={['admin']}><HelpArticles /></RequireAuth>} />
                 <Route path="audit" element={<RequireAuth allowedRoles={['admin']}><AuditLog /></RequireAuth>} />
                 <Route path="ai-config" element={<RequireAuth allowedRoles={['admin']}><AiConfig /></RequireAuth>} />
+                <Route path="knowledge" element={<RequireAuth allowedRoles={['admin']}><KnowledgeBase /></RequireAuth>} />
                 <Route path="partners" element={<RequireAuth allowedRoles={['admin']}><PartnersAdmin /></RequireAuth>} />
                 <Route path="versions" element={<RequireAuth allowedRoles={['admin']}><Versions /></RequireAuth>} />
                 <Route path="profile" element={<Profile />} />

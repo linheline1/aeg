@@ -87,6 +87,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/help', label: t('nav.help') },
     { to: '/audit', label: t('nav.audit') },
     { to: '/ai-config', label: t('nav.aiConfig') },
+    { to: '/knowledge', label: t('nav.knowledge') },
     { to: '/versions', label: t('nav.versions') }
   ] : [
     { to: '/clients', label: t('nav.clientReview') }

@@ -39,7 +39,8 @@ export class AuthController {
       sub: user.id,
       username: user.username,
       role: user.role,
-      client_id: user.client_id || undefined
+      client_id: user.client_id || undefined,
+      session_revision: user.session_revision ?? null
     };
     const token = this.jwtService.sign(payload);
     await this.audit.log('LOGIN', { target_type: 'user', target_id: user.id }, null, user.id);

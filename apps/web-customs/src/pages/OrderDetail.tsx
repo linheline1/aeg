@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { documentLabels, OrderDocuments } from '@aeg/web-shared/order-documents';
 import DiHistory from '../components/DiHistory';
 import DiPanel from '../components/DiPanel';
 import { ErrorMessage, Loading, SuccessMessage } from '../components/Feedback';
@@ -14,15 +15,16 @@ import { api, errorMessage } from '../store/auth';
 import type { OrderDetailData, Review } from '../types';
 import { brl, dateTime, number, rmb } from '../utils/format';
 
-type OrderSection = 'overview' | 'invoice' | 'products' | 'images' | 'di' | 'shipment';
-const ORDER_SECTIONS: OrderSection[] = ['overview', 'invoice', 'products', 'images', 'di', 'shipment'];
+type OrderSection = 'overview' | 'invoice' | 'products' | 'images' | 'di' | 'shipment' | 'documents';
+const ORDER_SECTIONS: OrderSection[] = ['overview', 'invoice', 'products', 'images', 'di', 'shipment', 'documents'];
 function sectionFromHash(): OrderSection | null {
   const section = window.location.hash.replace(/^#order-/, '') as OrderSection;
   return ORDER_SECTIONS.includes(section) ? section : null;
 }
 
 export default function OrderDetail() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage || 'pt';
   const { id = '' } = useParams();
   const [order, setOrder] = useState<OrderDetailData | null>(null);
   const [activeSection, setActiveSection] = useState<OrderSection>(() => sectionFromHash() || 'overview');
@@ -94,6 +96,7 @@ export default function OrderDetail() {
     { id: 'products', label: t('detail.productsTitle') },
     ...(hasGeneralImages ? [{ id: 'images' as const, label: t('detail.imagesTitle') }] : []),
     { id: 'di', label: t('detail.diTitle') },
+    { id: 'documents', label: documentLabels(language).title },
     { id: 'shipment', label: t('detail.shipmentTitle') },
   ];
   const visibleSection = sections.some((section) => section.id === activeSection) ? activeSection : 'overview';
@@ -111,6 +114,7 @@ export default function OrderDetail() {
       {visibleSection === 'images' && hasGeneralImages && <section className="card" aria-labelledby="images-title"><div className="card-title"><div><h2 id="images-title">{t('detail.imagesTitle')}</h2><p>{t('detail.imagesDescription')}</p></div><span className="badge badge-neutral">{t('detail.files', { count: order.images.filter((image) => image.row_no == null).length })}</span></div><OrderImages images={order.images.filter((image) => image.row_no == null)} /></section>}
       {visibleSection === 'di' && <section className="card" aria-labelledby="di-title"><div className="card-title"><div><h2 id="di-title">{t('detail.diTitle')}</h2><p>{t('detail.diDescription')}</p></div>{review?.di_review_version && <span className="badge badge-info">{t('orders.versionValue', { version: review.di_review_version })}</span>}</div>{review?.note && <div className="review-note"><strong>{t('detail.lastReviewNote')}</strong><p>{review.note}</p></div>}<DiPanel orderId={order.id} initialAnalysis={order.di_analysis} onUpdated={load} /></section>}
       {visibleSection === 'shipment' && <section className="card" aria-labelledby="shipment-title"><div className="card-title"><div><h2 id="shipment-title">{t('detail.shipmentTitle')}</h2><p>{t('detail.shipmentDescription')}</p></div></div><ShipmentPanel order={order} onUpdated={load} /></section>}
+      {visibleSection === 'documents' && <OrderDocuments key={order.id} api={api} orderId={order.id} portal="customs" language={language} />}
       {historyOpen && <DiHistory orderId={order.id} onClose={() => setHistoryOpen(false)} />}
       {changesOpen && <Modal title={t('detail.requestChanges')} onClose={() => { if (!changeBusy) setChangesOpen(false); }}><form onSubmit={requestChanges}><p className="modal-description">{t('detail.changeDescription', { quote: order.quote_no })}</p><div className="field"><label htmlFor="change-note">{t('detail.changeLabel')} <span className="required">{t('detail.required')}</span></label><textarea id="change-note" className="form-input" rows={5} maxLength={500} value={changeNote} onChange={(event) => setChangeNote(event.target.value)} required disabled={changeBusy} placeholder={t('detail.changePlaceholder')} /></div>{changeError && <div className="form-error" role="alert"><Icon name="alert" size={18} />{changeError}</div>}<div className="modal-actions"><button className="btn btn-ghost" type="button" onClick={() => setChangesOpen(false)} disabled={changeBusy}>{t('common.cancel')}</button><button className="btn btn-danger" type="submit" disabled={changeBusy || !changeNote.trim()}>{changeBusy ? t('detail.sending') : t('detail.sendRequest')}</button></div></form></Modal>}
     </>

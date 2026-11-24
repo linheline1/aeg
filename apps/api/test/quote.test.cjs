@@ -121,3 +121,79 @@ test('customer decisions are version-bound, ownership-checked and idempotent acr
   await assert.rejects(() => decide(3, 'rejected'), { status: 409 });
   assert.throws(() => publishQuote(order, pricing), { status: 409 });
 });
+
+test('inbox deduplicates source events and persists reads per customer account', async t => {
+  const { ClientNotificationsController } = require('../dist/order/client-notifications.controller');
+  const { isolatedWorkspace } = require('./quote-fixtures.cjs');
+  await isolatedWorkspace(t);
+  const time = '2026-11-22T08:00:00.000Z';
+  const version = { version: 1, published_at: time, decision: { value: 'accepted', at: time } };
+  const event = { id: 'event-1', stage: 'departed', created_at: time };
+  const opened = { status: 'open', message: 'Port congestion', updated_at: time };
+  const resolved = { status: 'resolved', message: 'Unloading complete', updated_at: '2026-11-23T08:00:00.000Z' };
+  const quotes = { async find({ where }) {
+    return [{ id: where.client_id, quote_no: 'TEST', quote_versions: [version, version],
+      shipment: { events: [event, event], exception: resolved, exception_updates: [opened, opened, resolved] } }];
+  } };
+  const make = () => new ClientNotificationsController(quotes);
+  const account = (client_id, sub) => ({ user: { client_id, sub } });
+  const own = account('customer-1', 'user-1');
+  const otherUser = account('customer-1', 'user-2');
+  const otherClient = account('customer-2', 'user-3');
+  const inbox = await make().list(own);
+  assert.equal(inbox.unread, 5);
+  assert.equal(inbox.total, 5);
+  assert.deepEqual(new Set(inbox.items.map(item => item.type)), new Set(['published', 'accepted', 'shipment', 'exception_open', 'exception_resolved']));
+  assert.equal(inbox.items[0].message, resolved.message);
+  const ids = [inbox.items[0].id];
+  await assert.rejects(() => make().markRead(otherClient, { ids }), { status: 404 });
+  await make().markRead(own, { ids });
+  await make().markRead(own, { ids });
+  assert.deepEqual(await make().unread(own), { unread: 4 });
+  assert.equal((await make().list(otherUser)).unread, 5);
+});
+
+test('customs changes invalidate even unversioned pricing and cannot overwrite new shipment data', async () => {
+  const { CustomsService } = require('../dist/customs/customs.service');
+  const { OpsOrderController } = require('../dist/order/ops-order.controller');
+  const draft = {
+    id: 'quote', quote_no: 'TEST', status: 'done', deal_status: 'open', total_amount_rmb: 100,
+    total_amount_brl: 400, total_amount_usd: 80, pricing_breakdown: { fx_rate: 5 },
+    line_items: [{ row_no: 1, total_pcs: 1, unit_price: 100, total_price: 100 }]
+  };
+  const quote = structuredClone(draft);
+  let revision = 0;
+  let beforeWrite;
+  const repo = {
+    async findById() { return structuredClone(quote); },
+    async findVersioned() { return { ...structuredClone(quote), revision }; },
+    async updateIfUnchanged(_id, expected, patch) {
+      beforeWrite?.();
+      if (revision !== expected) return null;
+      revision++;
+      Object.assign(quote, patch);
+      return structuredClone(quote);
+    }
+  };
+  const audit = { async entry() {} };
+  const operator = { username: 'operator', role: 'operator' };
+  const actor = { username: 'customs', role: 'customs' };
+  const customs = new CustomsService(repo, { async findByQuote() { return []; } }, audit, {}, {});
+  const ops = new OpsOrderController({}, {}, repo, audit, {}, {}, {});
+  await customs.updateProductAmounts(quote.id, [{ row_no: 1, amount: 200 }], actor);
+  assert.equal(quote.total_amount_rmb, 200);
+  assert.equal(quote.total_amount_brl, null);
+  assert.equal(quote.pricing_breakdown, null);
+  assert.equal(quote.status, 'uploaded');
+  await assert.rejects(() => ops.publishVersion(quote.id, { user: operator }), { status: 409 });
+  Object.assign(quote, draft, { deal_status: 'won' });
+  beforeWrite = () => {
+    revision++;
+    quote.shipment = { exception: { status: 'open', message: 'Delay' } };
+    beforeWrite = undefined;
+  };
+  await assert.rejects(() => customs.addProgress(quote.id, { stage: 'customs_br' }, actor), { status: 409 });
+  await customs.addProgress(quote.id, { stage: 'customs_br' }, actor);
+  assert.equal(quote.shipment.exception.message, 'Delay');
+  assert.equal(quote.shipment.events[0].stage, 'customs_br');
+});

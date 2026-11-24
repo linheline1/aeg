@@ -29,6 +29,17 @@ psql -X -A -t -v ON_ERROR_STOP=1 --dbname="$database" -c "
   UNION SELECT file_path FROM client_image WHERE file_path LIKE 'apps/api/uploads/%'
   UNION SELECT file_path FROM order_file WHERE file_path LIKE 'apps/api/uploads/%'
 " > "$work/references"
+if [[ "$(psql -X -At -v ON_ERROR_STOP=1 --dbname="$database" -c "
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'quote_order' AND column_name = 'document_requests')
+")" == t ]]; then
+  psql -X -At -v ON_ERROR_STOP=1 --dbname="$database" -c "
+    SELECT DISTINCT v->>'file_path'
+    FROM quote_order q CROSS JOIN LATERAL jsonb_array_elements(q.document_requests) d
+    CROSS JOIN LATERAL jsonb_array_elements(d->'versions') v
+    WHERE v->>'file_path' LIKE 'apps/api/uploads/%'
+  " >> "$work/references"
+fi
 checked=0
 while IFS= read -r reference; do
   relative="${reference#apps/api/}"

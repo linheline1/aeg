@@ -80,6 +80,7 @@ rollback() {
 trap rollback EXIT
 activate "$release"
 wait_for_api "$commit"
+check_business_api "$release" http://127.0.0.1:5000
 point_link "$release" "$current"
 check_release "$release" "$commit"
 pm2 save

@@ -14,6 +14,7 @@ export interface UserRow {
   sales_phone?: string | null;
   sales_wechat?: string | null;
   password_hash: string;
+  session_revision?: string | null;
   role: 'admin' | 'operator' | 'sales' | 'customs' | 'client';
   client_id?: string;
   status: 'active' | 'disabled';
@@ -54,7 +55,28 @@ export interface TemplateRow {
   updated_at: string;
 }
 
+export interface ShipmentEvent {
+  id: string;
+  stage: string;
+  note?: string | null;
+  happened_at: string;
+  lat?: number | null;
+  lng?: number | null;
+  created_by?: string;
+  created_at?: string;
+  corrected_at?: string;
+  corrected_by?: string;
+}
+
+export interface ShipmentException {
+  status: 'open' | 'resolved';
+  message: string;
+  owner: string;
+  updated_at: string;
+}
+
 export interface QuoteOrderRow {
+  document_requests?: import('../order/order-document').OrderDocument[] | null;
   quote_versions?: import('../order/quote-publication').PublishedQuote[] | null;
   source_draft_id?: string | null;
   id: string;
@@ -115,7 +137,9 @@ export interface QuoteOrderRow {
     etd?: string | null;
     eta?: string | null;
     remark?: string | null;
-    events?: { id: string; stage: string; note?: string | null; happened_at: string; created_by?: string }[];
+    events?: ShipmentEvent[];
+    exception?: ShipmentException;
+    exception_updates?: Omit<ShipmentException, 'owner'>[];
     updated_by?: string;
     updated_at?: string;
   } | null;
@@ -395,6 +419,32 @@ export interface PartnerRow {
   created_at: string;
 }
 
+/** 内部知识库文档：price_table（结构化价目表）或 doc（Markdown 资料） */
+export interface KnowledgeChunk {
+  heading: string;
+  text: string;
+}
+
+export interface KnowledgeDocRow {
+  id: string;
+  title: string;
+  kind: 'price_table' | 'doc';
+  tags: string[];
+  status: 'active' | 'archived';
+  /** 仅 price_table：当前启用的价目表（同类最多一条） */
+  is_current: boolean;
+  version: string;
+  effective_date: string | null;
+  source_file: string | null;
+  summary: string;
+  /** price_table: PriceTable JSON 字符串；doc: Markdown 全文 */
+  content: string;
+  chunks: KnowledgeChunk[];
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface DBSnapshot {
   users: UserRow[];
   clients: ClientRow[];
@@ -412,6 +462,7 @@ interface DBSnapshot {
   ai_config?: AiConfigRow[];
   product_catalog?: ProductCatalogRow[];
   partners?: PartnerRow[];
+  knowledge_docs?: KnowledgeDocRow[];
 }
 
 /** 仓库根目录（以 pnpm-workspace.yaml 为标记向上查找，不依赖 process.cwd()） */
@@ -444,6 +495,7 @@ function load(): DBSnapshot {
       product_catalogs: (raw as any).product_catalogs || [],
       order_files: (raw as any).order_files || [],
       payments: (raw as any).payments || [],
+      knowledge_docs: (raw as any).knowledge_docs || [],
       ai_config: ((raw as any).ai_config || []).map((row: any, i: number) => ({
         ...row,
         name: row.name || (i === 0 ? '默认配置' : `配置 ${i + 1}`),
@@ -451,7 +503,7 @@ function load(): DBSnapshot {
       }))
     };
   } catch {
-    return { users: [], clients: [], templates: [], quotes: [], fee_rates: [], audit_logs: [], client_images: [], client_cnpjs: [], customs_cnpjs: [], product_catalogs: [], order_files: [], payments: [], ai_config: [] };
+    return { users: [], clients: [], templates: [], quotes: [], fee_rates: [], audit_logs: [], client_images: [], client_cnpjs: [], customs_cnpjs: [], product_catalogs: [], order_files: [], payments: [], ai_config: [], knowledge_docs: [] };
   }
 }
 
@@ -691,7 +743,8 @@ export class UserRepo {
     const db = load();
     const idx = db.users.findIndex(u => u.id === id);
     if (idx < 0) return Promise.resolve(null);
-    db.users[idx] = { ...db.users[idx], ...patch, updated_at: new Date().toISOString() };
+    const revoke = patch.password_hash !== undefined || patch.status !== undefined;
+    db.users[idx] = { ...db.users[idx], ...patch, ...(revoke ? { session_revision: uid() } : {}), updated_at: new Date().toISOString() };
     save(db);
     return Promise.resolve(db.users[idx]);
   }
@@ -739,6 +792,23 @@ export class TemplateRepo {
   }
 }
 
+export type AuditEntry = Pick<AuditLogRow, 'actor_username' | 'actor_role' | 'action'> &
+  Partial<Pick<AuditLogRow, 'target_type' | 'target_id' | 'detail'>>;
+
+function appendAuditEntry(logs: AuditLogRow[], entry: AuditEntry) {
+  logs.push({
+    id: uid(),
+    ts: new Date().toISOString(),
+    actor_username: entry.actor_username || 'system',
+    actor_role: entry.actor_role || 'system',
+    action: entry.action,
+    target_type: entry.target_type || null,
+    target_id: entry.target_id || null,
+    detail: entry.detail ?? null
+  });
+  return logs.length > 2000 ? logs.slice(-2000) : logs;
+}
+
 export class AuditRepo {
   /** 写入审计日志。兼容旧签名 log(action, payload, user_id)；推荐用 entry() */
   async log(action: string, payload?: any, user_id?: string) {
@@ -759,26 +829,9 @@ export class AuditRepo {
   }
 
   /** 结构化写入（M2 费率/订单/状态变更） */
-  async entry(e: {
-    actor_username: string;
-    actor_role: string;
-    action: string;
-    target_type?: string;
-    target_id?: string;
-    detail?: any;
-  }) {
+  async entry(e: AuditEntry) {
     const db = load();
-    db.audit_logs.push({
-      id: uid(),
-      ts: new Date().toISOString(),
-      actor_username: e.actor_username || 'system',
-      actor_role: e.actor_role || 'system',
-      action: e.action,
-      target_type: e.target_type || null,
-      target_id: e.target_id || null,
-      detail: e.detail ?? null
-    });
-    if (db.audit_logs.length > 2000) db.audit_logs = db.audit_logs.slice(-2000);
+    db.audit_logs = appendAuditEntry(db.audit_logs, e);
     save(db);
   }
 
@@ -925,11 +978,12 @@ export class QuotesRepo {
     return quote ? { ...quote, revision: this.quoteRevision(quote) } : null;
   }
 
-  async updateIfUnchanged(id: string, version: string, patch: Partial<QuoteOrderRow>) {
+  async updateIfUnchanged(id: string, version: string, patch: Partial<QuoteOrderRow>, audit?: AuditEntry) {
     const db = load();
     const index = db.quotes.findIndex(q => q.id === id && q.status !== 'deleted' && this.quoteRevision(q) === version);
     if (index < 0) return null;
     db.quotes[index] = { ...db.quotes[index], ...patch, updated_at: new Date().toISOString() };
+    if (audit) db.audit_logs = appendAuditEntry(db.audit_logs, audit);
     save(db);
     return db.quotes[index];
   }
@@ -1462,4 +1516,74 @@ function stripUndefinedPatch<T extends object>(patch: T): Partial<T> {
     if (patch[k] !== undefined) out[k] = patch[k];
   }
   return out;
+}
+
+/** 内部知识库仓储（mock）。setCurrent 保证同类 price_table 最多一条生效。 */
+export class KnowledgeDocRepo {
+  findAll(opts?: { kind?: 'price_table' | 'doc'; includeArchived?: boolean }): Promise<KnowledgeDocRow[]> {
+    const db = load();
+    const rows = (db.knowledge_docs || [])
+      .filter(row => !opts?.kind || row.kind === opts.kind)
+      .filter(row => opts?.includeArchived || row.status === 'active')
+      .slice();
+    rows.sort((a, b) => Number(b.is_current) - Number(a.is_current) || b.created_at.localeCompare(a.created_at));
+    return Promise.resolve(rows);
+  }
+
+  findById(id: string): Promise<KnowledgeDocRow | null> {
+    const db = load();
+    return Promise.resolve((db.knowledge_docs || []).find(row => row.id === id) || null);
+  }
+
+  findCurrentPriceTable(): Promise<KnowledgeDocRow | null> {
+    const db = load();
+    const rows = (db.knowledge_docs || []).filter(row => row.kind === 'price_table' && row.status === 'active' && row.is_current);
+    return Promise.resolve(rows[0] || null);
+  }
+
+  insert(row: Omit<KnowledgeDocRow, 'id' | 'created_at' | 'updated_at'>): Promise<KnowledgeDocRow> {
+    const db = load();
+    const now = new Date().toISOString();
+    const full: KnowledgeDocRow = { ...row, id: uid(), created_at: now, updated_at: now };
+    if (full.is_current && full.kind === 'price_table') {
+      for (const item of db.knowledge_docs || []) if (item.kind === 'price_table') item.is_current = false;
+    }
+    db.knowledge_docs = [...(db.knowledge_docs || []), full];
+    save(db);
+    return Promise.resolve(full);
+  }
+
+  update(id: string, patch: Partial<KnowledgeDocRow>): Promise<KnowledgeDocRow | null> {
+    const db = load();
+    const idx = (db.knowledge_docs || []).findIndex(row => row.id === id);
+    if (idx < 0) return Promise.resolve(null);
+    const next = { ...db.knowledge_docs![idx], ...stripUndefinedPatch(patch), updated_at: new Date().toISOString() };
+    if (next.is_current && next.kind === 'price_table') {
+      for (const item of db.knowledge_docs || []) if (item.id !== id && item.kind === 'price_table') item.is_current = false;
+    }
+    db.knowledge_docs![idx] = next;
+    save(db);
+    return Promise.resolve(next);
+  }
+
+  /** 设为当前价目表（原子写，清空同类其他条目的 is_current） */
+  setCurrent(id: string): Promise<KnowledgeDocRow | null> {
+    const db = load();
+    const target = (db.knowledge_docs || []).find(row => row.id === id);
+    if (!target || target.kind !== 'price_table') return Promise.resolve(null);
+    for (const item of db.knowledge_docs || []) item.is_current = item.id === id && item.kind === 'price_table';
+    target.status = 'active';
+    target.updated_at = new Date().toISOString();
+    save(db);
+    return Promise.resolve(target);
+  }
+
+  deleteById(id: string): Promise<boolean> {
+    const db = load();
+    const idx = (db.knowledge_docs || []).findIndex(row => row.id === id);
+    if (idx < 0) return Promise.resolve(false);
+    db.knowledge_docs!.splice(idx, 1);
+    save(db);
+    return Promise.resolve(true);
+  }
 }

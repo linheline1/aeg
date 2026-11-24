@@ -26,6 +26,10 @@ function fmtDetail(a: string, detail: any, t: TFunction): string {
   if (detail == null) return '—';
   try {
     switch (a) {
+      case 'order.document.request':
+      case 'order.document.submit':
+      case 'order.document.review':
+        return [detail.quote_no, detail.type, detail.version ? `v${detail.version}` : null, detail.file, detail.reason].filter(Boolean).join(' · ');
       case 'rates.global.update':
       case 'rates.client.set':
       case 'rates.client.update': {
@@ -117,13 +121,16 @@ const ALL_ACTIONS = [
   'client.salesperson', 'image.upload', 'staff.create', 'staff.status', 'staff.password',
   'client.cnpj.create', 'client.cnpj.default', 'client.cnpj.delete', 'order.invoice_cnpj', 'order.shipment',
   'order.shipment.event', 'order.shipment.event_del', 'order.file.upload', 'order.file.delete',
+  'order.shipment.event_correct', 'order.shipment.exception',
+  'order.document.request', 'order.document.submit', 'order.document.review',
   'order.line_item.price', 'finance.payment.create', 'finance.payment.delete', 'ai_config.update',
   'ai_config.profile_create', 'ai_config.profile_update', 'ai_config.profile_activate', 'ai_config.profile_delete',
   'product.update', 'product.sync', 'order.images.reextract'
 ];
 
 export default function AuditLog() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const pt = i18n.resolvedLanguage?.startsWith('pt');
   const [rows, setRows] = useState<AuditRow[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [action, setAction] = useState('');
@@ -203,7 +210,17 @@ export default function AuditLog() {
                     <td><strong>{r.actor_username}</strong></td>
                     <td className="text-sm muted">{r.actor_role}</td>
                     <td><span className={`status-tag ${ACTION_TAG[r.action] || ''}`}>{t(`audit.action.${r.action}`, { defaultValue: r.action })}</span></td>
-                    <td className="text-sm">{fmtDetail(r.action, r.detail, t)}</td>
+                    <td className="text-sm">
+                      {r.action === 'order.shipment.event_correct' || r.action === 'order.shipment.exception' ? (
+                        <details>
+                          <summary>{r.detail?.quote_no || r.target_id} · {r.detail?.reason || r.detail?.after?.message}</summary>
+                          <p>{pt ? 'Antes' : '修改前'}</p>
+                          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{JSON.stringify(r.detail?.before ?? null, null, 2)}</pre>
+                          <p>{pt ? 'Depois' : '修改后'}</p>
+                          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{JSON.stringify(r.detail?.after ?? null, null, 2)}</pre>
+                        </details>
+                      ) : fmtDetail(r.action, r.detail, t)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

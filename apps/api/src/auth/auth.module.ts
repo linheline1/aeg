@@ -27,6 +27,6 @@ import { UserService } from '../user/user.service';
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_INTERCEPTOR, useClass: ClientScopeInterceptor }
   ],
-  exports: [JwtModule]
+  exports: [JwtModule, LoginCaptchaService]
 })
 export class AuthModule {}

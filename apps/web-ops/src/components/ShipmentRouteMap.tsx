@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import L, { type LatLngExpression } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { shipmentDateTime, useAisFreshness } from '@aeg/web-shared/shipment-status';
 
 const PORTS: Record<string, [number, number]> = {
   shanghai: [31.23, 121.49], 上海: [31.23, 121.49], ningbo: [29.87, 121.55], 宁波: [29.87, 121.55],
@@ -48,6 +49,7 @@ export type RouteNode = {
   id: string; label?: string; happened_at?: string; latitude: number; longitude: number;
   /** true = 海上段无真实坐标，按参考海路估算的点（画成空心，避免误认为真实船位） */
   estimated?: boolean;
+  source?: 'manual' | 'port' | 'estimated' | null;
 };
 
 export function ShipmentRouteMap({ pol, pod, language = 'zh', position, nodes, track }: {
@@ -59,6 +61,8 @@ export function ShipmentRouteMap({ pol, pod, language = 'zh', position, nodes, t
   const boundsRef = useRef<L.LatLngBounds | null>(null);
   const fittedRouteRef = useRef('');
   const pt = language.startsWith('pt');
+  const recent = useAisFreshness(position?.observed_at);
+  const aisLabel = recent ? (pt ? 'Posição AIS recente' : '近期 AIS 船位') : (pt ? 'Última posição AIS (desatualizada)' : '最近 AIS 船位（数据已过期）');
   const origin = locate(pol);
   const destination = locate(pod);
   const route = referenceRoute(origin, destination);
@@ -69,7 +73,7 @@ export function ShipmentRouteMap({ pol, pod, language = 'zh', position, nodes, t
     .filter(n => Number.isFinite(n.latitude) && Number.isFinite(n.longitude)
       && Math.abs(n.latitude) <= 90 && Math.abs(n.longitude) <= 180);
   const currentNode = validNodes.length ? validNodes[validNodes.length - 1] : null;
-  const nodesKey = validNodes.map(n => `${n.id}:${n.latitude.toFixed(4)},${n.longitude.toFixed(4)}`).join('|');
+  const nodesKey = JSON.stringify(validNodes);
   // AIS 自动航迹（服务端累积后下发），按时间正序
   const validTrack = (track || [])
     .filter(p => Number.isFinite(p.latitude) && Number.isFinite(p.longitude)
@@ -146,10 +150,8 @@ export function ShipmentRouteMap({ pol, pod, language = 'zh', position, nodes, t
     }
     if (validPosition && position) {
       const ship: LatLngExpression = [position.latitude, position.longitude];
-      const ageMinutes = (Date.now() - Date.parse(position.observed_at)) / 60000;
-      const recent = ageMinutes >= 0 && ageMinutes <= 30;
       L.circleMarker(ship, { radius: 7, color: '#fff', weight: 2, fillColor: recent ? '#d97706' : '#64748b', fillOpacity: 1 })
-        .bindTooltip(pt ? 'Última posição AIS' : '最近 AIS 船位', { direction: 'top' }).addTo(layer);
+        .bindTooltip(aisLabel, { direction: 'top' }).addTo(layer);
       points.push(ship);
     }
     // AIS 自动航迹：船实际上报过的点连成的线（橙色实线），与人工节点轨迹区分
@@ -174,7 +176,7 @@ export function ShipmentRouteMap({ pol, pod, language = 'zh', position, nodes, t
       fittedRouteRef.current = routeKey || 'position';
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pol, pod, position?.latitude, position?.longitude, position?.observed_at, nodesKey, trackKey, language]);
+  }, [pol, pod, position?.latitude, position?.longitude, position?.observed_at, nodesKey, trackKey, language, recent, aisLabel]);
 
   return <div className="shipment-route-map">
     <div className="shipment-route-map-head">
@@ -188,7 +190,12 @@ export function ShipmentRouteMap({ pol, pod, language = 'zh', position, nodes, t
       }}>{pt ? 'Ver rota completa' : '查看全程'}</button>
     </div>
     <div className="shipment-route-map-ports"><span>{pol || '—'}</span><span>→</span><span>{pod || '—'}</span></div>
-    {currentNode && <div className="shipment-route-map-ais">📍 {pt ? 'Nó atual' : '当前节点位置'} · {currentNode.label || ''}{currentNode.estimated ? (pt ? ' (estimado)' : '（估算）') : ''}{currentNode.happened_at ? ` · ${new Date(currentNode.happened_at).toLocaleString(pt ? 'pt-BR' : 'zh-CN')}` : ''} · {currentNode.latitude.toFixed(4)}, {currentNode.longitude.toFixed(4)}</div>}
+    {currentNode && <div className="shipment-route-map-ais">
+      {pt ? 'Último evento com posição' : '最近有位置的物流节点'} · {currentNode.label || '—'} · {currentNode.estimated
+        ? (pt ? 'Posição estimada' : '参考航线估算')
+        : currentNode.source === 'manual' ? (pt ? 'Coordenadas manuais' : '运营录入坐标') : (pt ? 'Posição do porto' : '港口坐标')}
+      {' · '}{shipmentDateTime(currentNode.happened_at, language)} · {currentNode.latitude.toFixed(4)}, {currentNode.longitude.toFixed(4)}
+    </div>}
     {validNodes.length > 0 && (
       <div className="shipment-route-map-nodes">
         {validNodes.map((n, i) => (
@@ -201,7 +208,11 @@ export function ShipmentRouteMap({ pol, pod, language = 'zh', position, nodes, t
         ))}
       </div>
     )}
-    {validPosition && position && <div className="shipment-route-map-ais">{pt ? 'Última posição AIS' : '最近 AIS 船位'} · {new Date(position.observed_at).toLocaleString(pt ? 'pt-BR' : 'zh-CN')} · {position.latitude.toFixed(4)}, {position.longitude.toFixed(4)}{position.speed_knots != null ? ` · ${position.speed_knots.toFixed(1)} kn` : ''}</div>}
+    <div className="shipment-route-map-ais">{validPosition && position
+      ? `${aisLabel} · ${shipmentDateTime(position.observed_at, language)} · ${position.latitude.toFixed(4)}, ${position.longitude.toFixed(4)}`
+      : (pt ? 'Sem posição AIS disponível' : '暂无 AIS 船位数据')}
+      {validPosition && position && typeof position.speed_knots === 'number' && Number.isFinite(position.speed_knots) && ` · ${position.speed_knots.toFixed(1)} kn`}
+    </div>
     {validTrack.length > 1 && (
       <div className="shipment-route-map-ais">
         📡 {pt ? `Rastro AIS automático: ${validTrack.length} pontos` : `AIS 自动航迹：${validTrack.length} 个点`}

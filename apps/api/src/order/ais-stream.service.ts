@@ -95,14 +95,17 @@ export class AisStreamService implements OnModuleInit, OnModuleDestroy {
   }
 
   watch(mmsi: string | null | undefined): AisPosition | null {
-    if (!this.key || !mmsi || !/^\d{9}$/.test(mmsi)) return null;
-    const wasWatching = this.watched.has(mmsi);
-    this.watched.set(mmsi, Date.now());
-    if (!wasWatching) {
-      if (!this.socket) this.connect();
-      else this.scheduleSubscription();
+    if (!mmsi || !/^\d{9}$/.test(mmsi)) return null;
+    if (this.key) {
+      const wasWatching = this.watched.has(mmsi);
+      this.watched.set(mmsi, Date.now());
+      if (!wasWatching) {
+        if (!this.socket) this.connect();
+        else this.scheduleSubscription();
+      }
     }
-    return this.positions.get(mmsi) || null;
+    const last = this.tracks.get(mmsi)?.at(-1);
+    return this.positions.get(mmsi) ?? (last ? { ...last, mmsi, ship_name: null } : null);
   }
 
   /** 单船的 AIS 轨迹（时间正序，最多 limit 点），供地图画"自动航迹" */
@@ -131,8 +134,14 @@ export class AisStreamService implements OnModuleInit, OnModuleDestroy {
       const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
       let n = 0;
       for (const mmsi of Object.keys(raw || {})) {
-        if (Array.isArray(raw[mmsi]) && raw[mmsi].length) {
-          this.tracks.set(mmsi, raw[mmsi]);
+        if (!Array.isArray(raw[mmsi])) continue;
+        const points = (raw[mmsi] as AisTrackPoint[]).filter(p =>
+          p && Number.isFinite(p.latitude) && Math.abs(p.latitude) <= 90
+          && Number.isFinite(p.longitude) && Math.abs(p.longitude) <= 180
+          && Date.parse(p.observed_at) >= Date.now() - TRACK_KEEP_DAYS * 86400000
+        ).sort((a, b) => Date.parse(a.observed_at) - Date.parse(b.observed_at));
+        if (points.length) {
+          this.tracks.set(mmsi, points.slice(-MAX_TRACK_POINTS));
           n++;
         }
       }
@@ -244,6 +253,8 @@ export class AisStreamService implements OnModuleInit, OnModuleDestroy {
     const at = typeof meta?.time_utc === 'string' && Number.isFinite(Date.parse(meta.time_utc))
       ? new Date(Date.parse(meta.time_utc)).toISOString()
       : new Date().toISOString();
+    const last = this.positions.get(mmsi) ?? this.tracks.get(mmsi)?.at(-1);
+    if (last && Date.parse(at) < Date.parse(last.observed_at)) return;
     const pos: AisPosition = {
       mmsi, latitude, longitude, observed_at: at,
       ship_name: typeof meta?.ShipName === 'string' ? meta.ShipName.trim() : null,

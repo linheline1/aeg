@@ -1,0 +1,15 @@
+.order-document-panel { min-width: 0; scroll-margin-top: 90px; }
+.order-document-item { border: 1px solid var(--border, #d9e2ec); border-radius: 8px; padding: 14px; margin-block: 12px; overflow-wrap: anywhere; }
+.order-document-heading, .order-document-file, .order-document-actions { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.order-document-heading h4 { margin: 0; }
+.order-document-file { justify-content: space-between; margin-block: 10px; }
+.order-document-file > div { flex: 1 1 200px; min-width: 0; }
+.order-document-status { padding: 3px 9px; border-radius: 6px; background: #eff3f8; color: #253a50; font-size: .82em; }
+.order-document-status.approved { background: #e4f6ec; color: #164b35; }
+.order-document-status.rejected { background: #ffedeb; color: #792e28; }
+.order-document-status.submitted { background: #e7f1ff; color: #123f75; }
+.order-document-form { display: grid; gap: 8px; margin-block: 12px; max-width: 560px; }
+.order-document-form label { display: grid; gap: 4px; min-width: 0; }
+.order-document-form input, .order-document-form select, .order-document-form textarea { width: 100%; min-width: 0; }
+.order-document-feedback { margin-block: 8px; padding: 8px; background: #fff2e0; color: #593209; }
+.order-document-item summary { margin-block: 8px; cursor: pointer; }

@@ -14,6 +14,7 @@ import CnpjPage from './pages/CnpjPage';
 import Profile from './pages/Profile';
 import Help from './pages/Help';
 import Orders from './pages/Orders';
+import Notifications from './pages/Notifications';
 import OrderDetail from './pages/OrderDetail';
 import RequireAuth from './components/RequireAuth';
 import InquiryWidget from './components/InquiryWidget';
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="/help" element={<Help />} />
         <Route path="/help/:slug" element={<Help />} />
         <Route path="/orders" element={<Orders />} />
+        <Route path="/notifications" element={<Notifications />} />
         <Route path="/orders/:id" element={<OrderDetail />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

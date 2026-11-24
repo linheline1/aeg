@@ -10,6 +10,9 @@ export type QuoteStatus = 'uploaded' | 'validating' | 'pending_fee' | 'computing
 @Entity('quote_order')
 export class QuoteOrderEntity {
   @Column({ type: 'jsonb', nullable: true })
+  document_requests?: import('../order/order-document').OrderDocument[] | null;
+
+  @Column({ type: 'jsonb', nullable: true })
   quote_versions?: import('../order/quote-publication').PublishedQuote[] | null;
   @Column({ type: 'uuid', nullable: true })
   source_draft_id?: string | null;

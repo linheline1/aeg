@@ -165,7 +165,18 @@ export class ClientOrderController {
       di_analysis: null,
       line_items: q.line_items ?? [],
       deal_status: q.deal_status ?? null,
-      shipment: q.shipment && shipmentResolved ? { ...q.shipment, events: shipmentResolved.events } : null,
+      shipment: q.shipment && shipmentResolved ? {
+        vessel: q.shipment.vessel, voyage: q.shipment.voyage, bill_no: q.shipment.bill_no,
+        container_no: q.shipment.container_no, mmsi: q.shipment.mmsi, pol: q.shipment.pol, pod: q.shipment.pod,
+        etd: q.shipment.etd, eta: q.shipment.eta, remark: q.shipment.remark,
+        updated_at: q.shipment.updated_at,
+        exception: q.shipment.exception ? {
+          status: q.shipment.exception.status, message: q.shipment.exception.message,
+          updated_at: q.shipment.exception.updated_at
+        } : null,
+        events: shipmentResolved.events.map(({ id, stage, note, happened_at, lat, lng, position_source, corrected_at }) =>
+          ({ id, stage, note, happened_at, lat, lng, position_source, corrected_at }))
+      } : null,
       node_position: shipmentResolved?.node_position ?? null,
       ais_position: q.shipment?.mmsi ? this.aisStream.watch(q.shipment.mmsi) : null,
       ais_track: q.shipment?.mmsi ? this.aisStream.track(q.shipment.mmsi) : [],

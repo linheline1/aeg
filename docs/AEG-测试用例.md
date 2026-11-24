@@ -491,3 +491,51 @@
 | AEG-DDP2-013 | 中葡落地页 | 中葡文案均明确为参考预估，不承诺锁价 |
 | AEG-DDP2-014 | 已有数据库帮助中心 | 部署后存在 `ddp-reference-price` 文章及更新后的运营文章 |
 | AEG-DDP2-015 | 审计检查 | 记录 DI、税率、销售税务、利润、DDP 总额和复核版本 |
+
+## 13. M7 国际物流跟踪与 AIS 实时船位（2026-11-17）
+
+> 覆盖：海运信息维护（含 MMSI）、物流节点（含可选经纬度）、成交闸门、节点位置三级解析、海运航线地图、AISStream 自动订阅与轨迹持久化、运营端 30 秒轮询与客户端可见性。
+> 接口域：`/api/ops/orders/:id/shipment*`（operator/admin）、`/api/ops/orders/:id/ais`；客户端经 `GET /api/client/orders/:id` 读取。
+
+### 13.1 海运信息与节点维护（AEG-SHIP）
+
+| 编号 | 场景 | 优先级 | 预期 |
+|---|---|---|---|
+| AEG-SHIP-001 | 对 done 且 won 订单 `PUT shipment`（船名/航次/提单号/柜号/POL/POD/ETD/ETA） | P0 | 200，merge 写回且首次创建 `{events:[]}` 骨架；审计 `order.shipment` |
+| AEG-SHIP-002 | 对 done 但未成交（deal_status≠won）订单维护海运信息/新增节点 | P0 | 400「客户确认成交后才能维护海运信息」 |
+| AEG-SHIP-003 | MMSI 校验：填 `12345`（5 位）、`12345678A`（含字母）、空串清空 | P0 | 前两种 400「MMSI 必须是 9 位数字」；空串置 null 成功 |
+| AEG-SHIP-004 | 新增节点带合法 lat/lng（如 25.07, 121.63 基隆港） | P0 | 200，节点含坐标与 `position_source='manual'`；审计 `order.shipment.event` |
+| AEG-SHIP-005 | 新增节点 lat/lng 传非数字或超界（如 `Number(null)`） | P0 | 400 或忽略该字段，**节点绝不解析到 (0,0)**；无坐标时按阶段港口坐标兜底 |
+| AEG-SHIP-006 | 非法 stage 枚举新增节点 | P1 | 400，stage 必须属于 10 阶段枚举 |
+| AEG-SHIP-007 | 删除误录节点 `DELETE :id/shipment/events/:eventId` | P1 | 200；客户端时间线同步移除；审计 `order.shipment.event_del` |
+| AEG-SHIP-008 | `GET /api/ops/orders` 列表返回 `shipment_stage`/`shipment_eta` | P1 | 最新节点 stage 与 shipment.eta 正确透出 |
+
+### 13.2 节点位置三级解析（AEG-GEO）
+
+| 编号 | 场景 | 优先级 | 预期 |
+|---|---|---|---|
+| AEG-GEO-001 | 节点带人工坐标 | P0 | `position_source='manual'`，地图红色当前节点 + 绿色实线节点轨迹 |
+| AEG-GEO-002 | 节点无坐标但阶段对应已知港口（如 departed→基隆、arrived→桑托斯） | P0 | 自动落到港口坐标，`position_source='port'` |
+| AEG-GEO-003 | 海上阶段（on_water）无坐标，前后节点时间已知 | P1 | 沿参考海运走廊按时间插值，`position_source='estimated'`，地图空心圆标注 |
+| AEG-GEO-004 | 客户端详情返回 `node_position` 与 events（含 position_source） | P1 | 与运营端同口径；估算点在客户端同样标注为估算 |
+| AEG-GEO-005 | 相邻节点跨越大陆（如东亚→南美直线穿陆地） | P1 | 轨迹吸附到参考走廊顶点绘制子路径，不出现穿陆直线 |
+| AEG-GEO-006 | 世界级缩放下节点 6px 圆点不可见 | P1 | 地图下方节点徽章列表（阶段+时间）完整可读，与图上节点一一对应 |
+
+### 13.3 AIS 实时船位（AEG-AIS）
+
+| 编号 | 场景 | 优先级 | 预期 |
+|---|---|---|---|
+| AEG-AIS-001 | 未配置 `AISSTREAM_API_KEY` 时启动 API 并维护 MMSI | P0 | 服务自动关闭（`enabled=false`）；节点维护与地图正常；`GET :id/ais` 返回 `tracked=false` 且不报错 |
+| AEG-AIS-002 | 配置 key 后，订单填 MMSI（真实在航船） | P0 | WebSocket 订阅成功；近岸有报文时 `watch()` 返回 `{latitude, longitude, observed_at, speed_knots}` |
+| AEG-AIS-003 | 轨迹持久化：写入若干 AIS 点后重启 API | P0 | 轨迹从 `data/ais-tracks.json` 恢复；单船 ≤1000 点、60 天外自动清理 |
+| AEG-AIS-004 | 自动追踪：10 分钟扫描周期内，存在 MMSI 的活跃订单无需人工访问也被订阅 | P1 | 扫描日志/订阅集合包含该 MMSI；订单未打开也能积累轨迹 |
+| AEG-AIS-005 | 运营端详情页 30 秒轮询 `GET /api/ops/orders/:id/ais` | P1 | 响应为轻量结构（mmsi/tracked/position/track）；连续轮询无 5xx、退避策略生效 |
+| AEG-AIS-006 | 客户端详情含 `ais_position`/`ais_track`（有 MMSI 时） | P1 | 地图叠加橙色 AIS 折线；与绿色节点轨迹视觉区分 |
+| AEG-AIS-007 | 免费层跨洋盲区（船在印度洋中部） | P2 | 长时间无 AIS 点时地图不伪造当前位置，仅显示节点轨迹；无报错弹窗 |
+| AEG-AIS-008 | sales/越权角色访问 `GET /api/ops/orders/:id/ais` | P0 | 按 RolesGuard 口径 403/401；客户无法访问他人订单 AIS 数据 |
+
+### 13.4 回归关联
+
+- 成交闸门与 AEG-DEAL-001/003 联动：won → open（恢复跟进）后，海运信息保留但不可再维护（SHIP-002 回归）。
+- 删除保护（AEG-ORDER-E06 / client 归档约束）与已有物流节点互斥逻辑不变。
+- 双语文案：节点/坐标/估算相关新词条 zh/pt 数量保持对齐（运营端、客户端各一套）。

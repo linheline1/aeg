@@ -1,9 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 const ShipmentRouteMap = lazy(() => import('../components/ShipmentRouteMap').then(module => ({ default: module.ShipmentRouteMap })));
 import type { TFunction } from 'i18next';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
+import { documentLabels, OrderDocuments } from '@aeg/web-shared/order-documents';
+import { ShipmentExceptionNotice, ShipmentSchedule, shipmentDateTime, type ShipmentException } from '@aeg/web-shared/shipment-status';
 import { api } from '../store/auth';
 import { downloadOrShareFile } from '../lib/file-actions';
 import PriceReferenceNote from '../components/PriceReferenceNote';
@@ -54,7 +56,9 @@ interface ClientOrderDetail {
     vessel?: string | null; voyage?: string | null; bill_no?: string | null; container_no?: string | null;
     mmsi?: string | null;
     pol?: string | null; pod?: string | null; etd?: string | null; eta?: string | null; remark?: string | null;
-    events?: { id: string; stage: string; note?: string | null; happened_at: string; lat?: number | null; lng?: number | null; position_source?: 'manual' | 'port' | 'estimated' | null }[];
+    updated_at?: string;
+    exception?: ShipmentException | null;
+    events?: { id: string; stage: string; note?: string | null; happened_at: string; corrected_at?: string; lat?: number | null; lng?: number | null; position_source?: 'manual' | 'port' | 'estimated' | null }[];
   } | null;
   ais_position?: { latitude: number; longitude: number; observed_at: string; speed_knots?: number | null } | null;
   ais_track?: { latitude: number; longitude: number; observed_at: string }[];
@@ -109,8 +113,10 @@ const refFeeNote = (note: string | undefined, isPt: boolean, fallback: string, r
 
 export default function OrderDetail() {
   const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage || 'zh';
   const isPt = i18n.resolvedLanguage?.startsWith('pt') ?? false;
   const { id } = useParams<{ id: string }>();
+  const { hash } = useLocation();
   const [d, setD] = useState<ClientOrderDetail | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // 该报价单的明细截图（行级对应，与运营端一致）
@@ -267,6 +273,9 @@ export default function OrderDetail() {
         <h1>{t('orderDetail.title')} · {d.quote_no}</h1>
         <p className="sub">
           <Link to="/orders" style={{ color: 'var(--primary)' }}>← {t('orderDetail.back')}</Link>
+          {'　'}<Link to={{ hash: '#order-documents' }} onClick={() => {
+            document.getElementById('order-documents')?.scrollIntoView({ block: 'start' });
+          }}>{documentLabels(language).title}</Link>
           {'　'}{t('orderDetail.file')}: {d.input_file_name || '—'} · {t('orderDetail.updatedAt')} {fmtTime(d.updated_at || d.created_at)}
         </p>
       </div>
@@ -361,7 +370,7 @@ export default function OrderDetail() {
               <Suspense fallback={<div className="shipment-route-map-empty">{i18n.resolvedLanguage?.startsWith('pt') ? 'Carregando mapa…' : '地图加载中…'}</div>}>
                 <ShipmentRouteMap pol={d.shipment.pol} pod={d.shipment.pod} position={d.ais_position} track={d.ais_track} language={i18n.resolvedLanguage || 'zh'}
                   nodes={shipEvents.filter(ev => ev.lat != null && ev.lng != null)
-                    .map(ev => ({ id: ev.id, label: t(`orderDetail.shipStage.${ev.stage}`, { defaultValue: ev.stage }), happened_at: ev.happened_at, latitude: ev.lat!, longitude: ev.lng!, estimated: ev.position_source === 'estimated' }))} />
+                    .map(ev => ({ id: ev.id, label: t(`orderDetail.shipStage.${ev.stage}`, { defaultValue: ev.stage }), happened_at: ev.happened_at, latitude: ev.lat!, longitude: ev.lng!, source: ev.position_source, estimated: ev.position_source === 'estimated' }))} />
               </Suspense>
               <div className="ship-grid">
                 <div><span className="ship-k">{t('orderDetail.vessel')}</span><span className="ship-v">{d.shipment.vessel || '—'}</span></div>
@@ -371,12 +380,9 @@ export default function OrderDetail() {
                 <div><span className="ship-k">{t('orderDetail.route')}</span><span className="ship-v">
                   {[d.shipment.pol, d.shipment.pod].filter(Boolean).join(' → ') || '—'}
                 </span></div>
-                <div><span className="ship-k">{t('orderDetail.schedule')}</span><span className="ship-v">
-                  {d.shipment.etd || d.shipment.eta
-                    ? `${d.shipment.etd ? `${t('orderDetail.departure')} ${d.shipment.etd.slice(0, 10)}` : ''}${d.shipment.etd && d.shipment.eta ? ' · ' : ''}${d.shipment.eta ? `${t('orderDetail.arrival')} ${d.shipment.eta.slice(0, 10)}` : ''}`
-                    : '—'}
-                </span></div>
               </div>
+              <ShipmentSchedule shipment={d.shipment} language={language} />
+              {d.shipment.exception && <ShipmentExceptionNotice exception={d.shipment.exception} language={language} />}
 
               {d.shipment.remark && (
                 <p className="muted text-sm" style={{ margin: '10px 0 0' }}>📝 {d.shipment.remark}</p>
@@ -397,7 +403,8 @@ export default function OrderDetail() {
                   <div className="ship-tl-body">
                     <div className="ship-tl-head">
                       <strong>{t(`orderDetail.shipStage.${ev.stage}`, { defaultValue: ev.stage })}</strong>
-                      <span className="muted text-sm">{ev.happened_at.slice(0, 16).replace('T', ' ')}</span>
+                      <span className="muted text-sm">{shipmentDateTime(ev.happened_at, language)}</span>
+                      {ev.corrected_at && <span className="muted text-sm">{language.startsWith('pt') ? 'Corrigido' : '已修正'}</span>}
                     </div>
                     {ev.note && <div className="muted text-sm" style={{ marginTop: 2 }}>{ev.note}</div>}
                   </div>
@@ -438,6 +445,8 @@ export default function OrderDetail() {
           )}
         </div>
       )}
+
+      <OrderDocuments key={d.id} api={api} orderId={d.id} portal="client" language={language} focusOnOpen={hash === '#order-documents'} />
 
       {/* M8 交付文件：放行截图 / 发票 PDF（运营上传，客户查看/下载） */}
       {orderFiles.length > 0 && (

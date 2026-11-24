@@ -4,6 +4,8 @@ import { useParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../store/auth';
 import { getApiErrorMessage } from '@aeg/web-shared/errors';
+import { documentLabels, OrderDocuments } from '@aeg/web-shared/order-documents';
+import { ShipmentSchedule, ShipmentExceptionNotice, shipmentDateTime, type ShipmentException } from '@aeg/web-shared/shipment-status';
 import { downloadOrShareFile } from '@aeg/web-shared/file-actions';
 import { lazy, Suspense } from 'react';
 const ShipmentRouteMap = lazy(() => import('../components/ShipmentRouteMap').then(module => ({ default: module.ShipmentRouteMap })));
@@ -68,7 +70,9 @@ interface OrderDetail {
     vessel?: string | null; voyage?: string | null; bill_no?: string | null; container_no?: string | null;
     mmsi?: string | null;
     pol?: string | null; pod?: string | null; etd?: string | null; eta?: string | null; remark?: string | null;
-    events?: { id: string; stage: string; note?: string | null; happened_at: string; created_by?: string; lat?: number | null; lng?: number | null; position_source?: 'manual' | 'port' | 'estimated' | null }[];
+    updated_at?: string;
+    exception?: ShipmentException;
+    events?: { id: string; stage: string; note?: string | null; happened_at: string; corrected_at?: string; corrected_by?: string; lat?: number | null; lng?: number | null; position_source?: 'manual' | 'port' | 'estimated' | null }[];
   } | null;
   ais_position?: { latitude: number; longitude: number; observed_at: string; speed_knots?: number | null } | null;
   ais_track?: { latitude: number; longitude: number; observed_at: string }[];
@@ -134,8 +138,8 @@ const FLOW_SHORT_KEYS: Record<string, string> = {
 const COMPUTABLE = new Set(['uploaded', 'pending_fee', 'failed', 'computing']);
 /** M8 交付文件类型 */
 const FILE_KIND_KEYS: Record<string, string> = { clearance_shot: 'orderDetail.fileKind.clearanceShot', invoice: 'orderDetail.fileKind.invoice', other: 'orderDetail.fileKind.other' };
-type OrderSection = 'deal' | 'pricing' | 'di' | 'shipment' | 'files' | 'lines';
-const ORDER_SECTIONS: OrderSection[] = ['deal', 'pricing', 'di', 'shipment', 'files', 'lines'];
+type OrderSection = 'deal' | 'pricing' | 'di' | 'shipment' | 'files' | 'lines' | 'documents';
+const ORDER_SECTIONS: OrderSection[] = ['deal', 'pricing', 'di', 'shipment', 'files', 'lines', 'documents'];
 function sectionFromHash(): OrderSection | null {
   const section = window.location.hash.replace(/^#order-/, '') as OrderSection;
   return ORDER_SECTIONS.includes(section) ? section : null;
@@ -143,6 +147,8 @@ function sectionFromHash(): OrderSection | null {
 
 export default function OrderDetail() {
   const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage || 'zh';
+  const pt = language.startsWith('pt');
   const { id } = useParams<{ id: string }>();
   const [d, setD] = useState<OrderDetail | null>(null);
   const [activeSection, setActiveSection] = useState<OrderSection>(() => sectionFromHash() || 'deal');
@@ -174,6 +180,9 @@ export default function OrderDetail() {
   const [aisPosition, setAisPosition] = useState<OrderDetail['ais_position']>(null);
   const [aisTrack, setAisTrack] = useState<NonNullable<OrderDetail['ais_track']>>([]);
   const [evForm, setEvForm] = useState({ stage: 'booked', at: '', note: '', lat: '', lng: '' });
+  const [eventEdit, setEventEdit] = useState<{ id: string; revision: string | null; reason: string } | null>(null);
+  const [exceptionEdit, setExceptionEdit] = useState<{ status: ShipmentException['status']; message: string; revision: string | null } | null>(null);
+  useEffect(() => { setEventEdit(null); setExceptionEdit(null); }, [id]);
   // M8：交付文件（操作员上传给客户：放行截图 / 发票 PDF）
   const [orderFiles, setOrderFiles] = useState<any[]>([]);
   const [fileKind, setFileKind] = useState<'clearance_shot' | 'invoice' | 'other'>('clearance_shot');
@@ -253,7 +262,7 @@ export default function OrderDetail() {
       const idxs = (sh?.events || []).map((ev: any) => SHIP_FLOW.indexOf(ev.stage)).filter((i: number) => i >= 0);
       const maxIdx = idxs.length ? Math.max(...idxs) : -1;
       const nextStage = maxIdx < 0 ? 'booked' : maxIdx < SHIP_FLOW.length - 1 ? SHIP_FLOW[maxIdx + 1] : null;
-      if (nextStage) setEvForm(f => ({ ...f, stage: nextStage }));
+      if (nextStage) setEvForm(f => f.at ? f : ({ ...f, stage: nextStage }));
       const br = od.pricing_breakdown;
       const meta: BreakdownMeta | null = br ? (br.meta || br) : null;
       if (br?.items?.length) {
@@ -629,15 +638,36 @@ export default function OrderDetail() {
     setShipBusy(true); setErr(null);
     try {
       const happened_at = evForm.at ? new Date(evForm.at).toISOString() : undefined;
-      const hasManual = evForm.lat.trim() !== '' || evForm.lng.trim() !== '';
-      await api.post(`/api/ops/orders/${id}/shipment/events`, {
+      const path = `/api/ops/orders/${id}/shipment/events`;
+      const fields = {
         stage: evForm.stage,
-        note: evForm.note || undefined,
+        note: evForm.note,
         happened_at,
-        ...(hasManual ? { lat: evForm.lat.trim(), lng: evForm.lng.trim() } : {})
-      });
-      flashMsg(t('orderDetail.ship.eventAdded'));
+        lat: evForm.lat.trim(),
+        lng: evForm.lng.trim()
+      };
+      if (eventEdit) {
+        await api.patch(`${path}/${eventEdit.id}`, { ...fields, reason: eventEdit.reason, revision: eventEdit.revision });
+        flashMsg(pt ? 'Evento corrigido' : '物流节点已修正');
+        setEventEdit(null);
+      } else {
+        await api.post(path, fields);
+        flashMsg(t('orderDetail.ship.eventAdded'));
+      }
       setEvForm({ stage: evForm.stage, at: '', note: '', lat: '', lng: '' });
+      load();
+    } catch (e: any) {
+      setErr(getApiErrorMessage(e));
+    } finally { setShipBusy(false); }
+  };
+
+  const handleExceptionSave = async () => {
+    if (!exceptionEdit) return;
+    setShipBusy(true); setErr(null);
+    try {
+      await api.put(`/api/ops/orders/${id}/shipment/exception`, exceptionEdit);
+      setExceptionEdit(null);
+      flashMsg(pt ? 'Ocorrência atualizada' : '物流异常已更新');
       load();
     } catch (e: any) {
       setErr(getApiErrorMessage(e));
@@ -731,6 +761,7 @@ export default function OrderDetail() {
     { id: 'di', label: t('orderDetail.di.title') },
     ...(d.deal_status === 'won' ? [{ id: 'shipment' as const, label: t('orderDetail.ship.title') }] : []),
     ...(d.status === 'done' ? [{ id: 'files' as const, label: t('orderDetail.files.title') }] : []),
+    { id: 'documents', label: documentLabels(language).title },
     ...((d.line_items?.length || shots.length) ? [{ id: 'lines' as const, label: t('orderDetail.lines.title') }] : []),
   ];
   const visibleSection = sections.some(section => section.id === activeSection) ? activeSection : sections[0].id;
@@ -1384,8 +1415,36 @@ export default function OrderDetail() {
             <ShipmentRouteMap pol={d.shipment?.pol} pod={d.shipment?.pod} position={aisPosition ?? d.ais_position} language={i18n.resolvedLanguage || 'zh'}
               track={aisTrack.length ? aisTrack : d.ais_track}
               nodes={shipEvents.filter(ev => ev.lat != null && ev.lng != null)
-                .map(ev => ({ id: ev.id, label: SHIP_STAGE_KEYS[ev.stage] ? t(SHIP_STAGE_KEYS[ev.stage]) : ev.stage, happened_at: ev.happened_at, latitude: ev.lat!, longitude: ev.lng!, estimated: ev.position_source === 'estimated' }))} />
+                .map(ev => ({ id: ev.id, label: SHIP_STAGE_KEYS[ev.stage] ? t(SHIP_STAGE_KEYS[ev.stage]) : ev.stage, happened_at: ev.happened_at, latitude: ev.lat!, longitude: ev.lng!, source: ev.position_source, estimated: ev.position_source === 'estimated' }))} />
           </Suspense>
+
+          {d.shipment && <ShipmentSchedule shipment={d.shipment} language={language} />}
+          <section style={{ marginBlock: 16 }}>
+            <h4>{pt ? 'Ocorrências logísticas' : '物流异常跟进'}</h4>
+            {d.shipment?.exception && <ShipmentExceptionNotice exception={d.shipment.exception} language={language} />}
+            {exceptionEdit ? (
+              <div className="ship-form-grid">
+                <label>{pt ? 'Status' : '处理状态'}
+                  <select className="form-input form-input-sm" disabled={shipBusy} value={exceptionEdit.status}
+                    onChange={e => setExceptionEdit({ ...exceptionEdit, status: e.target.value === 'resolved' ? 'resolved' : 'open' })}>
+                    <option value="open">{pt ? 'Em acompanhamento' : '处理中'}</option>
+                    {d.shipment?.exception && <option value="resolved">{pt ? 'Resolvida' : '已解决'}</option>}
+                  </select>
+                </label>
+                <label className="span-2">{pt ? 'Descrição visível ao cliente' : '客户可见说明'}
+                  <textarea className="form-input form-input-sm" rows={2} maxLength={500} disabled={shipBusy}
+                    value={exceptionEdit.message} onChange={e => setExceptionEdit({ ...exceptionEdit, message: e.target.value })} />
+                </label>
+                <div className="row gap-md">
+                  <button className="btn btn-sm" disabled={shipBusy || !exceptionEdit.message.trim()} onClick={handleExceptionSave}>{t('common.save')}</button>
+                  <button className="btn btn-sm btn-ghost" disabled={shipBusy} onClick={() => setExceptionEdit(null)}>{t('common.cancel')}</button>
+                </div>
+              </div>
+            ) : <button className="btn btn-sm btn-ghost" disabled={shipBusy} onClick={() => {
+              const current = d.shipment?.exception;
+              setExceptionEdit({ status: current?.status ?? 'open', message: current?.message ?? '', revision: current?.updated_at ?? null });
+            }}>{d.shipment?.exception ? (pt ? 'Atualizar ocorrência' : '更新异常') : (pt ? 'Registrar ocorrência' : '登记异常')}</button>}
+          </section>
 
           <div className="ship-form-grid">
             <div>
@@ -1471,11 +1530,20 @@ export default function OrderDetail() {
                     <div className="ship-tl-body">
                       <div className="ship-tl-head">
                         <span className="deal-tag deal-open">{SHIP_STAGE_KEYS[ev.stage] ? t(SHIP_STAGE_KEYS[ev.stage]) : ev.stage}</span>
-                        <span className="muted text-sm">{ev.happened_at.slice(0, 16).replace('T', ' ')}</span>
-                        <button className="btn btn-sm btn-ghost ship-tl-del" disabled={shipBusy}
+                        <span className="muted text-sm">{shipmentDateTime(ev.happened_at, language)}</span>
+                        <button className="btn btn-sm btn-ghost" disabled={shipBusy || !!eventEdit} onClick={() => {
+                          const at = new Date(ev.happened_at);
+                          const local = Number.isFinite(at.getTime()) ? new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString().slice(0, 23) : '';
+                          setEvForm({ stage: ev.stage, at: local, note: ev.note || '',
+                            lat: ev.position_source === 'manual' ? String(ev.lat) : '', lng: ev.position_source === 'manual' ? String(ev.lng) : '' });
+                          setEventEdit({ id: ev.id, revision: ev.corrected_at ?? null, reason: '' });
+                          requestAnimationFrame(() => document.getElementById('shipment-correction-reason')?.focus());
+                        }}>{pt ? 'Corrigir' : '修正'}</button>
+                        <button className="btn btn-sm btn-ghost ship-tl-del" disabled={shipBusy || !!eventEdit}
                           title={t('orderDetail.ship.deleteEvent')} onClick={() => handleEvDel(ev.id)}>✕</button>
                       </div>
                       {ev.note && <div className="muted text-sm" style={{ marginTop: 2 }}>{ev.note}</div>}
+                      {ev.corrected_at && <div className="muted text-sm">{pt ? 'Corrigido em' : '修正于'} · {shipmentDateTime(ev.corrected_at, language)} · {ev.corrected_by}</div>}
                     </div>
                   </div>
                 ))}
@@ -1486,7 +1554,7 @@ export default function OrderDetail() {
             )}
 
             {/* M7 优化：一键推进（时间记为现在） */}
-            <div className="ship-advance">
+            {!eventEdit && <div className="ship-advance">
               {evNextStage ? (
                 <>
                   <button className="btn" disabled={shipBusy} onClick={handleEvAdvance}>
@@ -1500,7 +1568,7 @@ export default function OrderDetail() {
               ) : (
                 <span className="ok-msg">{t('orderDetail.ship.flowDone')}</span>
               )}
-            </div>
+            </div>}
 
             {/* 自定义添加：补录历史节点 / 跳阶段 */}
             <div className="row gap-md mt-8" style={{ flexWrap: 'wrap' }}>
@@ -1511,7 +1579,7 @@ export default function OrderDetail() {
                   <option key={k} value={k}>{t(SHIP_STAGE_KEYS[k])}</option>
                 ))}
               </select>
-              <input type="datetime-local" className="form-input form-input-sm" style={{ width: 200 }}
+              <input type="datetime-local" step="any" className="form-input form-input-sm" style={{ width: 200 }}
                 value={evForm.at} disabled={shipBusy} title={t('orderDetail.ship.eventTime')}
                 onChange={e => setEvForm({ ...evForm, at: e.target.value })} />
               <input className="form-input form-input-sm" style={{ width: 220 }} placeholder={t('orderDetail.ship.eventNote')}
@@ -1525,12 +1593,28 @@ export default function OrderDetail() {
                 placeholder={i18n.resolvedLanguage?.startsWith('pt') ? 'lng（可选）' : '经度（可选）'}
                 value={evForm.lng} disabled={shipBusy} title={t('orderDetail.ship.manualCoordHint')}
                 onChange={e => setEvForm({ ...evForm, lng: e.target.value })} />
-              <button className="btn btn-sm" disabled={shipBusy} onClick={handleEvAdd}>➕ {t('orderDetail.ship.addCustom')}</button>
-              <span className="muted text-sm" style={{ alignSelf: 'center' }}>{t('orderDetail.ship.addCustomHint')}</span>
+              {eventEdit ? <>
+                <input id="shipment-correction-reason" className="form-input form-input-sm" style={{ width: 220 }}
+                  aria-label={pt ? 'Motivo da correção' : '修正原因'} placeholder={pt ? 'Motivo da correção' : '修正原因'}
+                  maxLength={500} disabled={shipBusy} value={eventEdit.reason}
+                  onChange={e => setEventEdit({ ...eventEdit, reason: e.target.value })} />
+                <button className="btn btn-sm" disabled={shipBusy || !eventEdit.reason.trim() || !evForm.at} onClick={handleEvAdd}>
+                  {pt ? 'Salvar correção' : '保存修正'}
+                </button>
+                <button className="btn btn-sm btn-ghost" disabled={shipBusy} onClick={() => {
+                  setEventEdit(null);
+                  setEvForm({ stage: evNextStage || 'booked', at: '', note: '', lat: '', lng: '' });
+                }}>{t('common.cancel')}</button>
+              </> : <>
+                <button className="btn btn-sm" disabled={shipBusy} onClick={handleEvAdd}>➕ {t('orderDetail.ship.addCustom')}</button>
+                <span className="muted text-sm" style={{ alignSelf: 'center' }}>{t('orderDetail.ship.addCustomHint')}</span>
+              </>}
             </div>
           </div>
         </div>
       )}
+
+      {visibleSection === 'documents' && <OrderDocuments key={d.id} api={api} orderId={d.id} portal="ops" language={language} />}
 
       {/* M8 交付文件：放行截图 / 发票 PDF（操作员上传给客户查看/下载） */}
       {visibleSection === 'files' && d.status === 'done' && (

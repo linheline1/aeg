@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
-import { AuditRepo, QuotesRepo, ClientRepo, UserRepo, ImageRepo, repoRoot } from '../common/mock-db';
+import { AuditRepo, QuotesRepo, ClientRepo, UserRepo, ImageRepo, repoRoot, QuoteOrderRow, ShipmentEvent, ShipmentException } from '../common/mock-db';
 import { QuoteService } from '../upload/quote.service';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -25,6 +25,28 @@ const SHIPMENT_STAGES = [
   'booked', 'loaded', 'customs_cn', 'departed', 'on_water', 'arrived',
   'customs_br', 'duty_paid', 'cleared', 'delivered'
 ] as const;
+
+type ShipmentEventInput = {
+  stage?: string; note?: string | null; happened_at?: string; lat?: number | string | null; lng?: number | string | null;
+};
+
+function shipmentEventFields(body: ShipmentEventInput, defaultTime: string) {
+  const stage = body.stage;
+  if (!stage || !SHIPMENT_STAGES.some(s => s === stage)) throw new BadRequestException('物流节点阶段无效');
+  const note = String(body.note ?? '').trim();
+  if (note.length > 500) throw new BadRequestException('节点备注过长（最多 500 字符）');
+  const time = Date.parse(String(body.happened_at || defaultTime));
+  if (!Number.isFinite(time) || time > Date.now()) throw new BadRequestException('实际发生时间无效或晚于当前时间');
+  const hasLat = String(body.lat ?? '').trim() !== '';
+  const hasLng = String(body.lng ?? '').trim() !== '';
+  const lat = hasLat ? Number(body.lat) : null;
+  const lng = hasLng ? Number(body.lng) : null;
+  if (hasLat !== hasLng || (lat !== null && (!Number.isFinite(lat) || Math.abs(lat) > 90))
+    || (lng !== null && (!Number.isFinite(lng) || Math.abs(lng) > 180))) {
+    throw new BadRequestException('请同时填写有效的纬度（−90 至 90）和经度（−180 至 180）');
+  }
+  return { stage, note: note || null, lat, lng, happened_at: new Date(time).toISOString() };
+}
 
 /** 最新物流节点 stage（按 happened_at 排序取末位） */
 function latestShipmentStage(ship: any): string | null {
@@ -492,6 +514,26 @@ export class OpsOrderController {
   }
 
   /** M7：保存国际物流基本信息（仅 done 订单；首次创建 events 骨架），写审计日志 */
+  private async shipmentOrder(id: string) {
+    const order = await this.quotesRepo.findVersioned(id);
+    if (!order || order.status === 'deleted') throw new NotFoundException('订单不存在');
+    if (order.status !== 'done' || order.deal_status !== 'won') throw new BadRequestException('仅已成交并核算发布的订单可维护物流');
+    return order;
+  }
+
+  private async persistShipment(order: QuoteOrderRow & { revision: string }, shipment: NonNullable<QuoteOrderRow['shipment']>,
+    req: Request & { user?: any }, action: string, detail: Record<string, unknown>) {
+    const ship = { ...shipment, updated_by: req.user?.username || 'system', updated_at: new Date().toISOString() };
+    const saved = await this.quotesRepo.updateIfUnchanged(order.id, order.revision, { shipment: ship }, {
+      actor_username: ship.updated_by, actor_role: req.user?.role || 'system',
+      action, target_type: 'quote', target_id: order.id, detail: { quote_no: order.quote_no, ...detail }
+    });
+    if (!saved) {
+      throw new ConflictException('订单已更新，请刷新后重试');
+    }
+    return ship;
+  }
+
   @Put(':id/shipment')
   @Roles('operator', 'admin')
   async saveShipment(
@@ -502,10 +544,7 @@ export class OpsOrderController {
     },
     @Req() req: Request & { user?: any }
   ) {
-    const order: any = await this.quotesRepo.findById(id);
-    if (!order) throw new NotFoundException('订单不存在');
-    if (order.status !== 'done') throw new BadRequestException('仅已核算发布（done）的订单可维护物流信息');
-    if (order.deal_status !== 'won') throw new BadRequestException('客户确认成交后才能维护海运信息');
+    const order = await this.shipmentOrder(id);
 
     const patch: Record<string, string | null> = {};
     for (const k of ['vessel', 'voyage', 'bill_no', 'container_no', 'pol', 'pod'] as const) {
@@ -531,19 +570,11 @@ export class OpsOrderController {
       patch.remark = v || null;
     }
 
-    const ship = {
+    const ship = await this.persistShipment(order, {
       events: [],
       ...(order.shipment || {}),
-      ...patch,
-      updated_by: req.user?.username || 'system',
-      updated_at: new Date().toISOString()
-    };
-    await this.quotesRepo.update(id, { shipment: ship } as any);
-    await this.auditRepo.entry({
-      actor_username: req.user?.username || 'system', actor_role: req.user?.role || 'system',
-      action: 'order.shipment', target_type: 'quote', target_id: id,
-      detail: { quote_no: order.quote_no, patch }
-    });
+      ...patch
+    }, req, 'order.shipment', { patch });
     return { ok: true, id, shipment: ship };
   }
 
@@ -552,58 +583,80 @@ export class OpsOrderController {
   @Roles('operator', 'admin')
   async addShipmentEvent(
     @Param('id') id: string,
-    @Body() body: { stage?: string; note?: string; happened_at?: string; lat?: number | string; lng?: number | string },
+    @Body() body: ShipmentEventInput,
     @Req() req: Request & { user?: any }
   ) {
-    const stage = body.stage;
-    if (!stage || !SHIPMENT_STAGES.includes(stage as any)) {
-      throw new BadRequestException(`stage 只能是：${SHIPMENT_STAGES.join(' / ')}`);
-    }
-    if (body.note !== undefined && String(body.note).length > 500) {
-      throw new BadRequestException('节点备注过长（最多 500 字符）');
-    }
-    // 可选手动坐标：两个一起填或都不填；填了就必须是合法经纬度
-    const hasLat = body.lat !== undefined && body.lat !== null && String(body.lat).trim() !== '';
-    const hasLng = body.lng !== undefined && body.lng !== null && String(body.lng).trim() !== '';
-    let lat: number | null = null;
-    let lng: number | null = null;
-    if (hasLat || hasLng) {
-      lat = Number(body.lat);
-      lng = Number(body.lng);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-        throw new BadRequestException('手动坐标不合法：lat 在 -90..90，lng 在 -180..180，且两个要一起填');
-      }
-    }
-    const order: any = await this.quotesRepo.findById(id);
-    if (!order) throw new NotFoundException('订单不存在');
-    if (order.status !== 'done') throw new BadRequestException('仅已核算发布（done）的订单可维护物流信息');
-    if (order.deal_status !== 'won') throw new BadRequestException('客户确认成交后才能更新物流节点');
-
+    const order = await this.shipmentOrder(id);
     const now = new Date().toISOString();
-    const ev = {
+    const ev: ShipmentEvent = {
       id: crypto.randomUUID(),
-      stage: stage as any,
-      note: body.note !== undefined ? (String(body.note).trim() || null) : null,
-      lat, lng,
-      happened_at: body.happened_at?.trim() || now,
+      ...shipmentEventFields(body, now),
       created_by: req.user?.username || 'system',
       created_at: now
     };
     const events = [...(order.shipment?.events || []), ev]
       .sort((a: any, b: any) => String(a.happened_at).localeCompare(String(b.happened_at)));
-    const ship = {
-      ...(order.shipment || { events: [] }),
-      events,
-      updated_by: req.user?.username || 'system',
-      updated_at: now
-    };
-    await this.quotesRepo.update(id, { shipment: ship } as any);
-    await this.auditRepo.entry({
-      actor_username: req.user?.username || 'system', actor_role: req.user?.role || 'system',
-      action: 'order.shipment.event', target_type: 'quote', target_id: id,
-      detail: { quote_no: order.quote_no, stage, note: ev.note, happened_at: ev.happened_at }
-    });
+    const ship = await this.persistShipment(order, { ...order.shipment, events }, req, 'order.shipment.event',
+      { stage: ev.stage, note: ev.note, happened_at: ev.happened_at });
     return { ok: true, id, event: ev, shipment: ship };
+  }
+
+  @Patch(':id/shipment/events/:eventId')
+  @Roles('operator', 'admin')
+  async correctShipmentEvent(
+    @Param('id') id: string,
+    @Param('eventId') eventId: string,
+    @Body() body: ShipmentEventInput & { reason?: string; revision?: string | null },
+    @Req() req: Request & { user?: any }
+  ) {
+    const order = await this.shipmentOrder(id);
+    const events = order.shipment?.events ?? [];
+    const before = events.find(event => event.id === eventId);
+    if (!before) throw new NotFoundException('物流节点不存在');
+    if (body.revision !== (before.corrected_at ?? null)) throw new ConflictException('节点已修正，请刷新后重试');
+    const reason = String(body.reason ?? '').trim();
+    if (!reason || reason.length > 500) throw new BadRequestException('请填写修正原因（最多 500 字符）');
+    const event = {
+      ...before, ...shipmentEventFields({ ...before, ...body }, before.happened_at),
+      corrected_at: new Date().toISOString(), corrected_by: req.user?.username || 'system'
+    };
+    const revised = events.map(item => item.id === eventId ? event : item)
+      .sort((a, b) => a.happened_at.localeCompare(b.happened_at));
+    const ship = await this.persistShipment(order, { ...order.shipment, events: revised }, req,
+      'order.shipment.event_correct', { event_id: eventId, reason, before, after: event });
+    return { ok: true, event, shipment: ship };
+  }
+
+  @Put(':id/shipment/exception')
+  @Roles('operator', 'admin')
+  async saveShipmentException(
+    @Param('id') id: string,
+    @Body() body: { status?: string; message?: string; revision?: string | null },
+    @Req() req: Request & { user?: any }
+  ) {
+    const order = await this.shipmentOrder(id);
+    const before = order.shipment?.exception;
+    if (body.revision !== (before?.updated_at ?? null)) throw new ConflictException('异常记录已更新，请刷新后重试');
+    const status = body.status;
+    const message = String(body.message ?? '').trim();
+    if ((status !== 'open' && status !== 'resolved') || !message || message.length > 500) {
+      throw new BadRequestException('请填写有效的异常状态和客户可见说明（最多 500 字符）');
+    }
+    if (status === 'resolved' && !before) throw new BadRequestException('暂无已登记的物流异常');
+    if (before?.status === status && before?.message === message) return { ok: true, shipment: order.shipment };
+    const actor = req.user?.username || 'system';
+    const previousTime = Date.parse(before?.updated_at ?? '');
+    const updatedAt = new Date(Math.max(Date.now(), Number.isFinite(previousTime) ? previousTime + 1 : 0)).toISOString();
+    const exception: ShipmentException = {
+      status, message, owner: before?.status === 'open' ? before.owner : actor, updated_at: updatedAt
+    };
+    const previous = order.shipment?.exception_updates ?? (before
+      ? [{ status: before.status, message: before.message, updated_at: before.updated_at }] : []);
+    const ship = await this.persistShipment(order, {
+      ...order.shipment, exception, exception_updates: [...previous, { status, message, updated_at: exception.updated_at }]
+    }, req,
+      'order.shipment.exception', { before: before ?? null, after: exception });
+    return { ok: true, shipment: ship };
   }
 
   /** M7：删除误录的物流节点，写审计日志 */
@@ -614,24 +667,15 @@ export class OpsOrderController {
     @Param('eventId') eventId: string,
     @Req() req: Request & { user?: any }
   ) {
-    const order: any = await this.quotesRepo.findById(id);
-    if (!order) throw new NotFoundException('订单不存在');
+    const order = await this.shipmentOrder(id);
     if (!order.shipment?.events?.length) throw new NotFoundException('该订单暂无物流节点');
     const target = order.shipment.events.find((e: any) => e.id === eventId);
     if (!target) throw new NotFoundException('物流节点不存在');
     const events = order.shipment.events.filter((e: any) => e.id !== eventId);
-    const ship = {
+    const ship = await this.persistShipment(order, {
       ...order.shipment,
-      events,
-      updated_by: req.user?.username || 'system',
-      updated_at: new Date().toISOString()
-    };
-    await this.quotesRepo.update(id, { shipment: ship } as any);
-    await this.auditRepo.entry({
-      actor_username: req.user?.username || 'system', actor_role: req.user?.role || 'system',
-      action: 'order.shipment.event_del', target_type: 'quote', target_id: id,
-      detail: { quote_no: order.quote_no, stage: target.stage, happened_at: target.happened_at }
-    });
+      events
+    }, req, 'order.shipment.event_del', { stage: target.stage, happened_at: target.happened_at, event_id: target.id });
     return { ok: true, id, shipment: ship };
   }
 

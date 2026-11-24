@@ -1,7 +1,8 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../store/auth';
+import { api, useAuth } from '../store/auth';
+import { notificationReadEvent } from '../pages/Notifications';
 import logo from '../assets/logo.png';
 
 export default function Layout() {
@@ -10,8 +11,34 @@ export default function Layout() {
   const nav = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const langRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setUnread(0);
+    if (!user?.id) return;
+    let request: AbortController | undefined;
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      request?.abort();
+      const controller = new AbortController();
+      request = controller;
+      void api.get<{ unread: number }>('/api/client/notifications/unread', { signal: controller.signal })
+        .then(({ data }) => { if (!controller.signal.aborted) setUnread(data.unread); })
+        .catch(() => undefined);
+    };
+    refresh();
+    const timer = setInterval(refresh, 60_000);
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener(notificationReadEvent, refresh);
+    return () => {
+      request?.abort();
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener(notificationReadEvent, refresh);
+    };
+  }, [user?.id]);
 
   // 语言下拉：点击外部 / Esc 关闭
   useEffect(() => {
@@ -62,6 +89,10 @@ export default function Layout() {
           <NavLink to="/home">{t('nav.home')}</NavLink>
           <NavLink to="/workbench">{t('nav.upload')}</NavLink>
           <NavLink to="/orders">{t('nav.myQuotes')}</NavLink>
+          <NavLink to="/notifications">
+            {t('notifications.title')}
+            {unread > 0 && <span className="notification-count" aria-label={t('notifications.unread', { count: unread })}>{unread > 99 ? '99+' : unread}</span>}
+          </NavLink>
         </nav>
         <div className="user-area" ref={menuRef}>
           {/* 语言切换 — 下拉 */}

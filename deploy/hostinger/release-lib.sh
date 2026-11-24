@@ -53,6 +53,38 @@ wait_for_api() {
   return 1
 }
 
+check_business_api() {
+  local release=$1 url=$2 code
+  local probe_id=00000000-0000-0000-0000-000000000000
+  local token=${AEG_RELEASE_TEST_CLIENT_TOKEN:-} order_id=${AEG_RELEASE_TEST_QUOTE_ID:-}
+  # The previous release can predate readiness and notifications.
+  [[ -s "$release/apps/api/dist/version/readiness.controller.js" ]] || return 0
+  curl -fsS --max-time 10 "$url/api/readiness" | node -e '
+    const value = JSON.parse(require("fs").readFileSync(0, "utf8"));
+    if (value.ok !== true) process.exit(1);
+  ' || return 1
+  curl -sS --max-time 10 -w '\n%{http_code}' -H 'Content-Type: application/json' -d '{}' "$url/api/auth/login" | node -e '
+    const response = require("fs").readFileSync(0, "utf8");
+    const split = response.lastIndexOf("\n");
+    if (response.slice(split + 1) !== "401" || JSON.parse(response.slice(0, split)).code !== "CAPTCHA_REQUIRED") process.exit(1);
+  ' || return 1
+  for path in "orders/$probe_id" 'notifications?page=1' 'notifications/unread'; do
+    code="$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "$url/api/client/$path")" || return 1
+    [[ "$code" == 401 ]] || { echo "Business API check failed for /api/client/$path (HTTP $code)" >&2; return 1; }
+  done
+  if [[ -n "$token" || -n "$order_id" ]]; then
+    [[ "$token" =~ ^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$ && "$order_id" =~ ^[[:xdigit:]-]{36}$ ]] || return 1
+    printf 'header = "Authorization: Bearer %s"\n' "$token" | curl -fsS --max-time 10 -K - "$url/api/client/orders/$order_id" | node -e '
+      const order = JSON.parse(require("fs").readFileSync(0, "utf8"));
+      if (order.id !== process.argv[1]) process.exit(1);
+    ' "$order_id" || return 1
+    printf 'header = "Authorization: Bearer %s"\n' "$token" | curl -fsS --max-time 10 -K - "$url/api/client/notifications?page=1" | node -e '
+      const inbox = JSON.parse(require("fs").readFileSync(0, "utf8"));
+      if (!Array.isArray(inbox.items) || !Number.isInteger(inbox.unread)) process.exit(1);
+    ' || return 1
+  fi
+}
+
 check_release() {
   local release=$1 commit=$2 i asset
   for i in "${!portals[@]}"; do
@@ -67,4 +99,5 @@ check_release() {
     curl -fsS --max-time 20 "${origins[i]}$asset" | cmp -s "$release/apps/${portals[i]}/dist$asset" - || return
     check_api "${origins[i]}" "$commit" || return
   done
+  check_business_api "$release" "${origins[0]}"
 }

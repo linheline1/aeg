@@ -896,3 +896,8 @@ code { border-radius: 0; }
 .inquiry-wechat p { color: #60758b; }
 @media (max-width: 640px) { .inquiry-widget { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); } .inquiry-panel { position: fixed; inset: 0; width: 100vw; height: 100dvh; border: 0; border-radius: 0; } .inquiry-trigger { min-height: 48px; } }
 @media (prefers-reduced-motion: reduce) { .inquiry-widget * { scroll-behavior: auto !important; } }
+
+.notification-count { display: inline-block; margin-inline-start: 6px; padding: 1px 6px; border-radius: 999px; background: #1d4ed8; color: #fff; font-size: 11px; }
+.notification-list { list-style: none; padding: 0; margin: 12px 0; }
+.notification-list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); }
+.notification-list .notification-unread { background: var(--chip-bg, #eff6ff); font-weight: 600; }

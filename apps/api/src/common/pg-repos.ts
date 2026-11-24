@@ -3,7 +3,7 @@
  * 由 DatabaseModule 按 APP_MODULE_MODE=postgres 时通过 DI token 注入。
  * 输出行的 Date 字段统一转 ISO 字符串，与 mock 行形状保持一致。
  */
-import { DataSource, DeepPartial, Repository } from 'typeorm';
+import { DataSource, DeepPartial, IsNull, Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { UserEntity } from '../entities/user.entity';
 import { ClientEntity } from '../entities/client.entity';
@@ -20,10 +20,11 @@ import { PaymentRecordEntity } from '../entities/payment-record.entity';
 import { HelpArticleEntity } from '../entities/help-article.entity';
 import { AiConfigEntity } from '../entities/ai-config.entity';
 import { PartnerEntity } from '../entities/partner.entity';
+import { KnowledgeDocEntity } from '../entities/knowledge-doc.entity';
 import type {
   UserRow, ClientRow, TemplateRow, QuoteOrderRow, FeeRateRow,
   ClientImageRow, ClientCnpjRow, CustomsCnpjRow, ProductCatalogRow, OrderFileRow, AuditLogRow, PaymentRow, HelpArticleRow,
-  AiConfigRow, ResolvedAiConfig, PartnerRow
+  AiConfigRow, ResolvedAiConfig, PartnerRow, KnowledgeDocRow, AuditEntry
 } from './mock-db';
 import { resolveAiConfig } from './mock-db';
 
@@ -64,10 +65,12 @@ export class PgUserRepo {
     return toRow(e) as UserRow;
   }
   async update(id: string, patch: Partial<UserRow>): Promise<UserRow | null> {
-    const e = await this.repo.findOne({ where: { id } });
-    if (!e) return null;
-    Object.assign(e, stripUndefined(patch));
-    return toRow(await this.repo.save(e)) as UserRow;
+    const changes = stripUndefined(patch);
+    if (patch.password_hash !== undefined || patch.status !== undefined) {
+      changes.session_revision = crypto.randomUUID();
+    }
+    const result = await this.repo.update({ id, deleted_at: IsNull() }, changes);
+    return result.affected ? this.findOne({ where: { id } }) : null;
   }
 }
 
@@ -117,7 +120,7 @@ export class PgTemplateRepo {
 export class PgAuditRepo {
   private repo: Repository<AuditLogEntity>;
   private users: Repository<UserEntity>;
-  constructor(ds: DataSource) {
+  constructor(ds: Pick<DataSource, 'getRepository'>) {
     this.repo = ds.getRepository(AuditLogEntity);
     this.users = ds.getRepository(UserEntity);
   }
@@ -135,14 +138,7 @@ export class PgAuditRepo {
     }));
   }
 
-  async entry(e: {
-    actor_username: string;
-    actor_role: string;
-    action: string;
-    target_type?: string;
-    target_id?: string;
-    detail?: any;
-  }): Promise<void> {
+  async entry(e: AuditEntry): Promise<void> {
     await this.repo.save(this.repo.create({
       actor_username: e.actor_username || 'system',
       actor_role: e.actor_role || 'system',
@@ -261,13 +257,21 @@ export class PgQuotesRepo {
     return entities[0] ? { ...toRow<QuoteOrderRow>(entities[0]), revision: raw[0].quote_revision } : null;
   }
 
-  async updateIfUnchanged(id: string, version: string, patch: Partial<QuoteOrderRow>): Promise<QuoteOrderRow | null> {
-    const result = await this.repo.createQueryBuilder().update()
-      .set(stripUndefined(patch) as any)
-      .where("id = :id AND status <> :deleted AND concat(xmin::text, ':', updated_at::text) = :version",
-        { id, deleted: 'deleted', version })
-      .returning('*').execute();
-    return result.affected ? toRow(result.raw[0]) as QuoteOrderRow : null;
+  async updateIfUnchanged(id: string, version: string, patch: Partial<QuoteOrderRow>, audit?: AuditEntry): Promise<QuoteOrderRow | null> {
+    const update = async (repo: Repository<QuoteOrderEntity>) => {
+      const result = await repo.createQueryBuilder().update()
+        .set(stripUndefined(patch) as any)
+        .where("id = :id AND status <> :deleted AND concat(xmin::text, ':', updated_at::text) = :version",
+          { id, deleted: 'deleted', version })
+        .returning('*').execute();
+      return result.affected ? toRow<QuoteOrderRow>(result.raw[0]) : null;
+    };
+    if (!audit) return update(this.repo);
+    return this.repo.manager.transaction(async manager => {
+      const row = await update(manager.getRepository(QuoteOrderEntity));
+      if (row) await new PgAuditRepo(manager).entry(audit);
+      return row;
+    });
   }
 
   async find(opts: { where?: { client_id?: string; salesperson_id?: string } } = {}): Promise<QuoteOrderRow[]> {
@@ -697,6 +701,65 @@ export class PgHelpArticlesRepo {
     Object.assign(e, stripUndefined(patch));
     return toRow(await this.repo.save(e)) as HelpArticleRow;
   }
+  async deleteById(id: string): Promise<boolean> {
+    const res = await this.repo.delete({ id });
+    return (res.affected ?? 0) > 0;
+  }
+}
+
+/** 内部知识库仓储（PostgreSQL）。公开方法与 KnowledgeDocRepo 一致。 */
+export class PgKnowledgeDocRepo {
+  private repo: Repository<KnowledgeDocEntity>;
+  constructor(ds: DataSource) { this.repo = ds.getRepository(KnowledgeDocEntity); }
+
+  async findAll(opts?: { kind?: 'price_table' | 'doc'; includeArchived?: boolean }): Promise<KnowledgeDocRow[]> {
+    const qb = this.repo.createQueryBuilder('d');
+    if (opts?.kind) qb.andWhere('d.kind = :kind', { kind: opts.kind });
+    if (!opts?.includeArchived) qb.andWhere("d.status = 'active'");
+    qb.orderBy('d.is_current', 'DESC').addOrderBy('d.created_at', 'DESC');
+    return (await qb.getMany()).map(e => toRow(e) as KnowledgeDocRow);
+  }
+
+  async findById(id: string): Promise<KnowledgeDocRow | null> {
+    const e = await this.repo.findOne({ where: { id } });
+    return e ? (toRow(e) as KnowledgeDocRow) : null;
+  }
+
+  async findCurrentPriceTable(): Promise<KnowledgeDocRow | null> {
+    const e = await this.repo.findOne({ where: { kind: 'price_table', status: 'active', is_current: true } });
+    return e ? (toRow(e) as KnowledgeDocRow) : null;
+  }
+
+  async insert(row: Omit<KnowledgeDocRow, 'id' | 'created_at' | 'updated_at'>): Promise<KnowledgeDocRow> {
+    if (row.is_current && row.kind === 'price_table') {
+      await this.repo.createQueryBuilder().update(KnowledgeDocEntity)
+        .set({ is_current: false }).where("kind = 'price_table'").execute();
+    }
+    const e = await this.repo.save(this.repo.create(stripUndefined(row) as any));
+    return toRow(e) as KnowledgeDocRow;
+  }
+
+  async update(id: string, patch: Partial<KnowledgeDocRow>): Promise<KnowledgeDocRow | null> {
+    const e = await this.repo.findOne({ where: { id } });
+    if (!e) return null;
+    if (patch.is_current && (patch.kind || e.kind) === 'price_table') {
+      await this.repo.createQueryBuilder().update(KnowledgeDocEntity)
+        .set({ is_current: false }).where("kind = 'price_table' AND id <> :id", { id }).execute();
+    }
+    Object.assign(e, stripUndefined(patch));
+    return toRow(await this.repo.save(e)) as KnowledgeDocRow;
+  }
+
+  async setCurrent(id: string): Promise<KnowledgeDocRow | null> {
+    const e = await this.repo.findOne({ where: { id } });
+    if (!e || e.kind !== 'price_table') return null;
+    await this.repo.createQueryBuilder().update(KnowledgeDocEntity)
+      .set({ is_current: false }).where("kind = 'price_table'").execute();
+    e.is_current = true;
+    e.status = 'active';
+    return toRow(await this.repo.save(e)) as KnowledgeDocRow;
+  }
+
   async deleteById(id: string): Promise<boolean> {
     const res = await this.repo.delete({ id });
     return (res.affected ?? 0) > 0;

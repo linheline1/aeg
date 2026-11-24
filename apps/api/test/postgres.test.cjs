@@ -4,7 +4,10 @@ const { DataSource } = require('typeorm');
 const { ALL_ENTITIES } = require('../dist/data-source');
 const { ClientEntity } = require('../dist/entities/client.entity');
 const { UploadDraftEntity } = require('../dist/entities/upload-draft.entity');
-const { PgQuotesRepo, PgImageRepo } = require('../dist/common/pg-repos');
+const { AuditLogEntity } = require('../dist/entities/audit-log.entity');
+const { PgQuotesRepo, PgImageRepo, PgUserRepo } = require('../dist/common/pg-repos');
+const { ClientNotificationsController } = require('../dist/order/client-notifications.controller');
+const { OrderDocumentsController } = require('../dist/order/order-documents.controller');
 const { UploadDraftsRepo } = require('../dist/upload/upload-draft.repository');
 const { QuoteTaskStore } = require('../dist/quote-tasks/quote-task.store');
 const { QuoteAiTasksService } = require('../dist/quote-tasks/quote-ai-tasks.service');
@@ -50,6 +53,15 @@ test('PostgreSQL migrations support quote uploads and versioned automatic DI tas
       const client = await manager.save(manager.create(ClientEntity, { name: 'Synthetic quote test', status: 'active' }));
       const other = await manager.save(manager.create(ClientEntity, { name: 'Synthetic other client', status: 'active' }));
       const repositories = { getRepository: entity => manager.getRepository(entity) };
+      const users = new PgUserRepo(repositories);
+      const user = await users.insert({ username: 'session-fixture', status: 'active', role: 'client', client_id: client.id, password_hash: 'fixture' });
+      assert.equal(user.session_revision, null);
+      const disabled = await users.update(user.id, { status: 'disabled' });
+      const restored = await users.update(user.id, { status: 'active' });
+      const reset = await users.update(user.id, { password_hash: 'reset fixture' });
+      assert.equal(disabled.status, 'disabled');
+      assert.notEqual(disabled.session_revision, restored.session_revision);
+      assert.notEqual(reset.session_revision, restored.session_revision);
       const quotes = new PgQuotesRepo(repositories);
       const repos = {
         quotes,
@@ -97,6 +109,48 @@ test('PostgreSQL migrations support quote uploads and versioned automatic DI tas
       assert.equal(published.total_amount_brl, 500);
       assert.equal((await store.counts()).complete, 1);
       assert.equal(await quotes.updateIfUnchanged(quote.id, '2000-01-01T00:00:00.000Z', { status: 'failed' }), null);
+      const shipment = { exception: { status: 'open', message: 'Port congestion', owner: 'test', updated_at: new Date().toISOString() } };
+      const audit = { actor_username: 'test', actor_role: 'operator', action: 'order.shipment.exception',
+        target_type: 'quote', target_id: quote.id, detail: { before: null, after: shipment.exception } };
+      const before = await quotes.findVersioned(quote.id);
+      await assert.rejects(
+        () => quotes.updateIfUnchanged(quote.id, before.revision, { shipment }, { ...audit, actor_username: 'x'.repeat(51) }),
+        error => error.code === '22001'
+      );
+      assert.equal((await quotes.findVersioned(quote.id)).revision, before.revision);
+      assert.equal((await quotes.findById(quote.id)).shipment, before.shipment);
+      assert.deepEqual((await quotes.updateIfUnchanged(quote.id, before.revision, { shipment }, audit)).shipment, shipment);
+      assert.equal(await quotes.updateIfUnchanged(quote.id, before.revision, { shipment: null }, audit), null);
+      assert.equal(await manager.countBy(AuditLogEntity, { target_id: quote.id, action: audit.action }), 1);
+
+      const notifications = new ClientNotificationsController(quotes, storage);
+      const account = { user: { client_id: client.id, sub: user.id } };
+      const outsider = { user: { client_id: other.id, sub: user.id } };
+      const documents = new OrderDocumentsController(quotes);
+      const operator = { user: { username: 'operator-fixture', role: 'operator' } };
+      const doc = await documents.requestDocument('ops', quote.id, { type: 'bill_of_lading' }, operator);
+      const requestCustomer = { user: { ...account.user, role: 'client', username: user.username } };
+      assert.equal((await documents.list('client', quote.id, requestCustomer))[0].status, 'missing');
+      const submitted = await documents.submit('client', quote.id, doc.id, {
+        originalname: 'loading.pdf', buffer: Buffer.from('%PDF-1.5\nfixture'), size: 16
+      }, String(doc.revision), requestCustomer);
+      const rejected = await documents.review('ops', quote.id, doc.id, {
+        status: 'rejected', version_id: submitted.versions[0].id, revision: submitted.revision, reason: 'Add signature'
+      }, operator);
+      assert.equal(rejected.status, 'rejected');
+      const inbox = await notifications.list(account);
+      const exception = inbox.items.find(item => item.type === 'exception_open');
+      assert.equal(exception.message, 'Port congestion');
+      assert.ok(inbox.items.some(item => item.type === 'document_requested' && item.stage === 'bill_of_lading'));
+      assert.ok(inbox.items.some(item => item.type === 'document_rejected' && item.message === 'Add signature'));
+      assert.deepEqual(await notifications.unread(account), { unread: inbox.total });
+      assert.deepEqual(await notifications.unread(outsider), { unread: 0 });
+      await assert.rejects(() => notifications.markRead(account, { ids: [exception.id, 'invalid'] }), { status: 404 });
+      assert.deepEqual(await notifications.unread(account), { unread: inbox.total });
+      await notifications.markRead(account, { ids: [exception.id, exception.id] });
+      await notifications.markRead(account, { ids: [exception.id] });
+      assert.deepEqual(await notifications.unread(account), { unread: inbox.total - 1 });
+      assert.equal((await notifications.list(account)).items.find(item => item.id === exception.id).read, true);
     } finally {
       if (runner.isTransactionActive) await runner.rollbackTransaction();
       await runner.release();

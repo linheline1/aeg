@@ -29,6 +29,9 @@ export class UserEntity {
   @Column({ type: 'varchar', length: 255 })
   password_hash!: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  session_revision?: string | null;
+
   @Column({ type: 'varchar', length: 20 })
   role!: 'admin' | 'operator' | 'sales' | 'customs' | 'client';
 

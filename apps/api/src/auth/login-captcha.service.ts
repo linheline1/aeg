@@ -5,10 +5,7 @@ const TEST_SECRET = '0x0000000000000000000000000000000000000000';
 
 @Injectable()
 export class LoginCaptchaService {
-  async verify(token: string): Promise<void> {
-    if (typeof token !== 'string' || !token || token.length > 4096) {
-      throw new UnauthorizedException({ code: 'CAPTCHA_REQUIRED', message: '请先完成人机验证' });
-    }
+  checkConfiguration() {
     const production = process.env.NODE_ENV === 'production';
     const testMode = !production && process.env.HCAPTCHA_TEST_MODE === 'true';
     const secret = process.env.HCAPTCHA_SECRET || (testMode ? TEST_SECRET : '');
@@ -16,6 +13,14 @@ export class LoginCaptchaService {
     if (!secret || !sitekey || (production && (secret === TEST_SECRET || sitekey === TEST_SITEKEY))) {
       throw new ServiceUnavailableException({ code: 'CAPTCHA_UNAVAILABLE', message: '人机验证尚未配置' });
     }
+    return { secret, sitekey };
+  }
+
+  async verify(token: string): Promise<void> {
+    if (typeof token !== 'string' || !token || token.length > 4096) {
+      throw new UnauthorizedException({ code: 'CAPTCHA_REQUIRED', message: '请先完成人机验证' });
+    }
+    const { secret, sitekey } = this.checkConfiguration();
     const body = new URLSearchParams({ secret, response: token, sitekey });
     let result: { success?: boolean };
     try {

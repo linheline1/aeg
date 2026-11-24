@@ -164,6 +164,7 @@ export class CustomsService {
     const order = await this.quotesRepo.findVersioned(id);
     if (!order) throw new NotFoundException('Pedido não encontrado');
     if (order.quote_versions?.at(-1)?.decision?.value === 'accepted') throw new ConflictException('O cliente já aceitou este orçamento.');
+    if (order.status === 'computing') throw new ConflictException('Aguarde a conclusão do cálculo para editar os produtos.');
     if (!Array.isArray(changes) || !changes.length || changes.length > 500) throw new BadRequestException('Lista de valores inválida');
     const items = [...(order.line_items || [])];
     const seen = new Set<number>();
@@ -213,9 +214,17 @@ export class CustomsService {
     const analysis = !ncmChanged && order.di_analysis?.items?.length && order.di_analysis?.parameters
       ? calculateDi({ ...order, line_items: items }, order.di_analysis.items.map((item: any) => ({ ...item, product_en: items.find((row: any) => Number(row.row_no) === Number(item.row_no))?.product_en || item.product_en })), order.di_analysis.parameters, order.di_analysis.additional_fees)
       : null;
+    if (JSON.stringify(items) === JSON.stringify(order.line_items)) return this.detail(id);
+    const totalFor = (field: 'total_cbm' | 'total_gw') =>
+      items.some(item => item[field] != null) ? items.reduce((sum, item) => sum + (Number(item[field]) || 0), 0) : null;
     const updated = await this.quotesRepo.updateIfUnchanged(id, order.revision, {
       line_items: items, total_amount_rmb: Math.round(total * 100) / 100,
+      total_cbm: totalFor('total_cbm') ?? order.total_cbm,
+      total_gw_kg: totalFor('total_gw') ?? order.total_gw_kg,
       di_analysis: analysis,
+      status: analysis ? 'pending_fee' : 'uploaded',
+      pricing_breakdown: null, total_amount_brl: null, total_amount_usd: null,
+      error_message: null,
       customs_review: pendingCustomsReview(analysis?.totals.di_brl ?? null)
     } as any);
     if (!updated) throw new ConflictException('O pedido mudou. Recarregue e tente novamente.');
@@ -282,7 +291,8 @@ export class CustomsService {
   }
 
   async translateProducts(id: string, actor: { username: string; role: string }) {
-    const order = await this.order(id);
+    const order = await this.quotesRepo.findVersioned(id);
+    if (!order) throw new NotFoundException('Pedido não encontrado');
     if (!Array.isArray(order.line_items) || order.line_items.length === 0) {
       throw new BadRequestException('O pedido não possui produtos para traduzir');
     }
@@ -299,7 +309,9 @@ export class CustomsService {
         product_en: byRow.get(Number(item.row_no)) || item.product_en
       }))
     } : null;
-    await this.quotesRepo.update(id, { line_items: lineItems, di_analysis: diAnalysis } as any);
+    if (!(await this.quotesRepo.updateIfUnchanged(id, order.revision, { line_items: lineItems, di_analysis: diAnalysis }))) {
+      throw new ConflictException('O pedido mudou durante a tradução. Recarregue e tente novamente.');
+    }
     await this.auditRepo.entry({
       actor_username: actor.username,
       actor_role: actor.role,
@@ -312,22 +324,24 @@ export class CustomsService {
   }
 
   async addProgress(id: string, body: { stage?: string; note?: string; happened_at?: string }, actor: { username: string; role: string }) {
-    const order = await this.order(id);
+    const order = await this.quotesRepo.findVersioned(id);
+    if (!order) throw new NotFoundException('Pedido não encontrado');
     if (order.status !== 'done') throw new BadRequestException('O pedido ainda não está liberado para desembaraço');
     if (!body.stage || !PROGRESS_STAGES.includes(body.stage as any)) {
       throw new BadRequestException('Etapa inválida. Use customs_br, duty_paid ou cleared');
     }
     const note = String(body.note || '').trim();
     if (note.length > 500) throw new BadRequestException('A observação deve ter no máximo 500 caracteres');
-    if (body.happened_at && !Number.isFinite(Date.parse(body.happened_at))) {
+    const now = new Date().toISOString();
+    const happenedAt = Date.parse(body.happened_at || now);
+    if (!Number.isFinite(happenedAt) || happenedAt > Date.now()) {
       throw new BadRequestException('Data da etapa inválida');
     }
-    const now = new Date().toISOString();
     const event = {
       id: crypto.randomUUID(),
       stage: body.stage,
       note: note || null,
-      happened_at: body.happened_at || now,
+      happened_at: new Date(happenedAt).toISOString(),
       created_by: actor.username,
       created_at: now
     };
@@ -339,8 +353,7 @@ export class CustomsService {
       updated_by: actor.username,
       updated_at: now
     };
-    await this.quotesRepo.update(id, { shipment } as any);
-    await this.auditRepo.entry({
+    const saved = await this.quotesRepo.updateIfUnchanged(id, order.revision, { shipment }, {
       actor_username: actor.username,
       actor_role: actor.role,
       action: 'customs.order.progress',
@@ -348,6 +361,7 @@ export class CustomsService {
       target_id: id,
       detail: { quote_no: order.quote_no, stage: body.stage, happened_at: event.happened_at }
     });
+    if (!saved) throw new ConflictException('O pedido mudou. Recarregue antes de registrar a etapa.');
     return { ok: true, event, shipment };
   }
 }
